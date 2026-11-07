@@ -136,7 +136,7 @@ export default async function webhookRoutes(app: FastifyInstance): Promise<void>
       ? await queryOne<{ id: string; name: string }>('SELECT id, name FROM servers WHERE id = $1', [w.server_id])
       : { id: '00000000-0000-0000-0000-000000000000', name: 'ServCrafty' };
     try {
-      await deliver(w, server ?? { id: w.server_id ?? '', name: 'ServCrafty' }, 'test', {});
+      await deliver(w, server ?? { id: w.server_id ?? '', name: 'ServCrafty' }, 'test', {}, { attempts: 1, timeoutMs: 5000 });
     } catch (err) {
       throw upstream(`Webhook test failed: ${errorMessage(err)}`, 'webhook_failed');
     }

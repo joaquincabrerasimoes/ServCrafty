@@ -79,28 +79,70 @@ function describe(event: WebhookEvent | 'test', data: Record<string, unknown>): 
   }
 }
 
-async function post(w: WebhookRow, body: string): Promise<void> {
+/** Turn undici's opaque "fetch failed" into a message that says what actually went wrong. */
+export function describeFetchError(err: unknown, url: string): string {
+  if (err instanceof AppError) return err.message;
+  let host = url;
+  try {
+    host = new URL(url).host;
+  } catch {
+    /* keep raw url */
+  }
+  const e = err as { name?: string; message?: string; cause?: { code?: string; message?: string } };
+  if (e?.name === 'TimeoutError' || e?.name === 'AbortError') return `${host} did not respond in time`;
+  const code = e?.cause?.code;
+  switch (code) {
+    case 'ECONNREFUSED':
+      return `Connection refused by ${host}`;
+    case 'ENOTFOUND':
+    case 'EAI_AGAIN':
+      return `Could not resolve host ${host}`;
+    case 'ETIMEDOUT':
+    case 'UND_ERR_CONNECT_TIMEOUT':
+      return `Connection to ${host} timed out`;
+    case 'ECONNRESET':
+      return `Connection to ${host} was reset`;
+    case 'EHOSTUNREACH':
+    case 'ENETUNREACH':
+      return `${host} is unreachable`;
+  }
+  if (code?.startsWith('ERR_TLS') || code?.startsWith('CERT_') || code === 'DEPTH_ZERO_SELF_SIGNED_CERT' || code === 'UNABLE_TO_VERIFY_LEAF_SIGNATURE')
+    return `TLS error talking to ${host} (${code})`;
+  const detail = e?.cause?.message ?? e?.message;
+  return `Could not reach ${host}${detail && detail !== 'fetch failed' ? `: ${detail}` : ''}`;
+}
+
+export interface PostOptions {
+  /** Delivery attempts (default 3, with backoff). The test endpoint uses 1 so it fails fast. */
+  attempts?: number;
+  timeoutMs?: number;
+}
+
+async function post(w: WebhookRow, body: string, opts: PostOptions = {}): Promise<void> {
+  const attempts = opts.attempts ?? 3;
   const headers: Record<string, string> = { 'Content-Type': 'application/json', 'User-Agent': USER_AGENT };
   if (w.secret && w.kind === 'generic') headers['X-ServCrafty-Signature'] = `sha256=${hmacSha256(w.secret, body)}`;
   let lastErr: unknown;
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < attempts; attempt++) {
     try {
       // Re-check at delivery time (DNS may have changed since the webhook was saved) and never follow redirects.
       await assertPublicUrl(w.url);
-      const res = await fetch(w.url, { method: 'POST', headers, body, redirect: 'manual', signal: AbortSignal.timeout(10_000) });
+      const res = await fetch(w.url, { method: 'POST', headers, body, redirect: 'manual', signal: AbortSignal.timeout(opts.timeoutMs ?? 10_000) });
       if (res.ok) return;
       if (res.status === 429) {
+        lastErr = new Error('HTTP 429 (rate limited)');
+        if (attempt >= attempts - 1) break;
         const retry = Number(res.headers.get('retry-after') ?? '2');
         await new Promise((r) => setTimeout(r, Math.min(30, retry || 2) * 1000));
         continue;
       }
-      lastErr = new Error(`HTTP ${res.status}`);
+      lastErr = new Error(`The webhook endpoint responded HTTP ${res.status}`);
       if (res.status < 500) break;
     } catch (err) {
       if (err instanceof AppError) throw err; // blocked target: no point retrying
-      lastErr = err;
+      lastErr = new Error(describeFetchError(err, w.url));
     }
-    await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
+    if (attempt < attempts - 1) await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
   }
   throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
 }
@@ -110,6 +152,7 @@ export async function deliver(
   server: Pick<ServerRow, 'id' | 'name'>,
   event: WebhookEvent | 'test',
   data: Record<string, unknown>,
+  opts: PostOptions = {},
 ): Promise<void> {
   const text = describe(event, data);
   const ts = new Date().toISOString();
@@ -130,7 +173,7 @@ export async function deliver(
           ],
         })
       : JSON.stringify({ event, message: text, server: { id: server.id, name: server.name }, data, timestamp: ts });
-  await post(w, body);
+  await post(w, body, opts);
 }
 
 async function targetsFor(server: ServerRow, event: WebhookEvent): Promise<WebhookRow[]> {
