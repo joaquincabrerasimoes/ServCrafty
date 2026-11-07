@@ -10,17 +10,21 @@ import { Badge, Button, EmptyState, ErrorState, Field, IconButton, Loading, Moda
 import { useServerCtx } from './ServerLayout';
 
 export const WEBHOOK_EVENTS = [
-  'server.started',
+  'server.starting',
+  'server.running',
   'server.stopped',
   'server.crashed',
-  'player.joined',
-  'player.left',
-  'backup.completed',
+  'server.restarted',
+  'player.join',
+  'player.leave',
+  'backup.created',
   'backup.failed',
+  'schedule.failed',
+  'disk.exceeded',
 ] as const;
 
 type Draft = Omit<Webhook, 'id' | 'serverId'> & { id?: string };
-const blank: Draft = { url: '', kind: 'discord', events: ['server.started', 'server.stopped', 'server.crashed'], enabled: true };
+const blank: Draft = { url: '', kind: 'discord', events: ['server.running', 'server.stopped', 'server.crashed'], enabled: true };
 
 export default function Webhooks() {
   const t = useT();
