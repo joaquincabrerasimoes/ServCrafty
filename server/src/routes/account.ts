@@ -5,7 +5,7 @@ import { query, queryOne } from '../db/pool.js';
 import { hashPassword, PASSWORD_MIN, verifyPassword } from '../auth/passwords.js';
 import { requireUser } from '../auth/plugin.js';
 import { deleteUserSessions, generateApiToken } from '../auth/sessions.js';
-import { newTotpSecret, verifyTotp } from '../auth/totp.js';
+import { newTotpSecret, consumeTotp } from '../auth/totp.js';
 import { listPasskeys, registrationOptions, toPublicPasskey, verifyRegistration } from '../auth/webauthn.js';
 import { badRequest, conflict, forbidden, notFound, unauthorized } from '../lib/errors.js';
 import { parse } from '../lib/validation.js';
@@ -62,7 +62,7 @@ export default async function accountRoutes(app: FastifyInstance): Promise<void>
     const { user } = requireSessionAuth(req);
     if (user.totp_enabled) throw conflict('TOTP is already enabled; disable it first', 'totp_enabled');
     const s = await newTotpSecret(user.username);
-    await query('UPDATE users SET totp_secret_enc = $2 WHERE id = $1', [user.id, s.enc]);
+    await query('UPDATE users SET totp_secret_enc = $2, totp_last_step = NULL WHERE id = $1', [user.id, s.enc]);
     return { secret: s.secret, otpauthUrl: s.otpauthUrl, qrDataUrl: s.qrDataUrl };
   });
 
@@ -71,7 +71,7 @@ export default async function accountRoutes(app: FastifyInstance): Promise<void>
     const body = parse(z.object({ code: z.string().min(6).max(10) }), req.body);
     if (user.totp_enabled) throw conflict('TOTP is already enabled', 'totp_enabled');
     if (!user.totp_secret_enc) throw badRequest('Run TOTP setup first', 'totp_not_setup');
-    if (!verifyTotp(user.totp_secret_enc, body.code)) throw badRequest('Invalid code', 'invalid_code');
+    if (!(await consumeTotp(user.id, user.totp_secret_enc, body.code))) throw badRequest('Invalid code', 'invalid_code');
     await query('UPDATE users SET totp_enabled = true WHERE id = $1', [user.id]);
     await audit(req, 'account.totp_enabled', 'user', user.id);
     return { ok: true };
@@ -81,7 +81,7 @@ export default async function accountRoutes(app: FastifyInstance): Promise<void>
     const { user } = requireSessionAuth(req);
     const body = parse(z.object({ password: z.string().min(1) }), req.body);
     if (!(await verifyPassword(user.password_hash, body.password))) throw unauthorized('Password is incorrect', 'invalid_password');
-    await query('UPDATE users SET totp_enabled = false, totp_secret_enc = NULL WHERE id = $1', [user.id]);
+    await query('UPDATE users SET totp_enabled = false, totp_secret_enc = NULL, totp_last_step = NULL WHERE id = $1', [user.id]);
     await audit(req, 'account.totp_disabled', 'user', user.id);
     return { ok: true };
   });

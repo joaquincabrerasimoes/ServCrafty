@@ -5,7 +5,7 @@ import { queryOne } from '../db/pool.js';
 import { dummyHash, verifyPassword } from '../auth/passwords.js';
 import { requireUser } from '../auth/plugin.js';
 import { clearSessionCookie, completeMfa, createSession, deleteSession, type SessionRow } from '../auth/sessions.js';
-import { verifyTotp } from '../auth/totp.js';
+import { consumeTotp } from '../auth/totp.js';
 import { authenticationOptions, verifyAuthentication } from '../auth/webauthn.js';
 import { unauthorized } from '../lib/errors.js';
 import { RateLimiter } from '../lib/rateLimit.js';
@@ -59,7 +59,7 @@ export default async function authRoutes(app: FastifyInstance): Promise<void> {
     const { user, session } = requirePending(req);
     mfaLimiter.hit(session.id);
     const body = parse(z.object({ code: z.string().min(6).max(10) }), req.body);
-    if (!user.totp_enabled || !verifyTotp(user.totp_secret_enc, body.code)) {
+    if (!user.totp_enabled || !(await consumeTotp(user.id, user.totp_secret_enc, body.code))) {
       await audit(req, 'auth.mfa_failed', 'user', user.id, { method: 'totp' }, user.id);
       throw unauthorized('Invalid code', 'invalid_code');
     }

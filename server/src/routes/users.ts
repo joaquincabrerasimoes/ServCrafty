@@ -116,7 +116,7 @@ export default async function userRoutes(app: FastifyInstance): Promise<void> {
       await query('UPDATE users SET password_hash = $2 WHERE id = $1', [id, await hashPassword(body.password)]);
     }
     if (body.resetMfa) {
-      await query('UPDATE users SET totp_enabled = false, totp_secret_enc = NULL WHERE id = $1', [id]);
+      await query('UPDATE users SET totp_enabled = false, totp_secret_enc = NULL, totp_last_step = NULL WHERE id = $1', [id]);
       await query('DELETE FROM passkeys WHERE user_id = $1', [id]);
     }
     if (body.password || body.disabled || body.resetMfa) {
