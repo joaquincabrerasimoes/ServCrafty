@@ -35,7 +35,9 @@ RCON_PUBLISH_LOCAL=1                          # container IPs aren't routable fr
 
 ### Extra env vars (beyond the spec)
 
-`HOST` (0.0.0.0), `LOG_LEVEL` (info), `TRUST_PROXY` (1 behind a reverse proxy), `WEB_DIST`, `RCON_PUBLISH_LOCAL`.
+`HOST` (0.0.0.0), `LOG_LEVEL` (info), `TRUST_PROXY` (1 behind a reverse proxy), `WEB_DIST`, `RCON_PUBLISH_LOCAL`, `ALLOW_PRIVATE_WEBHOOKS`.
+
+`ALLOW_PRIVATE_WEBHOOKS=1` lets webhooks target loopback, private (RFC 1918), link-local and other non-public addresses. By default these are rejected when a webhook is saved and again at delivery (SSRF protection); redirects are never followed. Turn it on only if you notify services on your own LAN.
 
 ## Layout
 
@@ -68,6 +70,7 @@ migrations/001_init.sql
 - **Commands.** Java servers take commands over RCON (its own client in `services/rcon.ts`). Bedrock servers go through itzg's `send-command` via `docker exec`.
 - **Player actions on a stopped server** edit `ops.json`, `whitelist.json` and `banned-players.json` directly. UUIDs come from Mojang, or are the offline UUID when `online-mode=false`.
 - **Modrinth required dependencies** are installed automatically with a mod.
+- **TOTP replay.** The last accepted 30 s time step is stored per user (`users.totp_last_step`); a code at or before it is rejected, so a code cannot be used twice.
 - **Export.** `serverpack` leaves out `logs`, `libraries`, `versions` and similar caches. It also leaves out the world unless `?includeWorld=true` is passed. The pack carries a `servcrafty.json` so it can be imported again. Mods that Modrinth or CurseForge don't recognise go into `overrides/mods`. Warnings come back in the `X-ServCrafty-Warnings` header.
 
 ### Endpoints added beyond the spec

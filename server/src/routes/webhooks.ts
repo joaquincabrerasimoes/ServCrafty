@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { query, queryOne } from '../db/pool.js';
 import { requireUser } from '../auth/plugin.js';
 import { errorMessage, notFound, upstream } from '../lib/errors.js';
+import { assertPublicUrl } from '../lib/ssrf.js';
 import { idParam, parse } from '../lib/validation.js';
 import { loadServerFor } from '../services/access.js';
 import { audit } from '../services/audit.js';
@@ -58,7 +59,9 @@ export default async function webhookRoutes(app: FastifyInstance): Promise<void>
 
   app.post('/webhooks', async (req, reply) => {
     const user = requireUser(req);
-    const row = await insert(user, null, parse(createSchema, req.body));
+    const body = parse(createSchema, req.body);
+    await assertPublicUrl(body.url);
+    const row = await insert(user, null, body);
     await audit(req, 'webhook.created', 'webhook', row.id, { global: true });
     reply.code(201);
     return toPublicWebhook(row);
@@ -74,7 +77,9 @@ export default async function webhookRoutes(app: FastifyInstance): Promise<void>
   app.post<{ Params: { id: string } }>('/servers/:id/webhooks', async (req, reply) => {
     const user = requireUser(req);
     const { server } = await loadServerFor(user, req.params.id, 'manager');
-    const row = await insert(user, server.id, parse(createSchema, req.body));
+    const body = parse(createSchema, req.body);
+    await assertPublicUrl(body.url);
+    const row = await insert(user, server.id, body);
     await audit(req, 'webhook.created', 'webhook', row.id, { serverId: server.id });
     reply.code(201);
     return toPublicWebhook(row);
@@ -97,6 +102,7 @@ export default async function webhookRoutes(app: FastifyInstance): Promise<void>
         .partial(),
       req.body,
     );
+    if (body.url) await assertPublicUrl(body.url);
     const row = await queryOne<WebhookRow>(
       `UPDATE webhooks SET name=$2, url=$3, kind=$4, events=$5, enabled=$6, secret=$7 WHERE id=$1 RETURNING *`,
       [

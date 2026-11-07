@@ -2,7 +2,8 @@ import type { FastifyBaseLogger } from 'fastify';
 import { USER_AGENT } from '../config.js';
 import { query, queryOne } from '../db/pool.js';
 import { hmacSha256 } from '../lib/crypto.js';
-import { errorMessage } from '../lib/errors.js';
+import { AppError, errorMessage } from '../lib/errors.js';
+import { assertPublicUrl } from '../lib/ssrf.js';
 import { bus, type WebhookEvent } from './events.js';
 import { getPublicUrl } from './settings.js';
 import type { ServerRow } from './types.js';
@@ -84,7 +85,9 @@ async function post(w: WebhookRow, body: string): Promise<void> {
   let lastErr: unknown;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const res = await fetch(w.url, { method: 'POST', headers, body, signal: AbortSignal.timeout(10_000) });
+      // Re-check at delivery time (DNS may have changed since the webhook was saved) and never follow redirects.
+      await assertPublicUrl(w.url);
+      const res = await fetch(w.url, { method: 'POST', headers, body, redirect: 'manual', signal: AbortSignal.timeout(10_000) });
       if (res.ok) return;
       if (res.status === 429) {
         const retry = Number(res.headers.get('retry-after') ?? '2');
@@ -94,6 +97,7 @@ async function post(w: WebhookRow, body: string): Promise<void> {
       lastErr = new Error(`HTTP ${res.status}`);
       if (res.status < 500) break;
     } catch (err) {
+      if (err instanceof AppError) throw err; // blocked target: no point retrying
       lastErr = err;
     }
     await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
