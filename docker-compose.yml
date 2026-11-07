@@ -1,0 +1,23 @@
+services:
+  servcrafty:
+    image: servcrafty:latest
+    build: .
+    privileged: true            # required for the bundled Docker daemon (DinD)
+    restart: unless-stopped
+    ports:
+      - "8080:8080"             # web UI
+      - "25565-25600:25565-25600"   # game port pool (match PORT_POOL in admin settings)
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      SECRET_KEY: ${SECRET_KEY}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8080}
+      CURSEFORGE_API_KEY: ${CURSEFORGE_API_KEY:-}
+    volumes:
+      - servcrafty-data:/data
+      - servcrafty-docker:/var/lib/docker
+volumes:
+  servcrafty-data:
+  servcrafty-docker:
