@@ -212,10 +212,12 @@ export async function toggleMod(server: ServerRow, file: string, enabled: boolea
   const { abs } = contentDir(server);
   const base = file.replace(/\.disabled$/i, '');
   const target = enabled ? base : `${base}.disabled`;
-  if (target === file) return file;
-  await fsp.rename(path.join(abs, file), path.join(abs, target)).catch(() => {
-    throw notFound('Mod not found', 'mod_not_found');
-  });
+  const exists = (f: string) => fsp.access(path.join(abs, f)).then(() => true, () => false);
+  // Accept either spelling of the file name: find which one is actually on disk.
+  const current = (await exists(file)) ? file : (await exists(base)) ? base : (await exists(`${base}.disabled`)) ? `${base}.disabled` : null;
+  if (!current) throw notFound('Mod not found', 'mod_not_found');
+  if (current === target) return target;
+  await fsp.rename(path.join(abs, current), path.join(abs, target));
   return target;
 }
 
