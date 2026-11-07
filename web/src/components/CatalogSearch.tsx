@@ -17,10 +17,24 @@ function useDebounced<T>(value: T, ms = 350) {
   return v;
 }
 
-export function SourceTabs({ value, onChange }: { value: CatalogSource; onChange: (s: CatalogSource) => void }) {
+const SOURCE_LABELS: Record<CatalogSource, string> = { modrinth: 'Modrinth', curseforge: 'CurseForge', hangar: 'Hangar' };
+
+/** Hangar only hosts Paper plugins, so it is offered for plugin browsing only. */
+export const sourcesFor = (kind: SearchParams['kind']): CatalogSource[] =>
+  kind === 'plugin' ? ['hangar', 'modrinth', 'curseforge'] : ['modrinth', 'curseforge'];
+
+export function SourceTabs({
+  value,
+  onChange,
+  sources = ['modrinth', 'curseforge'],
+}: {
+  value: CatalogSource;
+  onChange: (s: CatalogSource) => void;
+  sources?: CatalogSource[];
+}) {
   return (
     <div className="inline-flex rounded-block border border-line bg-surface p-0.5" role="tablist">
-      {(['modrinth', 'curseforge'] as const).map((s) => (
+      {sources.map((s) => (
         <button
           key={s}
           role="tab"
@@ -29,7 +43,7 @@ export function SourceTabs({ value, onChange }: { value: CatalogSource; onChange
           onClick={() => onChange(s)}
           className={clsx('h-8 rounded-[2px] px-3 text-sm', value === s ? 'bg-raised font-medium text-ink' : 'text-muted hover:text-ink')}
         >
-          {s === 'modrinth' ? 'Modrinth' : 'CurseForge'}
+          {SOURCE_LABELS[s]}
         </button>
       ))}
     </div>
@@ -58,9 +72,10 @@ interface Props {
   initialSource?: CatalogSource;
 }
 
-export function CatalogSearch({ kind, mcVersion, loader, selectedId, onSelect, renderAction, initialSource = 'modrinth' }: Props) {
+export function CatalogSearch({ kind, mcVersion, loader, selectedId, onSelect, renderAction, initialSource }: Props) {
   const t = useT();
-  const [source, setSource] = useState<CatalogSource>(initialSource);
+  const sources = sourcesFor(kind);
+  const [source, setSource] = useState<CatalogSource>(initialSource && sources.includes(initialSource) ? initialSource : sources[0]!);
   const [q, setQ] = useState('');
   const dq = useDebounced(q);
 
@@ -79,7 +94,7 @@ export function CatalogSearch({ kind, mcVersion, loader, selectedId, onSelect, r
   return (
     <div className="space-y-3">
       <div className="flex flex-col gap-2 sm:flex-row">
-        <SourceTabs value={source} onChange={setSource} />
+        <SourceTabs value={source} onChange={setSource} sources={sources} />
         <label className="relative flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
           <input className="input pl-9" placeholder={t('catalog.searchPlaceholder')} value={q} onChange={(e) => setQ(e.target.value)} />

@@ -39,8 +39,10 @@ export default function Mods() {
   const install = async (p: { source: CatalogProject['source']; id: string; name?: string }, fileId?: string, replace?: string) => {
     setInstalling(p.id + (fileId ?? ''));
     try {
-      await serversApi.installMod(server.id, p.source, p.id, fileId, replace);
-      toast.success(t('mods.installed', { name: p.name ?? p.id }));
+      const r = await serversApi.installMod(server.id, p.source, p.id, fileId, replace);
+      const extra = Math.max(0, (r?.installed?.length ?? 1) - 1);
+      toast.success(t('mods.installed', { name: p.name ?? p.id }) + (extra ? ' ' + t('mods.withDeps', { n: extra }) : ''));
+      if (r?.skipped?.length) toast.info(t('mods.skippedDeps', { list: r.skipped.map((x) => x.reason).join('; ') }));
       refresh();
     } catch (e) {
       toast.error(e);

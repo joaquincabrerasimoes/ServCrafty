@@ -140,7 +140,12 @@ export const serversApi = {
             },
     ),
   installMod: (id: string, source: CatalogSource, projectId: string, fileId?: string, replace?: string) =>
-    api.post<void>(`${s(id)}/mods/install`, { source, projectId, fileId, replace }),
+    api.post<{ installed?: { file: string }[]; skipped?: { projectId: string; reason: string }[] } | void>(`${s(id)}/mods/install`, {
+      source,
+      projectId,
+      fileId,
+      replace,
+    }),
   deleteMod: (id: string, file: string) => api.del<void>(`${s(id)}/mods/${encodeURIComponent(file)}`),
   modUpdates: async (id: string) =>
     asList<RawUpdate>(await api.get(`${s(id)}/mods/updates`), 'updates').map(

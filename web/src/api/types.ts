@@ -84,7 +84,7 @@ export type ServerType = (typeof SERVER_TYPES)[number];
 export type ServerStatus = 'running' | 'stopped' | 'starting' | 'stopping' | 'crashed' | 'installing';
 export type Access = 'owner' | 'admin' | 'viewer' | 'operator' | 'manager';
 export type ShareLevel = 'viewer' | 'operator' | 'manager';
-export type CatalogSource = 'curseforge' | 'modrinth';
+export type CatalogSource = 'curseforge' | 'modrinth' | 'hangar';
 
 export interface ModpackRef {
   source: CatalogSource;

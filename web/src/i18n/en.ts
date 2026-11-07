@@ -281,6 +281,8 @@ export const en = {
   'mods.filtered': 'Showing results for {version} {loader}',
   'mods.install': 'Install',
   'mods.installed': '{name} installed. Restart to load it.',
+  'mods.withDeps': '(+{n} required dependencies)',
+  'mods.skippedDeps': 'Some dependencies were not installed: {list}',
   'mods.none': 'Nothing installed yet.',
   'mods.removeTitle': 'Remove {name}?',
   'mods.checkUpdates': 'Check for updates',

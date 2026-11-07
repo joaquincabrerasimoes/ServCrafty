@@ -268,6 +268,8 @@ export const es: Record<keyof typeof en, string> = {
   'mods.filtered': 'Resultados para {version} {loader}',
   'mods.install': 'Instalar',
   'mods.installed': '{name} instalado. Reinicia para cargarlo.',
+  'mods.withDeps': '(+{n} dependencias requeridas)',
+  'mods.skippedDeps': 'Algunas dependencias no se instalaron: {list}',
   'mods.none': 'Todavía no hay nada instalado.',
   'mods.removeTitle': '¿Quitar {name}?',
   'mods.checkUpdates': 'Buscar actualizaciones',
