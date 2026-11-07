@@ -22,6 +22,7 @@ export const modpackSchema = z
     versionId: z.string().optional(),
     slug: z.string().optional(),
     name: z.string().optional(),
+    versionName: z.string().optional(),
     localFile: z.string().optional(),
     loader: z.string().optional(),
   })

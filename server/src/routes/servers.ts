@@ -46,6 +46,7 @@ async function enrichModpack(type: string, mp: ModpackRef | null | undefined): P
       out.name ??= mod.name;
       if (mp.fileId && !out.loader) {
         const f = await cf.getFile(mod.id, String(mp.fileId));
+        out.versionName ??= f.displayName;
         out.loader = f.gameVersions.map((g) => g.toLowerCase()).find((g) => ['forge', 'neoforge', 'fabric', 'quilt'].includes(g));
       }
     } else if (type === 'MODRINTH' && mp.source === 'modrinth') {
@@ -57,6 +58,7 @@ async function enrichModpack(type: string, mp: ModpackRef | null | undefined): P
         out.versionId = versionId;
         const v = await mr.getVersion(versionId);
         out.loader ??= v.loaders[0];
+        out.versionName ??= v.version_number;
       }
     }
   } catch (err) {

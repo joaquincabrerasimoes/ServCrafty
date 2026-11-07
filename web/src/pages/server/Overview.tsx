@@ -114,6 +114,9 @@ function StatsPanel({ stats, history }: { stats: Stats | null; history: Sample[]
         <StatLine label={t('overview.uptime')} value={formatUptime(stats?.uptimeSec)} />
         {stats?.diskMb != null && <StatLine label={t('overview.disk')} value={`${formatNumber(stats.diskMb)} MB`} />}
         {stats?.version && <StatLine label={t('overview.version')} value={stats.version} />}
+        {stats?.packVersion && (
+          <StatLine label={t('overview.packVersion')} value={stats.packName ? `${stats.packName} ${stats.packVersion}` : stats.packVersion} />
+        )}
         <StatLine label={t('overview.source')} value={stats?.source ?? '–'} title={t('overview.sourceHint')} />
       </div>
     </section>

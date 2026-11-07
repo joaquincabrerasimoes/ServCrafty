@@ -70,6 +70,8 @@ export interface ModpackRef {
   versionId?: string;
   slug?: string;
   name?: string;
+  /** Human-readable pack version (e.g. "3.2.18"), when known. */
+  versionName?: string;
   /** For imported packs stored inside the server dir (relative path). */
   localFile?: string;
   /** Mod loader of the pack, when known ("fabric", "forge", "neoforge", "quilt"). */
@@ -150,7 +152,11 @@ export interface Stats {
   mspt: { avg: number | null; p95: number | null };
   players: { online: number; max: number; list: { name: string }[] };
   motd: string | null;
+  /** Minecraft version (never a mod or pack version). */
   version: string | null;
+  /** Modpack name / version label, for modpack servers. */
+  packName?: string | null;
+  packVersion?: string | null;
   source: 'agent' | 'rcon' | 'docker';
   diskMb: number;
   agent?: null;

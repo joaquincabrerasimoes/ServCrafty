@@ -195,6 +195,7 @@ export const es: Record<keyof typeof en, string> = {
   'overview.uptime': 'Tiempo activo',
   'overview.disk': 'Disco usado',
   'overview.version': 'Versión',
+  'overview.packVersion': 'Modpack',
   'overview.source': 'Origen de datos',
   'overview.sourceHint': 'De dónde salen estos números: agente, RCON o Docker',
   'overview.players': 'Jugadores',

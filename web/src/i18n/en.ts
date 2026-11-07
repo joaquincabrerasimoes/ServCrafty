@@ -203,6 +203,7 @@ export const en = {
   'overview.uptime': 'Uptime',
   'overview.disk': 'Disk used',
   'overview.version': 'Version',
+  'overview.packVersion': 'Modpack',
   'overview.source': 'Data source',
   'overview.sourceHint': 'Where these numbers come from: agent, RCON or Docker',
   'overview.players': 'Players',

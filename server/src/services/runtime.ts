@@ -5,6 +5,7 @@ import type { FastifyBaseLogger } from 'fastify';
 import { query, queryOne } from '../db/pool.js';
 import { badRequest, conflict, errorMessage, notFound, unavailable } from '../lib/errors.js';
 import { dirSize } from '../lib/fsutil.js';
+import { detectMcVersion } from '../lib/mcVersion.js';
 import { parseProperties } from '../lib/properties.js';
 import {
   containerName,
@@ -164,7 +165,6 @@ const RE_JOIN = /: (\.?[A-Za-z0-9_]{1,16}) joined the game/;
 const RE_LEFT = /: (\.?[A-Za-z0-9_]{1,16}) left the game/;
 const RE_BEDROCK_JOIN = /Player connected: ([^,]+),/;
 const RE_BEDROCK_LEFT = /Player disconnected: ([^,]+),/;
-const RE_VERSION = /Starting minecraft server version (\S+)|Version:? (\d+\.\d+\.\d+(?:\.\d+)?)/i;
 
 function analyzeLine(s: RuntimeState, line: string): void {
   if (s.status === 'starting' && /^\[(init|mc-image-helper)\]/.test(line)) void setStatus(s.id, 'installing');
@@ -176,8 +176,7 @@ function analyzeLine(s: RuntimeState, line: string): void {
     s.expectedStop = true;
     void setStatus(s.id, 'stopping');
   }
-  const v = RE_VERSION.exec(line);
-  if (v && !s.version) s.version = v[1] ?? v[2] ?? null;
+  if (!s.version) s.version = detectMcVersion(line);
   const j = RE_JOIN.exec(line) ?? RE_BEDROCK_JOIN.exec(line);
   if (j?.[1]) {
     s.players.add(j[1].trim());
@@ -474,7 +473,9 @@ export async function getStats(server: ServerRow): Promise<Stats> {
       list: running ? [...s.players].map((name) => ({ name })) : [],
     },
     motd: s.motd,
-    version: s.version ?? server.mc_version,
+    version: s.version ?? (server.mc_version === 'LATEST' ? null : server.mc_version),
+    packName: server.modpack?.name ?? null,
+    packVersion: server.modpack?.versionName ?? null,
     source: rconOk ? 'rcon' : 'docker',
     diskMb: s.diskMb,
     agent: null,

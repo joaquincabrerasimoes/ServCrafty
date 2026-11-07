@@ -92,6 +92,7 @@ export interface ModpackRef {
   fileId?: string;
   versionId?: string;
   name?: string;
+  versionName?: string;
 }
 
 export interface Server {
@@ -140,7 +141,10 @@ export interface Stats {
   mspt: { avg: number | null; p95: number | null };
   players: { online: number; max: number; list: Array<{ name: string }> };
   motd?: string;
-  version?: string;
+  /** Minecraft version. */
+  version?: string | null;
+  packName?: string | null;
+  packVersion?: string | null;
   source: 'agent' | 'rcon' | 'docker';
   diskMb?: number;
 }
