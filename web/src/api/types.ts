@@ -16,6 +16,7 @@ export interface User {
   maxRamMb?: number | null;
   maxCpu?: number | null;
   maxDiskMb?: number | null;
+  usage?: { servers: number; ram_mb: number; cpu: number; disk_mb: number };
   totpEnabled?: boolean;
   createdAt?: string;
 }

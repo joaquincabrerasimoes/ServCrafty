@@ -102,6 +102,21 @@ export const api = {
   upload: <T>(path: string, form: FormData, query?: Query) => request<T>('POST', path, { body: form, query }),
 };
 
+const num = (v: unknown) => (v === null || v === undefined || v === '' ? null : Number(v));
+
+/** The API nests quotas under `quotas`; the UI uses flat max* fields. Also coerces numeric strings. */
+export function normalizeUser<T extends object>(u: T): T {
+  const r = u as Record<string, unknown>;
+  const q = (r.quotas ?? r) as Record<string, unknown>;
+  return {
+    ...r,
+    maxServers: num(q.maxServers),
+    maxRamMb: num(q.maxRamMb),
+    maxCpu: num(q.maxCpu),
+    maxDiskMb: num(q.maxDiskMb),
+  } as T;
+}
+
 /** Accepts either a bare array or a wrapper object ({items}, {data}, ...). */
 export function asList<T>(x: unknown, ...keys: string[]): T[] {
   if (Array.isArray(x)) return x as T[];

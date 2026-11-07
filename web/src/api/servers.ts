@@ -19,6 +19,27 @@ import type {
   Webhook,
 } from './types';
 
+/** The API keeps the schedule payload as an object ({command, keep, ...}); the UI edits just the command text. */
+type RawSchedule = Omit<Schedule, 'payload'> & { payload?: { command?: string } | null };
+const fromRawSchedule = (r: RawSchedule): Schedule => ({ ...r, payload: r.payload?.command ?? null });
+function toRawSchedule<T extends Partial<Schedule>>(b: T) {
+  const { payload, ...rest } = b;
+  const out: Record<string, unknown> = { ...rest };
+  if (payload !== undefined) out.payload = payload ? { command: payload } : {};
+  return out;
+}
+
+type RawMod = {
+  file: string;
+  enabled?: boolean;
+  size?: number;
+  meta?: { name?: string; source?: CatalogSource; projectId?: string; versionNumber?: string } | null;
+};
+type RawUpdate = Omit<ModUpdate, 'latestVersion' | 'fileId' | 'currentVersion'> & {
+  currentVersion?: string | null;
+  latest?: { id: string; versionNumber: string };
+};
+
 const s = (id: string) => `/servers/${encodeURIComponent(id)}`;
 
 export type ExportFormat = 'curseforge' | 'modrinth' | 'serverpack';
@@ -83,10 +104,11 @@ export const serversApi = {
   deleteBackup: (id: string, bid: string) => api.del<void>(`${s(id)}/backups/${bid}`),
 
   // Schedules
-  schedules: async (id: string) => asList<Schedule>(await api.get(`${s(id)}/schedules`), 'schedules'),
-  createSchedule: (id: string, body: Omit<Schedule, 'id' | 'lastRunAt' | 'serverId'>) =>
-    api.post<Schedule>(`${s(id)}/schedules`, body),
-  updateSchedule: (sid: string, body: Partial<Schedule>) => api.patch<Schedule>(`/schedules/${sid}`, body),
+  schedules: async (id: string) => asList<RawSchedule>(await api.get(`${s(id)}/schedules`), 'schedules').map(fromRawSchedule),
+  createSchedule: async (id: string, body: Omit<Schedule, 'id' | 'lastRunAt' | 'serverId'>) =>
+    fromRawSchedule(await api.post<RawSchedule>(`${s(id)}/schedules`, toRawSchedule(body))),
+  updateSchedule: async (sid: string, body: Partial<Schedule>) =>
+    fromRawSchedule(await api.patch<RawSchedule>(`/schedules/${sid}`, toRawSchedule(body))),
   deleteSchedule: (sid: string) => api.del<void>(`/schedules/${sid}`),
 
   // Webhooks
@@ -103,11 +125,35 @@ export const serversApi = {
 
   // Mods
   mods: async (id: string) =>
-    asList<InstalledMod | string>(await api.get(`${s(id)}/mods`), 'mods').map((m) => (typeof m === 'string' ? { file: m } : m)),
-  installMod: (id: string, source: CatalogSource, projectId: string, fileId?: string) =>
-    api.post<void>(`${s(id)}/mods/install`, { source, projectId, fileId }),
+    asList<RawMod | string>(await api.get(`${s(id)}/mods`), 'mods').map(
+      (m): InstalledMod =>
+        typeof m === 'string'
+          ? { file: m }
+          : {
+              file: m.file,
+              enabled: m.enabled,
+              size: m.size,
+              name: m.meta?.name,
+              source: m.meta?.source,
+              projectId: m.meta?.projectId,
+              version: m.meta?.versionNumber,
+            },
+    ),
+  installMod: (id: string, source: CatalogSource, projectId: string, fileId?: string, replace?: string) =>
+    api.post<void>(`${s(id)}/mods/install`, { source, projectId, fileId, replace }),
   deleteMod: (id: string, file: string) => api.del<void>(`${s(id)}/mods/${encodeURIComponent(file)}`),
-  modUpdates: async (id: string) => asList<ModUpdate>(await api.get(`${s(id)}/mods/updates`), 'updates'),
+  modUpdates: async (id: string) =>
+    asList<RawUpdate>(await api.get(`${s(id)}/mods/updates`), 'updates').map(
+      (u): ModUpdate => ({
+        file: u.file,
+        name: u.name,
+        source: u.source,
+        projectId: u.projectId,
+        currentVersion: u.currentVersion ?? undefined,
+        latestVersion: u.latest?.versionNumber,
+        fileId: u.latest?.id,
+      }),
+    ),
 
   // Clone / templates / export / import
   clone: (id: string, name: string) => api.post<Server>(`${s(id)}/clone`, { name }),
@@ -118,7 +164,7 @@ export const serversApi = {
     const fd = new FormData();
     for (const [k, v] of Object.entries(fields)) fd.append(k, v);
     fd.append('file', file, file.name);
-    return api.upload<Server>('/servers/import', fd);
+    return api.upload<{ server: Server }>('/servers/import', fd).then((r) => r.server);
   },
 };
 

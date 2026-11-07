@@ -36,10 +36,10 @@ export default function Mods() {
     void qc.invalidateQueries({ queryKey: ['servers', server.id, 'mod-updates'] });
   };
 
-  const install = async (p: { source: CatalogProject['source']; id: string; name?: string }, fileId?: string) => {
+  const install = async (p: { source: CatalogProject['source']; id: string; name?: string }, fileId?: string, replace?: string) => {
     setInstalling(p.id + (fileId ?? ''));
     try {
-      await serversApi.installMod(server.id, p.source, p.id, fileId);
+      await serversApi.installMod(server.id, p.source, p.id, fileId, replace);
       toast.success(t('mods.installed', { name: p.name ?? p.id }));
       refresh();
     } catch (e) {
@@ -85,7 +85,7 @@ export default function Mods() {
                       </span>
                     </span>
                     {u.source && u.projectId && (
-                      <Button size="sm" variant="primary" loading={installing === u.projectId + (u.fileId ?? '')} onClick={() => void install({ source: u.source!, id: u.projectId!, name: u.name }, u.fileId)} icon={<ArrowUpCircle className="h-4 w-4" />}>
+                      <Button size="sm" variant="primary" loading={installing === u.projectId + (u.fileId ?? '')} onClick={() => void install({ source: u.source!, id: u.projectId!, name: u.name }, u.fileId, u.file)} icon={<ArrowUpCircle className="h-4 w-4" />}>
                         {t('mods.update')}
                       </Button>
                     )}

@@ -1,4 +1,4 @@
-import { api, asList } from './client';
+import { api, asList, normalizeUser } from './client';
 import type { AdminSettings, AuditEntry, PortEntry, Quotas, Role, SystemInfo, User } from './types';
 
 export interface CreateUserBody {
@@ -18,9 +18,9 @@ export interface UpdateUserBody {
 }
 
 export const usersApi = {
-  list: async () => asList<User>(await api.get('/users'), 'users'),
-  create: (body: CreateUserBody) => api.post<User>('/users', body),
-  update: (id: string, body: UpdateUserBody) => api.patch<User>(`/users/${id}`, body),
+  list: async () => asList<User>(await api.get('/users'), 'users').map(normalizeUser),
+  create: async (body: CreateUserBody) => normalizeUser(await api.post<User>('/users', body)),
+  update: async (id: string, body: UpdateUserBody) => normalizeUser(await api.patch<User>(`/users/${id}`, body)),
   remove: (id: string) => api.del<void>(`/users/${id}`),
   lookup: async (q: string) => asList<{ id: string; username: string }>(await api.get('/users/lookup', { q }), 'users'),
 };

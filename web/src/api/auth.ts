@@ -1,4 +1,4 @@
-import { api, asList } from './client';
+import { api, asList, normalizeUser } from './client';
 import type {
   ApiToken,
   LoginResponse,
@@ -20,17 +20,32 @@ function unwrapOptions<T>(x: unknown): T {
 }
 
 export const authApi = {
-  login: (username: string, password: string) => api.post<LoginResponse>('/auth/login', { username, password }),
-  totp: (code: string) => api.post<OkUser>('/auth/mfa/totp', { code }),
+  login: async (username: string, password: string) => {
+    const r = await api.post<LoginResponse>('/auth/login', { username, password });
+    return r.status === 'ok' ? { ...r, user: normalizeUser(r.user) } : r;
+  },
+  totp: async (code: string) => {
+    const r = await api.post<OkUser>('/auth/mfa/totp', { code });
+    return { ...r, user: normalizeUser(r.user) };
+  },
   passkeyOptions: async () => unwrapOptions<Record<string, unknown>>(await api.post('/auth/mfa/passkey/options')),
-  passkeyVerify: (response: unknown) => api.post<OkUser>('/auth/mfa/passkey/verify', { response }),
+  passkeyVerify: async (response: unknown) => {
+    const r = await api.post<OkUser>('/auth/mfa/passkey/verify', { response });
+    return { ...r, user: normalizeUser(r.user) };
+  },
   logout: () => api.post<void>('/auth/logout'),
-  me: () => api.get<MeResponse>('/auth/me'),
+  me: async () => {
+    const r = await api.get<MeResponse>('/auth/me');
+    return { ...r, user: normalizeUser(r.user) };
+  },
 };
 
 export const accountApi = {
   changePassword: (current: string, next: string) => api.post<void>('/account/password', { current, new: next }),
-  update: (body: { email?: string | null; locale?: Locale; theme?: ThemePref }) => api.patch<User | void>('/account', body),
+  update: async (body: { email?: string | null; locale?: Locale; theme?: ThemePref }) => {
+    const r = await api.patch<{ user: User }>('/account', body);
+    return r?.user ? normalizeUser(r.user) : undefined;
+  },
   quota: () => api.get<QuotaResponse>('/account/quota'),
 
   totpSetup: () => api.post<TotpSetup>('/account/totp/setup'),
@@ -38,7 +53,10 @@ export const accountApi = {
   totpDisable: (password: string) => api.post<void>('/account/totp/disable', { password }),
 
   passkeyOptions: async () => unwrapOptions<Record<string, unknown>>(await api.post('/account/passkeys/options')),
-  passkeyVerify: (response: unknown, name: string) => api.post<Passkey>('/account/passkeys/verify', { response, name }),
+  passkeyVerify: async (response: unknown, name: string) => {
+    const r = await api.post<{ passkey: Passkey }>('/account/passkeys/verify', { response, name });
+    return r.passkey;
+  },
   passkeys: async () => asList<Passkey>(await api.get('/account/passkeys'), 'passkeys'),
   deletePasskey: (id: string) => api.del<void>(`/account/passkeys/${encodeURIComponent(id)}`),
 
