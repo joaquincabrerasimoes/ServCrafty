@@ -192,9 +192,8 @@ class LiveSocket {
 
   /** Sends a console command; returns false if the socket isn't open. */
   command(serverId: string, command: string): boolean {
-    const ok = this.send({ type: 'command', serverId, command });
-    if (ok) queueLine(serverId, { id: ++lineSeq, text: `> ${command}`, kind: 'echo' });
-    return ok;
+    // The server echoes "> command" and its output into the log stream itself.
+    return this.send({ type: 'command', serverId, command });
   }
 
   /** Allows REST fallbacks to echo into the same log. */
