@@ -8,6 +8,7 @@ Fastify + TypeScript (ESM) backend. The contract is `../SPEC.md`; this file cove
 cd server
 npm install --workspaces=false     # or `npm install` at the repo root (workspaces)
 npm run typecheck                  # tsc --noEmit
+npm test                           # node:test unit tests (mocked upstream APIs)
 npm run dev                        # tsx watch, loads ../.env if present
 npm run build && npm start         # production (dist/index.js)
 npm run migrate                    # apply migrations only
@@ -69,7 +70,10 @@ migrations/001_init.sql
 - **Disk limit** (`diskMb`) is soft. It is checked by file writes and uploads (HTTP 507) and by the stats poller, which raises the `disk.exceeded` webhook. Docker does not enforce it.
 - **Commands.** Java servers take commands over RCON (its own client in `services/rcon.ts`). Bedrock servers go through itzg's `send-command` via `docker exec`.
 - **Player actions on a stopped server** edit `ops.json`, `whitelist.json` and `banned-players.json` directly. UUIDs come from Mojang, or are the offline UUID when `online-mode=false`.
-- **Modrinth required dependencies** are installed automatically with a mod.
+- **Required dependencies** are installed automatically with a mod or plugin (Modrinth `required`, CurseForge `relationType 3`, Hangar required plugin dependencies). A dependency that cannot be fetched is listed in the `skipped` field of the install response instead of failing the install.
+- **Hangar** (`source=hangar`) is a plugin-only source for Paper, Purpur and Folia servers (`/catalog/*` and `/servers/:id/mods/install`). Projects are identified by slug and versions by version name; downloads are verified with the sha256 Hangar publishes.
+- **Webhook test** makes one 5 s attempt and reports the network cause (refused, unresolved, timed out, TLS). Real deliveries still retry 3 times.
+- **Stats `version`** is the Minecraft version; `packName`/`packVersion` describe the modpack.
 - **TOTP replay.** The last accepted 30 s time step is stored per user (`users.totp_last_step`); a code at or before it is rejected, so a code cannot be used twice.
 - **Export.** `serverpack` leaves out `logs`, `libraries`, `versions` and similar caches. It also leaves out the world unless `?includeWorld=true` is passed. The pack carries a `servcrafty.json` so it can be imported again. Mods that Modrinth or CurseForge don't recognise go into `overrides/mods`. Warnings come back in the `X-ServCrafty-Warnings` header.
 
