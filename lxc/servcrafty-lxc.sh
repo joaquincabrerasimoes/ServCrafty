@@ -31,7 +31,10 @@ CLONE_URL="${REPO_URL/https:\/\//https://$GITHUB_TOKEN@}"
 echo ">> Downloading Debian 12 template"
 pveam update >/dev/null
 TEMPLATE=$(pveam available --section system | awk '/debian-12-standard/{print $2}' | sort -V | tail -1)
-pveam list "$TEMPLATE_STORAGE" | grep -q "$TEMPLATE" || pveam download "$TEMPLATE_STORAGE" "$TEMPLATE"
+[[ -n "$TEMPLATE" ]] || { echo "No debian-12-standard template found in 'pveam available'"; exit 1; }
+# (no `grep -q` in a pipeline: under pipefail an early-exit grep can make the pipeline fail)
+TEMPLATES_PRESENT=$(pveam list "$TEMPLATE_STORAGE")
+grep -qF "$TEMPLATE" <<<"$TEMPLATES_PRESENT" || pveam download "$TEMPLATE_STORAGE" "$TEMPLATE"
 
 echo ">> Creating CT $CTID"
 pct create "$CTID" "$TEMPLATE_STORAGE:vztmpl/$TEMPLATE" \
@@ -39,11 +42,33 @@ pct create "$CTID" "$TEMPLATE_STORAGE:vztmpl/$TEMPLATE" \
   --rootfs "$STORAGE:$DISK" --net0 "name=eth0,bridge=$BRIDGE,ip=$IPCFG" \
   --unprivileged 0 --features nesting=1,keyctl=1 --onboot 1 --ostype debian
 pct start "$CTID"
-sleep 8
+echo ">> Waiting for the CT network"
+for _ in $(seq 60); do
+  pct exec "$CTID" -- getent hosts deb.debian.org >/dev/null 2>&1 && break
+  sleep 2
+done
 
-pct exec "$CTID" -- bash -s <<EOF
+# User-supplied values travel base64-encoded so that $, `, quotes, backslashes or
+# newlines in a password / URL are never interpreted by either shell.
+b64() { printf '%s' "$1" | base64 -w0; }
+
+# --- in-container install: a generated header (values) + a quoted, literal body ---
+{
+  cat <<HEADER
+DATABASE_URL_B64=$(b64 "$DATABASE_URL")
+ADMIN_USERNAME_B64=$(b64 "$ADMIN_USERNAME")
+ADMIN_PASSWORD_B64=$(b64 "$ADMIN_PASSWORD")
+PUBLIC_URL_B64=$(b64 "$PUBLIC_URL")
+CLONE_URL_B64=$(b64 "$CLONE_URL")
+HEADER
+  cat <<'INSTALL'
 set -Eeuo pipefail
 export DEBIAN_FRONTEND=noninteractive
+dec() { printf '%s' "$1" | base64 -d; }
+# systemd EnvironmentFile syntax: KEY="value" with \ and \" escaped
+envline() { printf '%s="%s"\n' "$1" "$(dec "$2" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')"; }
+CLONE_URL=$(dec "$CLONE_URL_B64")
+
 apt-get update && apt-get install -y curl ca-certificates git gnupg tar iptables
 curl -fsSL https://get.docker.com | sh
 curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
@@ -51,22 +76,21 @@ apt-get install -y nodejs
 git clone "$CLONE_URL" /opt/servcrafty && git -C /opt/servcrafty remote set-url origin "$CLONE_URL"
 cd /opt/servcrafty && npm install --workspaces --include-workspace-root && npm run build --workspace web && npm run build --workspace server
 mkdir -p /data /etc/servcrafty
-SECRET=\$(head -c 48 /dev/urandom | base64 | tr -d '\n=+/')
-cat > /etc/servcrafty/env <<ENV
-DATABASE_URL=$DATABASE_URL
-SECRET_KEY=\$SECRET
-ADMIN_USERNAME=$ADMIN_USERNAME
-ADMIN_PASSWORD=$ADMIN_PASSWORD
-PUBLIC_URL=$PUBLIC_URL
-TRUST_PROXY=1
-DATA_DIR=/data
-PORT=8080
-NODE_ENV=production
-ENV
+SECRET=$(head -c 48 /dev/urandom | base64 | tr -d '\n=+/')
+umask 077
+{
+  envline DATABASE_URL "$DATABASE_URL_B64"
+  printf 'SECRET_KEY="%s"\n' "$SECRET"
+  envline ADMIN_USERNAME "$ADMIN_USERNAME_B64"
+  envline ADMIN_PASSWORD "$ADMIN_PASSWORD_B64"
+  envline PUBLIC_URL "$PUBLIC_URL_B64"
+  printf '%s\n' 'TRUST_PROXY=1' 'DATA_DIR=/data' 'PORT=8080' 'NODE_ENV=production'
+} > /etc/servcrafty/env
 chmod 600 /etc/servcrafty/env
-cat > /etc/systemd/system/servcrafty.service <<UNIT
+cat > /etc/systemd/system/servcrafty.service <<'UNIT'
 [Unit]
 Description=ServCrafty
+Wants=network-online.target
 After=docker.service network-online.target
 Requires=docker.service
 [Service]
@@ -79,7 +103,8 @@ Restart=always
 WantedBy=multi-user.target
 UNIT
 systemctl daemon-reload && systemctl enable --now docker servcrafty
-EOF
+INSTALL
+} | pct exec "$CTID" -- bash -s
 
 IP=$(pct exec "$CTID" -- hostname -I | awk '{print $1}')
 echo "== ServCrafty ready: http://$IP:8080 (CT $CTID). Update later with: pct exec $CTID -- bash /opt/servcrafty/lxc/update.sh"
