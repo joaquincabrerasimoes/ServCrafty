@@ -61,6 +61,8 @@ interface RuntimeState {
 }
 
 const states = new Map<string, RuntimeState>();
+/** Containers ServCrafty replaced or removed itself; their `die` events are not crashes. */
+const retiredContainers = new Set<string>();
 let log: FastifyBaseLogger | Console = console;
 
 function state(id: string): RuntimeState {
@@ -533,6 +535,9 @@ export function start(serverId: string): Promise<void> {
     s.version = null;
     await setStatus(serverId, 'starting');
     try {
+      // The previous container (if still alive) is force-removed when the new one is created. Its
+      // `die` event (exit 137) must not be mistaken for a crash that triggers an auto-restart.
+      if (server.container_id) retiredContainers.add(server.container_id);
       const container = await createServerContainer(server, await getCurseforgeKey(), (l) => systemLog(serverId, l));
       await query('UPDATE servers SET container_id = $2 WHERE id = $1', [serverId, container.id]);
       await container.start();
@@ -630,6 +635,7 @@ export async function destroy(server: ServerRow): Promise<void> {
 
 async function onContainerDie(serverId: string, containerId: string | undefined, exitCode: number, oom: boolean): Promise<void> {
   const s = state(serverId);
+  if (containerId && retiredContainers.delete(containerId)) return;
   const server = await queryOne<ServerRow>('SELECT * FROM servers WHERE id = $1', [serverId]);
   if (!server) return;
   // Ignore late events from a previous container (the server was recreated since).
@@ -646,7 +652,13 @@ async function onContainerDie(serverId: string, containerId: string | undefined,
     if (await setStatus(serverId, 'stopped')) bus.emit('notify', serverId, 'server.stopped', { exitCode });
     return;
   }
-  systemLog(serverId, `[servcrafty] server exited unexpectedly (code ${exitCode}${oom ? ', out of memory' : ''})`);
+  const phase = s.status === 'installing' || s.status === 'starting' ? s.status : 'running';
+  systemLog(
+    serverId,
+    `[servcrafty] server exited unexpectedly (code ${exitCode}${oom ? ', out of memory - raise the memory limit' : ''}${phase !== 'running' ? `, during ${phase}` : ''})`,
+  );
+  const lastLines = s.logs.slice(-15);
+  log.warn({ serverId, exitCode, oom, phase, lastLines }, 'server container exited unexpectedly');
   await setStatus(serverId, 'crashed');
   bus.emit('notify', serverId, 'server.crashed', { exitCode, oom });
   if (!server.auto_restart) return;

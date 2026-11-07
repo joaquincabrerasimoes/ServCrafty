@@ -139,9 +139,13 @@ export async function buildEnv(server: ServerRow, cfKey: string | undefined): Pr
   return Object.entries(env).map(([k, v]) => `${k}=${v}`);
 }
 
-/** Docker memory limit = JVM heap + overhead for metaspace, threads and native memory. */
+/**
+ * Docker memory limit = JVM heap + overhead for metaspace, code cache, threads and native memory.
+ * Measured on Paper 1.21.4 (Java 25): a fully touched 2 GB heap needs ~2.4 GB resident, so a flat
+ * 384 MB / 20 % left only ~15 MB of headroom and risked an OOM kill during first-boot world generation.
+ */
 export function containerMemoryBytes(memoryMb: number): number {
-  const overhead = Math.max(384, Math.round(memoryMb * 0.2));
+  const overhead = Math.max(512, Math.round(memoryMb * 0.25));
   return (memoryMb + overhead) * 1024 * 1024;
 }
 

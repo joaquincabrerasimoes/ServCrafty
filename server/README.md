@@ -64,7 +64,7 @@ migrations/001_init.sql
   - With `autoRestart`, a crashed server restarts with backoff (5 s × the crash count), at most 3 times in 10 minutes.
   - The panel's own shutdown leaves game containers running.
 - **Image.** `itzg/minecraft-server`. The tag follows the MC version: `java8` up to 1.16, `java17` up to 1.20.4, `latest` after that. Override it with the server env key `SERVCRAFTY_IMAGE_TAG`. Bedrock uses `itzg/minecraft-bedrock-server`.
-- **Memory.** `memoryMb` is the JVM heap (`MEMORY`). The container limit adds max(384 MB, 20 %) of overhead. Quotas count `memoryMb`.
+- **Memory.** `memoryMb` is the JVM heap (`MEMORY`). The container limit adds max(512 MB, 25 %) of overhead (a fully used 2 GB Paper heap measured ~2.4 GB resident). Quotas count `memoryMb`.
 - **`cpuPercent`** in stats is a percentage of the server's allotted cores: 100 means every allotted core is busy.
 - **Disk limit** (`diskMb`) is soft. It is checked by file writes and uploads (HTTP 507) and by the stats poller, which raises the `disk.exceeded` webhook. Docker does not enforce it.
 - **Commands.** Java servers take commands over RCON (its own client in `services/rcon.ts`). Bedrock servers go through itzg's `send-command` via `docker exec`.
