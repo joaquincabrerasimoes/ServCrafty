@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # ServCrafty – Proxmox VE LXC installer (run on the Proxmox HOST as root)
-#   bash -c "$(curl -fsSL https://raw.githubusercontent.com/<you>/ServCrafty/main/lxc/servcrafty-lxc.sh)"
+#   bash -c "$(curl -fsSL https://raw.githubusercontent.com/joaquincabrerasimoes/ServCrafty/main/lxc/servcrafty-lxc.sh)"
 # Creates a privileged, nesting-enabled Debian 12 CT, installs Docker + Node + ServCrafty (systemd).
 set -Eeuo pipefail
 
-REPO_URL="${REPO_URL:-https://github.com/<you>/ServCrafty.git}"
+REPO_URL="${REPO_URL:-https://github.com/joaquincabrerasimoes/ServCrafty.git}"
 CTID="${CTID:-$(pvesh get /cluster/nextid)}"
 HOSTNAME="${HOSTNAME_CT:-servcrafty}"
 CORES="${CORES:-4}"
