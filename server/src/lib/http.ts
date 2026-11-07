@@ -61,7 +61,7 @@ export class TtlCache<V> {
 export async function downloadFile(
   url: string,
   dest: string,
-  verify?: { algo: 'sha1' | 'sha512'; hex: string },
+  verify?: { algo: 'sha1' | 'sha256' | 'sha512'; hex: string },
   headers: Record<string, string> = {},
 ): Promise<number> {
   const res = await fetch(url, {

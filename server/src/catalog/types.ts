@@ -1,4 +1,4 @@
-export type CatalogSource = 'curseforge' | 'modrinth';
+export type CatalogSource = 'curseforge' | 'modrinth' | 'hangar';
 export type CatalogKind = 'modpack' | 'mod' | 'plugin';
 
 export interface CatalogHit {
@@ -34,7 +34,7 @@ export interface CatalogFile {
   fileName: string;
   url: string | null;
   size: number;
-  hashes: { sha1?: string; sha512?: string };
+  hashes: { sha1?: string; sha256?: string; sha512?: string };
   primary: boolean;
 }
 

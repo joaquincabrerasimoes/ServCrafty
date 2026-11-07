@@ -1,6 +1,16 @@
 import { AppError } from '../lib/errors.js';
 import { fetchJson, TtlCache } from '../lib/http.js';
 import { getCurseforgeKey } from '../services/settings.js';
+
+/** Indirection so tests can run without a database-backed API key. */
+export const keySource = { get: getCurseforgeKey };
+
+export const REQUIRED_DEPENDENCY = 3;
+
+/** Mod ids a file declares as required (relationType 3). */
+export function requiredDependencies(f: Pick<CfFile, 'dependencies'>): string[] {
+  return [...new Set((f.dependencies ?? []).filter((d) => d.relationType === REQUIRED_DEPENDENCY).map((d) => String(d.modId)))];
+}
 import type { CatalogHit, CatalogKind, CatalogProject, CatalogSearchResult, CatalogVersion } from './types.js';
 
 const API = 'https://api.curseforge.com/v1';
@@ -24,6 +34,8 @@ export interface CfFile {
   gameVersions: string[];
   serverPackFileId?: number | null;
   fileFingerprint?: number;
+  /** relationType: 1 embedded library, 2 optional, 3 required, 4 tool, 5 incompatible, 6 include. */
+  dependencies?: { modId: number; relationType: number }[];
 }
 
 export interface CfMod {
@@ -43,7 +55,7 @@ export interface CfMod {
 }
 
 async function headers(): Promise<Record<string, string>> {
-  const key = await getCurseforgeKey();
+  const key = await keySource.get();
   if (!key) throw new AppError(503, 'curseforge_key_missing', 'CurseForge API key is not configured (Admin > Settings)');
   return { 'x-api-key': key };
 }

@@ -25,7 +25,7 @@ export default async function modRoutes(app: FastifyInstance): Promise<void> {
     const { server } = await loadServerFor(user, req.params.id, 'manager');
     const body = parse(
       z.object({
-        source: z.enum(['curseforge', 'modrinth']),
+        source: z.enum(['curseforge', 'modrinth', 'hangar']),
         projectId: z.union([z.string().min(1), z.number()]).transform(String),
         fileId: z.union([z.string().min(1), z.number()]).transform(String).optional(),
         replace: z.string().max(255).optional(),

@@ -1,6 +1,7 @@
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import * as cf from '../catalog/curseforge.js';
+import * as hg from '../catalog/hangar.js';
 import * as mr from '../catalog/modrinth.js';
 import { badRequest, notFound } from '../lib/errors.js';
 import { curseforgeFingerprint, hashFile, readJson, writeJsonAtomic } from '../lib/fsutil.js';
@@ -9,8 +10,10 @@ import { assertFileName } from '../lib/safePath.js';
 import { serverDir } from './docker.js';
 import { contentDirFor, modrinthLoaderFor, type ServerRow } from './types.js';
 
+export type ModSource = 'curseforge' | 'modrinth' | 'hangar';
+
 export interface ModMeta {
-  source: 'curseforge' | 'modrinth';
+  source: ModSource;
   projectId: string;
   versionId: string;
   name: string;
@@ -74,7 +77,7 @@ export async function listMods(server: ServerRow): Promise<{ kind: 'mods' | 'plu
 }
 
 interface ResolvedFile {
-  source: 'curseforge' | 'modrinth';
+  source: ModSource;
   projectId: string;
   versionId: string;
   name: string;
@@ -82,6 +85,7 @@ interface ResolvedFile {
   fileName: string;
   url: string;
   sha1?: string;
+  sha256?: string;
   dependencies: string[];
 }
 
@@ -134,25 +138,60 @@ async function resolveCurseforge(server: ServerRow, projectId: string, fileId?: 
     fileName: f.fileName,
     url: cf.requireDownloadUrl(f),
     sha1: f.hashes.find((h) => h.algo === 1)?.value,
-    dependencies: [],
+    dependencies: cf.requiredDependencies(f),
+  };
+}
+
+async function resolveHangar(server: ServerRow, projectId: string, version?: string, detected?: string | null): Promise<ResolvedFile> {
+  const { mcVersion } = compatTarget(server, detected);
+  const project = await hg.getHgProject(projectId);
+  const slug = project.namespace.slug;
+  let v: hg.HgVersion;
+  if (version) v = await hg.getHgVersion(slug, version);
+  else {
+    const versions = await hg.getHgVersions(slug, mcVersion ?? undefined);
+    const rank = (x: hg.HgVersion) => hg.toCatalogVersion(x, slug).releaseType;
+    const pick = versions.find((x) => rank(x) === 'release') ?? versions[0];
+    if (!pick) throw notFound(`No compatible version found${mcVersion ? ` for ${mcVersion}` : ''}`, 'no_compatible_version');
+    v = pick;
+  }
+  const dl = hg.requireDownload(v, project.name);
+  // Only dependencies hosted on Hangar can be installed; they are referenced by numeric project id.
+  const deps: string[] = [];
+  for (const d of v.pluginDependencies?.[hg.HANGAR_PLATFORM] ?? []) {
+    if (!d.required || d.projectId == null || d.externalUrl) continue;
+    const dep = await hg.getHgProject(String(d.projectId)).catch(() => null);
+    if (dep) deps.push(dep.namespace.slug);
+  }
+  return {
+    source: 'hangar',
+    projectId: slug,
+    versionId: v.name,
+    name: project.name,
+    versionNumber: v.name,
+    fileName: dl.fileName,
+    url: dl.url,
+    sha256: dl.sha256,
+    dependencies: deps,
   };
 }
 
 /**
- * Download a mod/plugin into the server's mods/plugins directory. Required Modrinth
- * dependencies are installed too (unless already present). `replace` removes an old
+ * Download a mod/plugin into the server's mods/plugins directory. Required dependencies
+ * (Modrinth, CurseForge relationType 3, Hangar) are installed too (unless already present). `replace` removes an old
  * file after a successful install (used for updates).
  */
 export async function installMod(
   server: ServerRow,
-  input: { source: 'curseforge' | 'modrinth'; projectId: string; fileId?: string; replace?: string },
+  input: { source: ModSource; projectId: string; fileId?: string; replace?: string },
   detectedVersion?: string | null,
-): Promise<{ installed: InstalledMod[] }> {
+): Promise<{ installed: InstalledMod[]; skipped: { projectId: string; reason: string }[] }> {
   const { abs } = contentDir(server);
   await fsp.mkdir(abs, { recursive: true });
   const meta = await readMeta(server);
   const installedProjects = new Set(Object.values(meta).map((m) => `${m.source}:${m.projectId}`));
   const results: InstalledMod[] = [];
+  const skipped: { projectId: string; reason: string }[] = [];
   const queue: { projectId: string; fileId?: string; root: boolean }[] = [
     { projectId: input.projectId, fileId: input.fileId, root: true },
   ];
@@ -162,13 +201,24 @@ export async function installMod(
     if (seen.has(item.projectId)) continue;
     seen.add(item.projectId);
     if (!item.root && installedProjects.has(`${input.source}:${item.projectId}`)) continue;
-    const r =
-      input.source === 'modrinth'
-        ? await resolveModrinth(server, item.projectId, item.fileId, detectedVersion)
-        : await resolveCurseforge(server, item.projectId, item.fileId, detectedVersion);
-    assertFileName(r.fileName);
+    let r: ResolvedFile;
+    try {
+      r =
+        input.source === 'modrinth'
+          ? await resolveModrinth(server, item.projectId, item.fileId, detectedVersion)
+          : input.source === 'hangar'
+            ? await resolveHangar(server, item.projectId, item.fileId, detectedVersion)
+            : await resolveCurseforge(server, item.projectId, item.fileId, detectedVersion);
+      assertFileName(r.fileName);
+      const verify = r.sha256 ? { algo: 'sha256' as const, hex: r.sha256 } : r.sha1 ? { algo: 'sha1' as const, hex: r.sha1 } : undefined;
+      await downloadFile(r.url, path.join(abs, r.fileName), verify);
+    } catch (err) {
+      if (item.root) throw err;
+      // A dependency that cannot be fetched (no compatible file, author-restricted download) must not undo the main install.
+      skipped.push({ projectId: item.projectId, reason: (err as Error).message });
+      continue;
+    }
     const dest = path.join(abs, r.fileName);
-    await downloadFile(r.url, dest, r.sha1 ? { algo: 'sha1', hex: r.sha1 } : undefined);
     meta[r.fileName] = {
       source: r.source,
       projectId: r.projectId,
@@ -187,7 +237,7 @@ export async function installMod(
     for (const dep of r.dependencies) queue.push({ projectId: dep, root: false });
   }
   await writeMeta(server, meta);
-  return { installed: results };
+  return { installed: results, skipped };
 }
 
 export async function deleteMod(server: ServerRow, file: string): Promise<void> {
@@ -223,7 +273,7 @@ export async function toggleMod(server: ServerRow, file: string, enabled: boolea
 
 export interface ModUpdate {
   file: string;
-  source: 'curseforge' | 'modrinth';
+  source: ModSource;
   projectId: string;
   name: string;
   currentVersion: string | null;
@@ -267,6 +317,29 @@ export async function checkUpdates(server: ServerRow, detectedVersion?: string |
     }
   } catch (err) {
     errors.push(`modrinth: ${(err as Error).message}`);
+  }
+
+  // Hangar: tracked installs only (Hangar has no hash lookup).
+  for (const m of mods) {
+    if (m.meta?.source !== 'hangar') continue;
+    handled.add(m.file);
+    try {
+      const versions = await hg.getHgVersions(m.meta.projectId, mcVersion ?? undefined);
+      const newest = versions.find((v) => hg.toCatalogVersion(v, m.meta!.projectId).releaseType === 'release') ?? versions[0];
+      if (newest && newest.name !== m.meta.versionId && Date.parse(newest.createdAt) > Date.parse(m.meta.installedAt)) {
+        const dl = newest.downloads?.[hg.HANGAR_PLATFORM]?.fileInfo;
+        updates.push({
+          file: m.file,
+          source: 'hangar',
+          projectId: m.meta.projectId,
+          name: m.meta.name,
+          currentVersion: m.meta.versionNumber,
+          latest: { id: newest.name, versionNumber: newest.name, fileName: dl?.name ?? '' },
+        });
+      }
+    } catch (err) {
+      errors.push(`hangar: ${(err as Error).message}`);
+    }
   }
 
   // CurseForge: tracked installs + fingerprint matches for the rest.
