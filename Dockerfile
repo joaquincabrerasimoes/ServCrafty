@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 # ---- build web + server ----
-FROM node:22-bookworm-slim AS build
+FROM node:22-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json* ./
 COPY server/package.json server/
@@ -12,7 +12,8 @@ RUN npm prune --omit=dev --workspaces --include-workspace-root || true
 
 # ---- runtime: Node + bundled dockerd (DinD) ----
 FROM docker:27-dind AS runtime
-RUN apk add --no-cache nodejs npm tini bash curl tar iptables
+COPY --from=build /usr/local/bin/node /usr/local/bin/node
+RUN apk add --no-cache libstdc++ tini bash curl tar iptables
 WORKDIR /app
 COPY --from=build /app/package.json ./
 COPY --from=build /app/node_modules ./node_modules

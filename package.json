@@ -1,0 +1,15 @@
+{
+  "name": "servcrafty",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace web && npm run build --workspace server",
+    "dev:server": "npm run dev --workspace server",
+    "dev:web": "npm run dev --workspace web",
+    "start": "npm run start --workspace server"
+  }
+}
