@@ -14,6 +14,7 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-}
       PUBLIC_URL: ${PUBLIC_URL:-https://servcrafty.joaquincabrerasimoes.com}
+      TRUST_PROXY: ${TRUST_PROXY:-1}   # HTTPS is terminated by Cloudflare / reverse proxy
       CURSEFORGE_API_KEY: ${CURSEFORGE_API_KEY:-}
     volumes:
       - servcrafty-data:/data
