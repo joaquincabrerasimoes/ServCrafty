@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # ServCrafty – Proxmox VE LXC installer (run on the Proxmox HOST as root)
-#   (private repo) copy this script to the Proxmox host and run:  GITHUB_TOKEN=ghp_xxx bash servcrafty-lxc.sh
+#   bash -c "$(curl -fsSL https://raw.githubusercontent.com/joaquincabrerasimoes/ServCrafty/main/lxc/servcrafty-lxc.sh)"
+# (If you fork this repo and make it private, export GITHUB_TOKEN=... first.)
 # Creates a privileged, nesting-enabled Debian 12 CT, installs Docker + Node + ServCrafty (systemd).
 set -Eeuo pipefail
 
@@ -23,10 +24,10 @@ read -rp "Admin username [admin]: " ADMIN_USERNAME; ADMIN_USERNAME=${ADMIN_USERN
 read -rsp "Admin password: " ADMIN_PASSWORD; echo
 read -rp "Public URL [https://servcrafty.joaquincabrerasimoes.com]: " PUBLIC_URL || true
 PUBLIC_URL=${PUBLIC_URL:-https://servcrafty.joaquincabrerasimoes.com}
-# The repository is private: a GitHub token with read access is required.
+# The repository is public; GITHUB_TOKEN is only needed for a private fork.
 GITHUB_TOKEN="${GITHUB_TOKEN:-}"
-[[ -n "$GITHUB_TOKEN" ]] || read -rsp "GitHub token (repo read access): " GITHUB_TOKEN; echo
-CLONE_URL="${REPO_URL/https:\/\//https://$GITHUB_TOKEN@}"
+
+CLONE_URL="$REPO_URL"; [[ -z "$GITHUB_TOKEN" ]] || CLONE_URL="${REPO_URL/https:\/\//https://$GITHUB_TOKEN@}"
 
 echo ">> Downloading Debian 12 template"
 pveam update >/dev/null
