@@ -51,6 +51,9 @@ export async function minecraftVersions(type: ServerType, includeSnapshots = fal
   return cache.get(`${type}:${includeSnapshots}`, async () => {
     switch (type) {
       case 'VANILLA':
+      // Spigot and CraftBukkit are built for release versions of Minecraft.
+      case 'SPIGOT':
+      case 'BUKKIT':
       case 'CURSEFORGE':
       case 'MODRINTH':
         return vanilla(includeSnapshots);

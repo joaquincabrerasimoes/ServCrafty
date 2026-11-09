@@ -87,6 +87,8 @@ export const SERVER_TYPES = [
   'PAPER',
   'PURPUR',
   'FOLIA',
+  'SPIGOT',
+  'BUKKIT',
   'FABRIC',
   'QUILT',
   'FORGE',

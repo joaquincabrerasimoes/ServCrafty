@@ -19,7 +19,7 @@ import { mcDefaults, summarizeMc, toMinecraftConfig, validateMc, type Edition, t
 
 const GROUPS: Array<{ id: string; types: ServerType[] }> = [
   { id: 'vanilla', types: ['VANILLA'] },
-  { id: 'plugins', types: ['PAPER', 'PURPUR', 'FOLIA'] },
+  { id: 'plugins', types: ['PAPER', 'PURPUR', 'FOLIA', 'SPIGOT', 'BUKKIT'] },
   { id: 'mods', types: ['FABRIC', 'QUILT', 'FORGE', 'NEOFORGE'] },
   { id: 'modpacks', types: ['MODRINTH', 'CURSEFORGE'] },
   { id: 'bedrock', types: ['BEDROCK'] },

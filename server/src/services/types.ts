@@ -177,6 +177,8 @@ export function contentDirFor(type: ServerType): 'plugins' | 'mods' | null {
     case 'PAPER':
     case 'PURPUR':
     case 'FOLIA':
+    case 'SPIGOT':
+    case 'BUKKIT':
       return 'plugins';
     case 'FABRIC':
     case 'QUILT':
@@ -199,6 +201,10 @@ export function modrinthLoaderFor(type: ServerType): string | null {
       return 'purpur';
     case 'FOLIA':
       return 'folia';
+    case 'SPIGOT':
+      return 'spigot';
+    case 'BUKKIT':
+      return 'bukkit';
     case 'FABRIC':
       return 'fabric';
     case 'QUILT':

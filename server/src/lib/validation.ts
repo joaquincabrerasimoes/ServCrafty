@@ -24,6 +24,8 @@ export const serverTypes = [
   'PAPER',
   'PURPUR',
   'FOLIA',
+  'SPIGOT',
+  'BUKKIT',
   'FABRIC',
   'QUILT',
   'FORGE',

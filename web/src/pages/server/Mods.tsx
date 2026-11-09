@@ -11,7 +11,7 @@ import { Button, EmptyState, ErrorState, IconButton, Loading, Section } from '@/
 import { CatalogSearch } from '@/components/CatalogSearch';
 import { useServerCtx } from './ServerLayout';
 
-const PLUGIN_TYPES: ServerType[] = ['PAPER', 'PURPUR', 'FOLIA'];
+const PLUGIN_TYPES: ServerType[] = ['PAPER', 'PURPUR', 'FOLIA', 'SPIGOT', 'BUKKIT'];
 const MOD_TYPES: ServerType[] = ['FABRIC', 'QUILT', 'FORGE', 'NEOFORGE', 'CURSEFORGE', 'MODRINTH'];
 
 export default function Mods() {
