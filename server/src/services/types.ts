@@ -98,6 +98,8 @@ export interface ServerRow {
   container_id: string | null;
   status: ServerStatus;
   auto_restart: boolean;
+  /** Announce this (Java) server on the LAN while it runs. */
+  lan_announce: boolean;
   rcon_password: string;
   created_at: Date;
 }
@@ -120,6 +122,7 @@ export interface PublicServer {
   minecraft: MinecraftConfig | null;
   status: ServerStatus;
   autoRestart: boolean;
+  lanAnnounce: boolean;
   createdAt: string;
   access: Access;
 }
@@ -143,6 +146,7 @@ export function toPublicServer(s: ServerRow, access: Access, ownerName: string |
     minecraft: s.minecraft ?? null,
     status: s.status,
     autoRestart: s.auto_restart,
+    lanAnnounce: s.lan_announce,
     createdAt: s.created_at.toISOString(),
     access,
   };

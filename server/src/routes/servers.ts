@@ -102,7 +102,10 @@ export default async function serverRoutes(app: FastifyInstance): Promise<void> 
     if (patch.modpack) patch.modpack = (await enrichModpack(patch.type ?? server.type, patch.modpack)) ?? null;
     const updated = await updateServer(user, server, patch);
     const restartRequired = runtime.isRunning(server.id) && RESTART_FIELDS.some((f) => patch[f] !== undefined);
-    await audit(req, 'server.updated', 'server', server.id, { fields: Object.keys(patch) });
+    await audit(req, 'server.updated', 'server', server.id, {
+      fields: Object.keys(patch),
+      ...(patch.lanAnnounce !== undefined ? { lanAnnounce: patch.lanAnnounce } : {}),
+    });
     const owner = await getUser(updated.owner_id).catch(() => null);
     return { ...toPublicServer(updated, access, owner?.username ?? null), status: runtime.getStatus(server.id), restartRequired };
   });

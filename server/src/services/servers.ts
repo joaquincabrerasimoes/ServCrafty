@@ -10,6 +10,7 @@ import { minecraftConfigSchema, normalizeMinecraftConfig } from '../lib/minecraf
 import { parsePortPool } from '../lib/ports.js';
 import { serverTypeSchema } from '../lib/validation.js';
 import { serverDir } from './docker.js';
+import { refreshLanAnnouncer } from './lanAnnouncer.js';
 import * as runtime from './runtime.js';
 import { getPortPoolSpec } from './settings.js';
 import type { ModpackRef, ServerRow, UserRow } from './types.js';
@@ -43,6 +44,8 @@ export const serverConfigSchema = z.object({
   diskMb: z.number().int().min(256).nullable().optional(),
   env: envSchema.optional(),
   autoRestart: z.boolean().optional(),
+  /** Announce on the LAN (Minecraft Java only). */
+  lanAnnounce: z.boolean().optional(),
   /** Initial Minecraft configuration, applied on the server's first start. */
   minecraft: minecraftConfigSchema.nullable().optional(),
 });
@@ -69,6 +72,7 @@ export const updateServerSchema = z
     port: z.number().int().min(1).max(65535),
     env: envSchema,
     autoRestart: z.boolean(),
+    lanAnnounce: z.boolean(),
     type: serverTypeSchema,
   })
   .partial();
@@ -111,14 +115,18 @@ export async function createServer(
   if ((input.type === 'CURSEFORGE' || input.type === 'MODRINTH') && !input.modpack) {
     throw badRequest('A modpack is required for this server type', 'modpack_required');
   }
+  const lanAnnounce = input.lanAnnounce ?? false;
+  if (lanAnnounce && input.type === 'BEDROCK') {
+    throw badRequest('LAN discovery is only available for Minecraft Java servers', 'lan_announce_unsupported');
+  }
   const minecraft = input.minecraft ? normalizeMinecraftConfig(input.type, input.minecraft) : null;
   const server = await tx(async (client) => {
     await assertQuota(owner, { memoryMb: input.memoryMb, cpu: input.cpu, diskMb: input.diskMb ?? null }, undefined, client);
     const port = await pickPort(client, input.port);
     const r = await client.query<ServerRow>(
       `INSERT INTO servers (owner_id, name, type, mc_version, loader_version, modpack, java_args, memory_mb, cpu,
-                            disk_mb, port, env, auto_restart, rcon_password, minecraft)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
+                            disk_mb, port, env, auto_restart, rcon_password, minecraft, lan_announce)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *`,
       [
         owner.id,
         input.name,
@@ -135,6 +143,7 @@ export async function createServer(
         input.autoRestart ?? true,
         randomPassword(),
         minecraft && Object.keys(minecraft).length ? JSON.stringify(minecraft) : null,
+        lanAnnounce,
       ],
     );
     return r.rows[0]!;
@@ -149,11 +158,12 @@ export async function createServer(
     await fsp.rm(dir, { recursive: true, force: true }).catch(() => undefined);
     throw err;
   }
+  refreshLanAnnouncer();
   return server;
 }
 
 export async function updateServer(actor: UserRow, server: ServerRow, patch: UpdateServerInput): Promise<ServerRow> {
-  return tx(async (client) => {
+  const updated = await tx(async (client) => {
     const owner = await getUser(server.owner_id);
     const memoryMb = patch.memoryMb ?? server.memory_mb;
     const cpu = patch.cpu ?? server.cpu;
@@ -168,9 +178,13 @@ export async function updateServer(actor: UserRow, server: ServerRow, patch: Upd
     if ((type === 'CURSEFORGE' || type === 'MODRINTH') && !modpack) {
       throw badRequest('A modpack is required for this server type', 'modpack_required');
     }
+    if (patch.lanAnnounce && type === 'BEDROCK') {
+      throw badRequest('LAN discovery is only available for Minecraft Java servers', 'lan_announce_unsupported');
+    }
+    const lanAnnounce = type === 'BEDROCK' ? false : (patch.lanAnnounce ?? server.lan_announce);
     const r = await client.query<ServerRow>(
       `UPDATE servers SET name=$2, type=$3, mc_version=$4, loader_version=$5, modpack=$6, java_args=$7, memory_mb=$8,
-         cpu=$9, disk_mb=$10, port=$11, env=$12, auto_restart=$13 WHERE id=$1 RETURNING *`,
+         cpu=$9, disk_mb=$10, port=$11, env=$12, auto_restart=$13, lan_announce=$14 WHERE id=$1 RETURNING *`,
       [
         server.id,
         patch.name ?? server.name,
@@ -185,10 +199,13 @@ export async function updateServer(actor: UserRow, server: ServerRow, patch: Upd
         port,
         JSON.stringify(patch.env ?? server.env ?? {}),
         patch.autoRestart ?? server.auto_restart,
+        lanAnnounce,
       ],
     );
     return r.rows[0]!;
   });
+  refreshLanAnnouncer();
+  return updated;
 }
 
 export async function deleteServer(server: ServerRow): Promise<void> {
@@ -196,6 +213,7 @@ export async function deleteServer(server: ServerRow): Promise<void> {
   await query('DELETE FROM servers WHERE id = $1', [server.id]);
   await fsp.rm(serverDir(server.id), { recursive: true, force: true }).catch(() => undefined);
   await fsp.rm(path.join(config().backupsDir, server.id), { recursive: true, force: true }).catch(() => undefined);
+  refreshLanAnnouncer();
 }
 
 export function configOf(server: ServerRow): ServerConfig {
@@ -210,6 +228,7 @@ export function configOf(server: ServerRow): ServerConfig {
     diskMb: server.disk_mb,
     env: server.env ?? {},
     autoRestart: server.auto_restart,
+    lanAnnounce: server.lan_announce,
     minecraft: server.minecraft ?? null,
   };
 }

@@ -43,6 +43,10 @@ const EnvSchema = z.object({
     (v) => (typeof v === 'string' ? v.trim().toLowerCase() || undefined : v),
     z.enum(['docker', 'lxc', 'source']).optional(),
   ),
+  /** "0" (or "false"/"off") disables the Minecraft Java LAN discovery announcer entirely. */
+  LAN_ANNOUNCE: z.string().optional(),
+  /** Optional comma list of local IPv4 addresses the LAN announcer is restricted to. */
+  LAN_ANNOUNCE_INTERFACES: z.string().optional(),
   /** Optional token for GitHub API calls (raises the 60 req/h anonymous limit). */
   GITHUB_TOKEN: z.string().optional(),
 });
@@ -75,6 +79,8 @@ export type AppConfig = {
   updateCheck: boolean;
   installType: 'docker' | 'lxc' | 'source' | undefined;
   githubToken: string | undefined;
+  lanAnnounce: boolean;
+  lanAnnounceInterfaces: string[];
 };
 
 function load(): AppConfig {
@@ -113,6 +119,11 @@ function load(): AppConfig {
     updateCheck: !['0', 'false', 'off', 'no'].includes((e.UPDATE_CHECK ?? '').trim().toLowerCase()),
     installType: e.INSTALL_TYPE,
     githubToken: e.GITHUB_TOKEN || undefined,
+    lanAnnounce: !['0', 'false', 'off', 'no'].includes((e.LAN_ANNOUNCE ?? '').trim().toLowerCase()),
+    lanAnnounceInterfaces: (e.LAN_ANNOUNCE_INTERFACES ?? '')
+      .split(',')
+      .map((a) => a.trim())
+      .filter((a) => /^(\d{1,3}\.){3}\d{1,3}$/.test(a)),
   };
 }
 

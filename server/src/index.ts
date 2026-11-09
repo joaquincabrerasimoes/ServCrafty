@@ -4,6 +4,7 @@ import { config } from './config.js';
 import { migrate } from './db/migrate.js';
 import { closeDb } from './db/pool.js';
 import { purgeExpiredSessions } from './auth/sessions.js';
+import { initLanAnnouncer, stopLanAnnouncer } from './services/lanAnnouncer.js';
 import { initRuntime, shutdownRuntime } from './services/runtime.js';
 import { initScheduler, stopScheduler } from './services/scheduler.js';
 import { seedSettings } from './services/settings.js';
@@ -25,6 +26,7 @@ async function main(): Promise<void> {
   initWebhooks(log);
   await initRuntime(log);
   await initScheduler(log);
+  initLanAnnouncer(log);
 
   const purge = setInterval(() => void purgeExpiredSessions().catch(() => undefined), 3600_000);
   purge.unref();
@@ -41,6 +43,7 @@ async function main(): Promise<void> {
     closing = true;
     log.info(`${signal} received, shutting down (game servers keep running)`);
     stopScheduler();
+    stopLanAnnouncer();
     await shutdownRuntime();
     await app.close().catch(() => undefined);
     await closeDb().catch(() => undefined);
