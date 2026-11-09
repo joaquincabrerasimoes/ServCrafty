@@ -252,10 +252,14 @@ export function Modal({
 }) {
   const t = useT();
   const ref = useRef<HTMLDivElement>(null);
+  // Parents usually pass a fresh onClose every render. Keep it in a ref so the effect below (which moves
+  // focus into the dialog) runs only when the dialog opens, not on every keystroke in a form field.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
   useEffect(() => {
     if (!open) return;
     const prev = document.activeElement as HTMLElement | null;
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onCloseRef.current();
     document.addEventListener('keydown', onKey);
     const first = ref.current?.querySelector<HTMLElement>('input, textarea, select, button[data-autofocus]');
     (first ?? ref.current)?.focus();
@@ -263,7 +267,7 @@ export function Modal({
       document.removeEventListener('keydown', onKey);
       prev?.focus?.();
     };
-  }, [open, onClose]);
+  }, [open]);
   if (!open) return null;
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-6">
