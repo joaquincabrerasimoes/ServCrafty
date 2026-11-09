@@ -11,6 +11,7 @@ import { formatDate, formatMb } from '@/lib/format';
 import { qk } from '@/lib/queries';
 import { Button, ErrorState, Field, PageHeader, Spinner, Toggle } from '@/components/ui';
 import { CatalogSearch, ProjectIcon } from '@/components/CatalogSearch';
+import { Combobox, type ComboOption } from '@/components/Combobox';
 import { MEMORY_API_MAX_MB, MemoryField } from './create/MemoryField';
 import { MinecraftConfigStep } from './create/MinecraftConfigStep';
 import { mcDefaults, summarizeMc, toMinecraftConfig, validateMc, type Edition, type McForm } from './create/minecraftForm';
@@ -64,6 +65,11 @@ function VersionPicker({ type, value, onChange }: { type: ServerType; value: str
     queryFn: () => catalogApi.minecraftVersions(type),
     staleTime: 10 * 60_000,
   });
+  // A version kept from another server type may not exist for this one; the <select> would show
+  // "Latest" while the old version is still what gets sent, so fall back to Latest for real.
+  useEffect(() => {
+    if (data && value !== 'LATEST' && !data.includes(value)) onChange('LATEST');
+  }, [data, value, onChange]);
   if (isLoading) return <Spinner />;
   if (error) return <ErrorState error={error} onRetry={() => void refetch()} />;
   return (
@@ -76,6 +82,40 @@ function VersionPicker({ type, value, onChange }: { type: ServerType; value: str
           </option>
         ))}
       </select>
+    </Field>
+  );
+}
+
+function LoaderPicker({ type, mcVersion, value, onChange }: { type: ServerType; mcVersion: string; value: string; onChange: (v: string) => void }) {
+  const t = useT();
+  // "Latest" Minecraft means the newest entry of the same cached list the version picker shows.
+  const mcList = useQuery({ queryKey: ['mc-versions', type], queryFn: () => catalogApi.minecraftVersions(type), staleTime: 10 * 60_000 });
+  const resolvedMc = mcVersion === 'LATEST' ? mcList.data?.[0] : mcVersion;
+  const { data, isFetching, error } = useQuery({
+    queryKey: ['loader-versions', type, resolvedMc],
+    queryFn: () => catalogApi.loaderVersions(type, resolvedMc as string),
+    enabled: !!resolvedMc,
+    staleTime: 10 * 60_000,
+  });
+  const options = useMemo<ComboOption[]>(() => {
+    const list = data ?? [];
+    return list.map((v, i) => ({
+      value: v,
+      // Forge lists [recommended, latest] (one entry when there is no recommended build or both are the same);
+      // every other loader is newest-first.
+      badge:
+        type === 'FORGE' && list.length === 2
+          ? i === 0
+            ? t('wizard.badgeRecommended')
+            : t('wizard.badgeNewest')
+          : i === 0
+            ? t('wizard.badgeNewest')
+            : undefined,
+    }));
+  }, [data, type, t]);
+  return (
+    <Field label={t('server.loaderVersion')} hint={!error && data && !data.length && !isFetching ? t('wizard.loaderNone') : t('wizard.loaderHint')}>
+      <Combobox options={options} value={value} onChange={onChange} emptyLabel={t('wizard.latest')} ariaLabel={t('server.loaderVersion')} loading={isFetching || mcList.isFetching} allowCustom />
     </Field>
   );
 }
@@ -123,6 +163,8 @@ export default function CreateServer() {
   const [type, setType] = useState<ServerType>('PAPER');
   const [mcVersion, setMcVersion] = useState('LATEST');
   const [loaderVersion, setLoaderVersion] = useState('');
+  // A loader build only fits one Minecraft version of one loader: forget it when either changes.
+  useEffect(() => setLoaderVersion(''), [type, mcVersion]);
   const [pack, setPack] = useState<CatalogProject | null>(null);
   const [packVersion, setPackVersion] = useState<CatalogVersion | null>(null);
   const [name, setName] = useState('');
@@ -289,9 +331,7 @@ export default function CreateServer() {
             <>
               <VersionPicker type={type} value={mcVersion} onChange={setMcVersion} />
               {hasLoader(type) && (
-                <Field label={t('server.loaderVersion')} hint={t('wizard.loaderHint')}>
-                  <input className="input" value={loaderVersion} onChange={(e) => setLoaderVersion(e.target.value)} placeholder={t('wizard.latest')} />
-                </Field>
+                <LoaderPicker type={type} mcVersion={mcVersion} value={loaderVersion} onChange={setLoaderVersion} />
               )}
             </>
           )}

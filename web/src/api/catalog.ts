@@ -63,4 +63,9 @@ export const catalogApi = {
       typeof v === 'string' ? v : String((v as Raw).id ?? (v as Raw).version ?? (v as Raw).name),
     );
   },
+  /** Loader builds (Fabric/Quilt/Forge/NeoForge) for one Minecraft version, newest first. */
+  loaderVersions: async (type: ServerType, mcVersion: string) => {
+    const r = await api.get<unknown>('/catalog/minecraft/loaders', { type, mcVersion });
+    return asList<unknown>(r, 'versions').map((v) => (typeof v === 'string' ? v : String((v as Raw).version ?? (v as Raw).id)));
+  },
 };
