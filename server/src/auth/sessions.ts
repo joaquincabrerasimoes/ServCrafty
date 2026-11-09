@@ -1,6 +1,5 @@
 import type {} from '@fastify/cookie';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { config } from '../config.js';
 import { query, queryOne } from '../db/pool.js';
 import { randomToken, sha256 } from '../lib/crypto.js';
 import type { UserRow } from '../services/types.js';
