@@ -152,6 +152,12 @@ Run on the **Proxmox host** as root:
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/joaquincabrerasimoes/ServCrafty/main/lxc/servcrafty-lxc.sh)"
 ```
 
+> **Proxmox version matters.** Docker 29 / runc 1.3+ cannot start containers inside an LXC on older Proxmox releases: every game server fails with
+> `open sysctl net.ipv4.ip_unprivileged_port_start file: reopen fd 8: permission denied`. This was reproduced on Proxmox VE 9.0.5 (LXC 6.0.4) and
+> fixed after upgrading the host to LXC 7.0.0 / pve-container 6.1.x (Proxmox VE 9.1 or newer), then restarting the CT with `pct stop` + `pct start`
+> (`pct reboot` is not enough). The installer warns when it detects an LXC older than 7. See the
+> [Proxmox forum thread](https://forum.proxmox.com/threads/docker-inside-lxc-net-ipv4-ip_unprivileged_port_start-error.175437/).
+
 The script asks for:
 
 1. PostgreSQL URL (`postgres://user:pass@host:5432/db`)
@@ -307,6 +313,7 @@ Dockerfile, docker-compose.yml, SPEC.md
 
 ## Known limitations
 
+- **Docker inside LXC needs a recent Proxmox** (LXC 7.x, Proxmox VE 9.1+); see the note in *Install on Proxmox*.
 - The **disk limit is soft**: it is checked on file writes and uploads and by the stats poller (which can raise a `disk.exceeded` webhook), but Docker does not enforce it.
 - **Bedrock** servers have no RCON: no TPS or tick-time graph, and the player list comes from log lines. Memory and CPU still come from Docker stats. Commands go through the itzg `send-command` helper and their output shows up in the log.
 - **Hangar** is plugin-only and available for Paper, Purpur and Folia servers.

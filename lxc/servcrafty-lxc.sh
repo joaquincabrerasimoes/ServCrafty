@@ -18,6 +18,13 @@ IPCFG="${IPCFG:-dhcp}"   # or e.g. 192.168.1.50/24,gw=192.168.1.1
 
 [[ $EUID -eq 0 ]] || { echo "Run as root on the Proxmox host"; exit 1; }
 command -v pct >/dev/null || { echo "pct not found – this must run on a Proxmox VE host"; exit 1; }
+# Docker 29 / runc 1.3+ fails inside LXC < 7 ("open sysctl net.ipv4.ip_unprivileged_port_start ... permission denied").
+LXC_VER="$(lxc-start --version 2>/dev/null || true)"
+if [[ "$LXC_VER" =~ ^[0-9]+ && "${LXC_VER%%.*}" -lt 7 ]]; then
+  echo "WARNING: this host runs LXC $LXC_VER. Game servers will fail to start with the current Docker until Proxmox is upgraded"
+  echo "         (LXC 7.x / Proxmox VE 9.1+). Continuing in 10 s; press Ctrl+C to abort." >&2
+  sleep 10
+fi
 
 read -rp "PostgreSQL URL (postgres://user:pass@host:5432/db): " DATABASE_URL
 read -rp "Admin username [admin]: " ADMIN_USERNAME; ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
