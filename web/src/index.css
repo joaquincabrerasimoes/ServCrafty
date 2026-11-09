@@ -124,3 +124,16 @@
   scrollbar-width: thin;
   scrollbar-color: rgb(var(--line)) transparent;
 }
+
+/*
+ * iOS Safari (and so the installed PWA) zooms the page whenever a text field smaller than 16px gets focus.
+ * Keep every field at 16px on touch screens instead of blocking zoom with maximum-scale, which would also
+ * stop people pinch-zooming on purpose.
+ */
+@media (pointer: coarse), (hover: none), (max-width: 1024px) {
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='button']):not([type='submit']):not([type='file']),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
