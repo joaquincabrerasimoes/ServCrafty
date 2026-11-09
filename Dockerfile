@@ -25,6 +25,7 @@ COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 ENV NODE_ENV=production \
+    INSTALL_TYPE=docker \
     PORT=8080 \
     DATA_DIR=/data \
     DOCKER_HOST=unix:///var/run/docker.sock \

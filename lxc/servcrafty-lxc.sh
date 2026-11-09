@@ -86,6 +86,8 @@ umask 077
   envline ADMIN_PASSWORD "$ADMIN_PASSWORD_B64"
   envline PUBLIC_URL "$PUBLIC_URL_B64"
   printf '%s\n' 'TRUST_PROXY=1' 'DATA_DIR=/data' 'PORT=8080' 'NODE_ENV=production'
+  # Self-update (Admin > Updates): git checkout install, stable GitHub releases of UPDATE_REPO.
+  printf '%s\n' 'INSTALL_TYPE=lxc' 'UPDATE_REPO=joaquincabrerasimoes/ServCrafty' 'UPDATE_CHECK=1'
 } > /etc/servcrafty/env
 chmod 600 /etc/servcrafty/env
 cat > /etc/systemd/system/servcrafty.service <<'UNIT'
@@ -108,4 +110,4 @@ INSTALL
 } | pct exec "$CTID" -- bash -s
 
 IP=$(pct exec "$CTID" -- hostname -I | awk '{print $1}')
-echo "== ServCrafty ready: http://$IP:8080 (CT $CTID). Update later with: pct exec $CTID -- bash /opt/servcrafty/lxc/update.sh"
+echo "== ServCrafty ready: http://$IP:8080 (CT $CTID). Update later from Admin > Updates in the web UI."
