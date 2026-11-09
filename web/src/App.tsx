@@ -32,6 +32,7 @@ const AdminSettings = lazy(() => import('./pages/admin/Settings'));
 const AdminPorts = lazy(() => import('./pages/admin/Ports'));
 const AdminAudit = lazy(() => import('./pages/admin/Audit'));
 const AdminSystem = lazy(() => import('./pages/admin/System'));
+const AdminUpdate = lazy(() => import('./pages/admin/Update'));
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const status = useAuth((s) => s.status);
@@ -94,6 +95,7 @@ export function App() {
                     <Route path="ports" element={<AdminPorts />} />
                     <Route path="audit" element={<AdminAudit />} />
                     <Route path="system" element={<AdminSystem />} />
+                    <Route path="update" element={<AdminUpdate />} />
                   </Routes>
                 </RequireAdmin>
               }
