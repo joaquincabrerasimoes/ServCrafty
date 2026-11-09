@@ -44,7 +44,10 @@ export function setSessionCookie(reply: FastifyReply, id: string, ttlMs: number)
     path: '/',
     httpOnly: true,
     sameSite: 'lax',
-    secure: config().publicUrl.startsWith('https://'),
+    // Secure only when this request really arrived over HTTPS (behind Cloudflare/a proxy this
+    // comes from X-Forwarded-Proto when TRUST_PROXY=1). Marking it Secure on plain HTTP would
+    // make browsers silently drop the cookie, e.g. when opening the app by LAN IP.
+    secure: reply.request.protocol === 'https',
     signed: true,
     maxAge: Math.floor(ttlMs / 1000),
   });
