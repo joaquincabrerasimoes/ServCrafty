@@ -1,6 +1,8 @@
 services:
   servcrafty:
-    image: servcrafty:latest
+    # Released image; update with `docker compose pull && docker compose up -d`.
+    # Pin a version with SERVCRAFTY_TAG=0.2.0. `docker compose build` still builds locally.
+    image: ghcr.io/joaquincabrerasimoes/servcrafty:${SERVCRAFTY_TAG:-latest}
     build: .
     privileged: true            # required for the bundled Docker daemon (DinD)
     restart: unless-stopped
