@@ -1,8 +1,10 @@
 import Docker from 'dockerode';
+import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { PassThrough, type Readable } from 'node:stream';
 import { config } from '../config.js';
 import { unavailable } from '../lib/errors.js';
+import { minecraftEnv } from '../lib/minecraftConfig.js';
 import type { ServerRow } from './types.js';
 import { getDefaultJavaArgs } from './settings.js';
 
@@ -81,7 +83,25 @@ export function imageFor(server: ServerRow): string {
   return `${JAVA_IMAGE}:${forced || javaImageTag(server.mc_version)}`;
 }
 
-export async function buildEnv(server: ServerRow, cfKey: string | undefined): Promise<string[]> {
+/**
+ * True while the server has never generated its server.properties, i.e. the next start is the
+ * first one. The initial Minecraft configuration is only applied then, so later edits made in
+ * the Properties tab (or files copied by clone/import) are never overwritten.
+ */
+export async function isFirstStart(serverId: string): Promise<boolean> {
+  try {
+    await fsp.access(path.join(serverDir(serverId), 'server.properties'));
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+export async function buildEnv(
+  server: ServerRow,
+  cfKey: string | undefined,
+  opts: { applyMinecraft?: boolean } = {},
+): Promise<string[]> {
   const env: Record<string, string> = { EULA: 'TRUE' };
   if (server.type === 'BEDROCK') {
     env.VERSION = server.mc_version || 'LATEST';
@@ -131,6 +151,11 @@ export async function buildEnv(server: ServerRow, cfKey: string | undefined): Pr
       if (k) env[k] = lv;
     }
     if (cfKey && !env.CF_API_KEY) env.CF_API_KEY = cfKey; // lets CURSEFORGE_FILES etc. work
+  }
+  if (opts.applyMinecraft && server.minecraft) {
+    for (const [k, v] of Object.entries(minecraftEnv(server.type, server.minecraft))) {
+      if (!PROTECTED_ENV.has(k)) env[k] = v;
+    }
   }
   for (const [k, v] of Object.entries(server.env ?? {})) {
     if (PROTECTED_ENV.has(k) || k === IMAGE_TAG_ENV) continue;
@@ -199,6 +224,9 @@ export async function createServerContainer(
   await removeContainerIfExists(containerName(server.id));
   if (server.container_id) await removeContainerIfExists(server.container_id);
 
+  const applyMinecraft = !!server.minecraft && (await isFirstStart(server.id));
+  if (applyMinecraft) onProgress('[servcrafty] first start: applying the initial Minecraft configuration');
+
   const bedrock = server.type === 'BEDROCK';
   const gamePort = bedrock ? '19132/udp' : '25565/tcp';
   const exposed: Record<string, object> = { [gamePort]: {} };
@@ -212,7 +240,7 @@ export async function createServerContainer(
   return docker().createContainer({
     name: containerName(server.id),
     Image: image,
-    Env: await buildEnv(server, cfKey),
+    Env: await buildEnv(server, cfKey, { applyMinecraft }),
     Labels: { [LABEL_SERVER]: server.id, 'servcrafty.managed': 'true' },
     ExposedPorts: exposed,
     Tty: bedrock,

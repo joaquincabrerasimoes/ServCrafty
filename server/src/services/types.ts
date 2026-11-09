@@ -1,4 +1,5 @@
 import type { ServerType } from '../lib/validation.js';
+import type { MinecraftConfig } from '../lib/minecraftConfig.js';
 
 export type Role = 'admin' | 'user';
 export type ShareLevel = 'viewer' | 'operator' | 'manager';
@@ -92,6 +93,8 @@ export interface ServerRow {
   disk_mb: number | null;
   port: number;
   env: Record<string, string>;
+  /** Initial Minecraft configuration (see lib/minecraftConfig.ts); applied on first start. */
+  minecraft: MinecraftConfig | null;
   container_id: string | null;
   status: ServerStatus;
   auto_restart: boolean;
@@ -114,6 +117,7 @@ export interface PublicServer {
   diskMb: number | null;
   port: number;
   env: Record<string, string>;
+  minecraft: MinecraftConfig | null;
   status: ServerStatus;
   autoRestart: boolean;
   createdAt: string;
@@ -136,6 +140,7 @@ export function toPublicServer(s: ServerRow, access: Access, ownerName: string |
     diskMb: s.disk_mb,
     port: s.port,
     env: s.env ?? {},
+    minecraft: s.minecraft ?? null,
     status: s.status,
     autoRestart: s.auto_restart,
     createdAt: s.created_at.toISOString(),

@@ -246,6 +246,9 @@ export default async function serverRoutes(app: FastifyInstance): Promise<void> 
         const props = parseProperties(await fsp.readFile(path.join(serverDir(server.id), 'server.properties'), 'utf8'));
         for (const k of ['server-port', 'rcon.password', 'rcon.port', 'enable-rcon', 'level-seed', 'server-ip']) delete props[k];
         cfg.properties = props;
+        // The saved properties already reflect the initial config (and any later edits); a
+        // server.properties seeded from the template means it would never be applied anyway.
+        if (Object.keys(props).length) delete cfg.minecraft;
       } catch {
         /* none */
       }

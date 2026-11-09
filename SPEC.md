@@ -24,7 +24,7 @@ users(id uuid pk, username unique, email, password_hash, role, locale, theme, di
 passkeys(id text pk (credentialID b64url), user_id, public_key bytea, counter bigint, transports text[], name, created_at, last_used_at)
 api_tokens(id uuid, user_id, name, token_hash, prefix, created_at, last_used_at, expires_at)
 sessions handled by signed cookie holding session id -> table sessions(id, user_id, expires_at, mfa_ok bool, user_agent, ip)
-servers(id uuid, owner_id, name, type, mc_version, loader_version, modpack jsonb (source, project_id, file_id/version_id, name), java_args, memory_mb, cpu numeric, disk_mb, port int unique, env jsonb, container_id, status, auto_restart bool, created_at)
+servers(id uuid, owner_id, name, type, mc_version, loader_version, modpack jsonb (source, project_id, file_id/version_id, name), java_args, memory_mb, cpu numeric, disk_mb, port int unique, env jsonb, minecraft jsonb (003: initial Minecraft config), container_id, status, auto_restart bool, created_at)
 server_shares(server_id, user_id, level, pk(server_id,user_id))
 settings(key pk, value jsonb, encrypted bool)   -- port_pool ("25565-25600" / list), curseforge_key, webhooks defaults, etc.
 backups(id uuid, server_id, file, size_bytes, kind (manual|scheduled), created_by, created_at, note)
@@ -57,7 +57,8 @@ Admin settings
 - GET /admin/ports -> `[{port, serverId|null, serverName|null}]` ; GET /admin/audit?limit&offset&user&action ; GET /admin/system -> docker info, disk, versions
 
 Servers (list filtered by access; admin all; response includes `access: "owner"|"admin"|"viewer"|"operator"|"manager"`)
-- GET /servers ; POST /servers {name,type,mcVersion,loaderVersion?,modpack?,memoryMb,cpu,diskMb?,port? (auto from pool if omitted),env?{},autoRestart?,eula:true} ; GET /servers/:id ; PATCH /servers/:id ; DELETE /servers/:id
+- GET /servers ; POST /servers {name,type,mcVersion,loaderVersion?,modpack?,memoryMb,cpu,diskMb?,port? (auto from pool if omitted),env?{},autoRestart?,minecraft?{...},eula:true} ; GET /servers/:id ; PATCH /servers/:id ; DELETE /servers/:id
+- `minecraft` (optional, zod-strict, see `server/src/lib/minecraftConfig.ts`): levelName, gameMode, forceGamemode, hardcore, difficulty, motd, maxPlayers, pvp, onlineMode, allowFlight, allowCheats (Bedrock), commandBlocks, allowNether, spawnAnimals/Monsters/Npcs, playerIdleTimeout, seed, levelType, generateStructures, generatorSettings, spawnProtection, maxWorldSize, whitelist{enabled,enforce,users[]}, ops[], viewDistance, simulationDistance, tickDistance (Bedrock), entityBroadcastRange, networkCompressionThreshold, resourcePack{url,sha1,required}, extra{key:value} (safe server.properties keys; ports/RCON/IP/management keys rejected). Options that do not exist on the edition -> 400 `invalid_minecraft_config`. Mapped to itzg env (Java: LEVEL, MODE, SEED, WHITELIST, OPS, CUSTOM_SERVER_PROPERTIES...; Bedrock: LEVEL_NAME, GAMEMODE, LEVEL_SEED, ALLOW_LIST_USERS, TICK_DISTANCE...) **only on the first start** (while `server.properties` does not exist), so later Properties edits are kept. Carried by clone/template/serverpack export.
 - POST /servers/:id/power {action: start|stop|restart|kill}
 - POST /servers/:id/command {command} (RCON)
 - GET /servers/:id/logs?tail=500

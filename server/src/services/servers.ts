@@ -6,6 +6,7 @@ import { config } from '../config.js';
 import { query, queryOne, tx } from '../db/pool.js';
 import { randomPassword } from '../lib/crypto.js';
 import { badRequest, conflict } from '../lib/errors.js';
+import { minecraftConfigSchema, normalizeMinecraftConfig } from '../lib/minecraftConfig.js';
 import { parsePortPool } from '../lib/ports.js';
 import { serverTypeSchema } from '../lib/validation.js';
 import { serverDir } from './docker.js';
@@ -42,6 +43,8 @@ export const serverConfigSchema = z.object({
   diskMb: z.number().int().min(256).nullable().optional(),
   env: envSchema.optional(),
   autoRestart: z.boolean().optional(),
+  /** Initial Minecraft configuration, applied on the server's first start. */
+  minecraft: minecraftConfigSchema.nullable().optional(),
 });
 export type ServerConfig = z.infer<typeof serverConfigSchema>;
 
@@ -108,13 +111,14 @@ export async function createServer(
   if ((input.type === 'CURSEFORGE' || input.type === 'MODRINTH') && !input.modpack) {
     throw badRequest('A modpack is required for this server type', 'modpack_required');
   }
+  const minecraft = input.minecraft ? normalizeMinecraftConfig(input.type, input.minecraft) : null;
   const server = await tx(async (client) => {
     await assertQuota(owner, { memoryMb: input.memoryMb, cpu: input.cpu, diskMb: input.diskMb ?? null }, undefined, client);
     const port = await pickPort(client, input.port);
     const r = await client.query<ServerRow>(
       `INSERT INTO servers (owner_id, name, type, mc_version, loader_version, modpack, java_args, memory_mb, cpu,
-                            disk_mb, port, env, auto_restart, rcon_password)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
+                            disk_mb, port, env, auto_restart, rcon_password, minecraft)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
       [
         owner.id,
         input.name,
@@ -130,6 +134,7 @@ export async function createServer(
         JSON.stringify(input.env ?? {}),
         input.autoRestart ?? true,
         randomPassword(),
+        minecraft && Object.keys(minecraft).length ? JSON.stringify(minecraft) : null,
       ],
     );
     return r.rows[0]!;
@@ -205,6 +210,7 @@ export function configOf(server: ServerRow): ServerConfig {
     diskMb: server.disk_mb,
     env: server.env ?? {},
     autoRestart: server.auto_restart,
+    minecraft: server.minecraft ?? null,
   };
 }
 
