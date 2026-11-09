@@ -10,6 +10,7 @@ import { formatPortPool, parsePortPool } from '../lib/ports.js';
 import { intQuery, parse } from '../lib/validation.js';
 import { audit, listAudit } from '../services/audit.js';
 import { docker } from '../services/docker.js';
+import { getGlobalLimits, hostUsage, setGlobalLimits } from '../services/globalLimits.js';
 import {
   deleteSetting,
   getCurseforgeKey,
@@ -22,6 +23,8 @@ import {
 
 async function settingsPayload() {
   return {
+    globalLimits: await getGlobalLimits(),
+    hostUsage: await hostUsage(),
     portPool: await getPortPoolSpec(),
     curseforgeKeySet: !!(await getCurseforgeKey()),
     defaultJavaArgs: await getDefaultJavaArgs(),
@@ -44,6 +47,12 @@ export default async function adminRoutes(app: FastifyInstance): Promise<void> {
           curseforgeKey: z.string().max(500).nullable(),
           defaultJavaArgs: z.string().max(4096),
           publicUrl: z.string().url().or(z.literal('')),
+          globalLimits: z.object({
+            maxServers: z.number().int().min(1).nullable(),
+            maxRamMb: z.number().int().min(256).nullable(),
+            maxCpu: z.number().min(0.1).nullable(),
+            maxDiskMb: z.number().int().min(1).nullable(),
+          }),
         })
         .partial(),
       req.body,
@@ -77,6 +86,11 @@ export default async function adminRoutes(app: FastifyInstance): Promise<void> {
       if (body.publicUrl) await setSetting(SettingKeys.publicUrl, body.publicUrl.replace(/\/+$/, ''));
       else await deleteSetting(SettingKeys.publicUrl);
       changed.push('publicUrl');
+    }
+    if (body.globalLimits !== undefined) {
+      // Existing servers are left alone if a cap is set below what they already use; it only blocks new growth.
+      await setGlobalLimits(body.globalLimits);
+      changed.push('globalLimits');
     }
     await audit(req, 'admin.settings_updated', 'settings', null, { changed });
     return settingsPayload();

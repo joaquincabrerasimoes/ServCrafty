@@ -4,8 +4,17 @@ import { Check, Save } from 'lucide-react';
 import { adminApi } from '@/api';
 import type { AdminSettings as Settings } from '@/api/types';
 import { useT } from '@/i18n';
+import { formatMb, formatNumber } from '@/lib/format';
 import { toast } from '@/stores/toast';
 import { Badge, Button, ErrorState, Field, Loading, PageHeader, Section } from '@/components/ui';
+
+type LimitKey = 'maxServers' | 'maxRamMb' | 'maxCpu' | 'maxDiskMb';
+const LIMIT_FIELDS: Array<{ key: LimitKey; label: 'quota.servers' | 'quota.ram' | 'quota.cpu' | 'quota.disk'; unit: string; step: number; min: number }> = [
+  { key: 'maxServers', label: 'quota.servers', unit: '', step: 1, min: 1 },
+  { key: 'maxRamMb', label: 'quota.ram', unit: 'MB', step: 256, min: 256 },
+  { key: 'maxCpu', label: 'quota.cpu', unit: '', step: 0.5, min: 0.1 },
+  { key: 'maxDiskMb', label: 'quota.disk', unit: 'MB', step: 1024, min: 1 },
+];
 
 const POOL_RE = /^\s*\d{1,5}(\s*-\s*\d{1,5})?(\s*,\s*\d{1,5}(\s*-\s*\d{1,5})?)*\s*$/;
 
@@ -15,22 +24,39 @@ export default function AdminSettings() {
   const q = useQuery({ queryKey: ['admin-settings'], queryFn: adminApi.settings });
   const [form, setForm] = useState<Partial<Settings>>({});
   const [cfKey, setCfKey] = useState('');
+  const [limits, setLimits] = useState<Record<LimitKey, string>>({ maxServers: '', maxRamMb: '', maxCpu: '', maxDiskMb: '' });
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (q.data) setForm({ portPool: q.data.portPool, defaultJavaArgs: q.data.defaultJavaArgs ?? '', publicUrl: q.data.publicUrl ?? '' });
+    if (!q.data) return;
+    setForm({ portPool: q.data.portPool, defaultJavaArgs: q.data.defaultJavaArgs ?? '', publicUrl: q.data.publicUrl ?? '' });
+    const g = q.data.globalLimits;
+    const s = (v: number | null | undefined) => (v == null ? '' : String(v));
+    setLimits({ maxServers: s(g?.maxServers), maxRamMb: s(g?.maxRamMb), maxCpu: s(g?.maxCpu), maxDiskMb: s(g?.maxDiskMb) });
   }, [q.data]);
 
   if (q.isLoading) return <Loading />;
   if (q.error) return <ErrorState error={q.error} onRetry={() => void q.refetch()} />;
 
   const poolOk = POOL_RE.test(form.portPool ?? '');
+  const limitValue = (k: LimitKey) => (limits[k].trim() === '' ? null : Number(limits[k]));
+  const limitOk = (f: (typeof LIMIT_FIELDS)[number]) => {
+    const v = limitValue(f.key);
+    return v === null || (Number.isFinite(v) && v >= f.min && (f.key === 'maxCpu' || Number.isInteger(v)));
+  };
+  const limitsOk = LIMIT_FIELDS.every(limitOk);
+  const usage = q.data?.hostUsage;
+  const usageOf = (k: LimitKey) => (!usage ? null : k === 'maxServers' ? usage.servers : k === 'maxRamMb' ? usage.ram_mb : k === 'maxCpu' ? usage.cpu : usage.disk_mb);
+  const fmtOf = (k: LimitKey) => (k === 'maxServers' ? formatNumber : k === 'maxCpu' ? (n: number) => formatNumber(n, 1) : formatMb);
 
   const save = async (e: FormEvent) => {
     e.preventDefault();
     setBusy(true);
     try {
-      const body: Partial<Settings> = { ...form };
+      const body: Partial<Settings> = {
+        ...form,
+        globalLimits: { maxServers: limitValue('maxServers'), maxRamMb: limitValue('maxRamMb'), maxCpu: limitValue('maxCpu'), maxDiskMb: limitValue('maxDiskMb') },
+      };
       if (cfKey.trim()) body.curseforgeKey = cfKey.trim();
       await adminApi.saveSettings(body);
       setCfKey('');
@@ -57,6 +83,36 @@ export default function AdminSettings() {
             </Field>
           </div>
         </Section>
+        <Section title={t('admin.hostLimits')} description={t('admin.hostLimitsHint')}>
+          <div className="grid gap-4 sm:grid-cols-2">
+            {LIMIT_FIELDS.map((f) => {
+              const used = usageOf(f.key);
+              const cap = limitValue(f.key);
+              return (
+                <Field
+                  key={f.key}
+                  label={f.unit ? `${t(f.label)} (${f.unit})` : t(f.label)}
+                  error={!limitOk(f) ? (f.key === 'maxRamMb' ? t('admin.hostMinRam') : `≥ ${f.min}`) : null}
+                  hint={
+                    used === null
+                      ? undefined
+                      : `${t('admin.hostUsed', { used: fmtOf(f.key)(used) })}${cap !== null && used > cap ? ` · ${t('admin.hostOver')}` : ''}`
+                  }
+                >
+                  <input
+                    className="input"
+                    type="number"
+                    min={f.min}
+                    step={f.step}
+                    placeholder="∞"
+                    value={limits[f.key]}
+                    onChange={(e) => setLimits({ ...limits, [f.key]: e.target.value })}
+                  />
+                </Field>
+              );
+            })}
+          </div>
+        </Section>
         <Section title="CurseForge" description={t('admin.cfBody')} actions={q.data?.curseforgeKeySet ? <Badge tone="ok"><Check className="h-3 w-3" />{t('admin.cfSet')}</Badge> : <Badge tone="warn">{t('admin.cfMissing')}</Badge>}>
           <Field label={t('admin.cfKey')} hint={t('admin.cfKeyHint')}>
             <input className="input font-mono" type="password" autoComplete="off" value={cfKey} onChange={(e) => setCfKey(e.target.value)} placeholder={q.data?.curseforgeKeySet ? '••••••••' : ''} />
@@ -68,7 +124,7 @@ export default function AdminSettings() {
           </Field>
         </Section>
         <div className="flex justify-end">
-          <Button type="submit" variant="primary" loading={busy} disabled={!poolOk} icon={<Save className="h-4 w-4" />}>
+          <Button type="submit" variant="primary" loading={busy} disabled={!poolOk || !limitsOk} icon={<Save className="h-4 w-4" />}>
             {t('common.saveChanges')}
           </Button>
         </div>

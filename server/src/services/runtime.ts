@@ -5,6 +5,7 @@ import type { FastifyBaseLogger } from 'fastify';
 import { query, queryOne } from '../db/pool.js';
 import { badRequest, conflict, errorMessage, notFound, unavailable } from '../lib/errors.js';
 import { dirSize } from '../lib/fsutil.js';
+import { parseRejectedJoin, parseUuidLine } from '../lib/joinAttempts.js';
 import { detectMcVersion } from '../lib/mcVersion.js';
 import { parseProperties } from '../lib/properties.js';
 import {
@@ -18,6 +19,7 @@ import {
   serverDir,
 } from './docker.js';
 import { bus } from './events.js';
+import { recordAttempt } from './joinAttempts.js';
 import { RconClient, stripFormatting } from './rcon.js';
 import { getCurseforgeKey } from './settings.js';
 import type { ServerRow, ServerStatus, Stats } from './types.js';
@@ -45,6 +47,8 @@ interface RuntimeState {
   rcon: RconClient | null;
   rconFailedAt: number;
   players: Set<string>;
+  /** UUIDs announced by "UUID of player X is …" lines, used when that player is then refused. */
+  seenUuids: Map<string, string>;
   maxPlayers: number;
   tps: number | null;
   mspt: { avg: number | null; p95: number | null };
@@ -81,6 +85,7 @@ function state(id: string): RuntimeState {
       rcon: null,
       rconFailedAt: 0,
       players: new Set(),
+      seenUuids: new Map(),
       maxPlayers: 0,
       tps: null,
       mspt: { avg: null, p95: null },
@@ -177,6 +182,18 @@ function analyzeLine(s: RuntimeState, line: string): void {
     void setStatus(s.id, 'stopping');
   }
   if (!s.version) s.version = detectMcVersion(line);
+  const u = parseUuidLine(line);
+  if (u) {
+    if (s.seenUuids.size >= 50) s.seenUuids.clear();
+    s.seenUuids.set(u.name.toLowerCase(), u.uuid);
+  }
+  const rejected = parseRejectedJoin(line);
+  if (rejected) {
+    void recordAttempt(s.id, rejected.name, rejected.ip, s.seenUuids.get(rejected.name.toLowerCase()) ?? null).catch((err: unknown) =>
+      log.warn({ err: errorMessage(err), serverId: s.id }, 'could not record a refused join'),
+    );
+    return;
+  }
   const j = RE_JOIN.exec(line) ?? RE_BEDROCK_JOIN.exec(line);
   if (j?.[1]) {
     s.players.add(j[1].trim());
@@ -520,6 +537,7 @@ function resetRuntime(s: RuntimeState): void {
   s.rcon = null;
   s.docker = null;
   s.players.clear();
+  s.seenUuids.clear();
   s.tps = null;
   s.mspt = { avg: null, p95: null };
   s.tickMode = null;

@@ -17,6 +17,7 @@ import { loadServerFor, listServersFor } from '../services/access.js';
 import { audit } from '../services/audit.js';
 import { serverDir } from '../services/docker.js';
 import { exportServer, importArchive, importFieldsSchema, type ExportFormat } from '../services/modpack.js';
+import { dismissAttempt, listAttempts } from '../services/joinAttempts.js';
 import { listKinds, playerAction, playerActions, readList, type ListKind, type PlayerAction } from '../services/players.js';
 import * as runtime from '../services/runtime.js';
 import { unregisterServer } from '../services/scheduler.js';
@@ -170,6 +171,19 @@ export default async function serverRoutes(app: FastifyInstance): Promise<void> 
     const result = await playerAction(server, action, req.params.name, body?.reason);
     await audit(req, `server.player.${action}`, 'server', server.id, { player: req.params.name });
     return result;
+  });
+
+  app.get<IdParams>('/servers/:id/join-attempts', async (req) => {
+    const user = requireUser(req);
+    const { server } = await loadServerFor(user, req.params.id, 'viewer');
+    return listAttempts(server.id);
+  });
+
+  app.delete<{ Params: { id: string; name: string } }>('/servers/:id/join-attempts/:name', async (req) => {
+    const user = requireUser(req);
+    const { server } = await loadServerFor(user, req.params.id, 'operator');
+    await dismissAttempt(server.id, req.params.name);
+    return { ok: true };
   });
 
   app.get<{ Params: { id: string; kind: string } }>('/servers/:id/lists/:kind', async (req) => {

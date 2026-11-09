@@ -14,6 +14,7 @@ import { refreshLanAnnouncer } from './lanAnnouncer.js';
 import * as runtime from './runtime.js';
 import { getPortPoolSpec } from './settings.js';
 import type { ModpackRef, ServerRow, UserRow } from './types.js';
+import { assertHostCap } from './globalLimits.js';
 import { assertQuota, getUser } from './users.js';
 
 export const modpackSchema = z
@@ -122,6 +123,7 @@ export async function createServer(
   const minecraft = input.minecraft ? normalizeMinecraftConfig(input.type, input.minecraft) : null;
   const server = await tx(async (client) => {
     await assertQuota(owner, { memoryMb: input.memoryMb, cpu: input.cpu, diskMb: input.diskMb ?? null }, undefined, client);
+    await assertHostCap({ memoryMb: input.memoryMb, cpu: input.cpu, diskMb: input.diskMb ?? null }, { client });
     const port = await pickPort(client, input.port);
     const r = await client.query<ServerRow>(
       `INSERT INTO servers (owner_id, name, type, mc_version, loader_version, modpack, java_args, memory_mb, cpu,
@@ -171,6 +173,11 @@ export async function updateServer(actor: UserRow, server: ServerRow, patch: Upd
     if (patch.memoryMb !== undefined || patch.cpu !== undefined || patch.diskMb !== undefined) {
       // Admins may exceed a user's quota when editing on their behalf.
       if (actor.role !== 'admin') await assertQuota(owner, { memoryMb, cpu, diskMb }, server.id, client);
+      // The host's own capacity binds everyone, admins included.
+      await assertHostCap(
+        { memoryMb, cpu, diskMb },
+        { client, excludeServerId: server.id, current: { memoryMb: server.memory_mb, cpu: server.cpu, diskMb: server.disk_mb } },
+      );
     }
     const port = patch.port !== undefined && patch.port !== server.port ? await pickPort(client, patch.port, server.id) : server.port;
     const type = patch.type ?? server.type;

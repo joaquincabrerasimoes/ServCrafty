@@ -1,11 +1,12 @@
 import { useState, type FormEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
-import { Ban, Crown, DoorOpen, ListPlus, UserMinus, UserPlus } from 'lucide-react';
+import { Ban, Crown, DoorOpen, ListPlus, UserMinus, UserPlus, X } from 'lucide-react';
 import { serversApi } from '@/api';
 import type { PlayerAction, PlayerList } from '@/api/types';
 import { useT, type TKey } from '@/i18n';
 import { canOperate } from '@/lib/access';
+import { formatRelative } from '@/lib/format';
 import { useStats } from '@/lib/useFallbacks';
 import { toast } from '@/stores/toast';
 import { confirm } from '@/components/feedback';
@@ -25,6 +26,7 @@ function usePlayerAction(serverId: string) {
       toast.success(t('players.done', { name }));
       void qc.invalidateQueries({ queryKey: ['servers', serverId, 'lists'] });
       void qc.invalidateQueries({ queryKey: ['servers', serverId, 'stats'] });
+      void qc.invalidateQueries({ queryKey: ['servers', serverId, 'join-attempts'] });
     } catch (e) {
       toast.error(e);
     }
@@ -36,6 +38,57 @@ const LISTS: Array<{ id: PlayerList; remove: PlayerAction; add: PlayerAction }> 
   { id: 'ops', remove: 'deop', add: 'op' },
   { id: 'banned', remove: 'pardon', add: 'ban' },
 ];
+
+function JoinAttempts({ serverId, op }: { serverId: string; op: boolean }) {
+  const t = useT();
+  const qc = useQueryClient();
+  const act = usePlayerAction(serverId);
+  const q = useQuery({
+    queryKey: ['servers', serverId, 'join-attempts'],
+    queryFn: () => serversApi.joinAttempts(serverId),
+    refetchInterval: 10_000,
+  });
+  if (!q.data?.length) return null;
+
+  const dismiss = async (name: string) => {
+    try {
+      await serversApi.dismissJoinAttempt(serverId, name);
+      void qc.invalidateQueries({ queryKey: ['servers', serverId, 'join-attempts'] });
+    } catch (e) {
+      toast.error(e);
+    }
+  };
+
+  return (
+    <div className="lg:col-span-2">
+      <Section title={t('players.attempts')}>
+        <p className="mb-2 text-xs text-muted">{t('players.attemptsHint')}</p>
+        <ul className="divide-y divide-line">
+          {q.data.map((p) => (
+            <li key={p.name} className="flex flex-wrap items-center justify-between gap-2 py-2">
+              <div className="min-w-0">
+                <div className="font-mono text-sm">{p.name}</div>
+                <div className="truncate text-xs text-muted">
+                  {[p.ip, t('players.attemptCount', { n: p.attempts }), formatRelative(p.lastSeen)].filter(Boolean).join(' · ')}
+                </div>
+              </div>
+              {op && (
+                <div className="flex flex-wrap gap-1">
+                  <Button size="sm" variant="ghost" onClick={() => void act(p.name, 'whitelist-add')} icon={<UserPlus className="h-4 w-4" />}>
+                    {t('players.action.whitelist-add')}
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => void dismiss(p.name)} icon={<X className="h-4 w-4" />}>
+                    {t('players.dismiss')}
+                  </Button>
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      </Section>
+    </div>
+  );
+}
 
 function Lists({ serverId, op }: { serverId: string; op: boolean }) {
   const t = useT();
@@ -143,6 +196,7 @@ export default function Players() {
           </ul>
         )}
       </Section>
+      <JoinAttempts serverId={server.id} op={op} />
       <Lists serverId={server.id} op={op} />
     </div>
   );

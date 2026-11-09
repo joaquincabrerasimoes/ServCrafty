@@ -5,6 +5,7 @@ import type {
   CreateServerBody,
   FileEntry,
   InstalledMod,
+  JoinAttempt,
   ListedPlayer,
   ModUpdate,
   PlayerAction,
@@ -69,6 +70,8 @@ export const serversApi = {
   },
   playerAction: (id: string, name: string, action: PlayerAction, reason?: string) =>
     api.post<void>(`${s(id)}/players/${encodeURIComponent(name)}/${action}`, reason ? { reason } : {}),
+  joinAttempts: (id: string) => api.get<JoinAttempt[]>(`${s(id)}/join-attempts`),
+  dismissJoinAttempt: (id: string, name: string) => api.del<unknown>(`${s(id)}/join-attempts/${encodeURIComponent(name)}`),
   playerList: async (id: string, list: PlayerList) =>
     asList<ListedPlayer | string>(await api.get(`${s(id)}/lists/${list}`), list).map((p) =>
       typeof p === 'string' ? { name: p } : p,

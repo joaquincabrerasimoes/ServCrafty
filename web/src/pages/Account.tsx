@@ -7,6 +7,7 @@ import { useT } from '@/i18n';
 import { useAuth } from '@/stores/auth';
 import { formatDate, formatMb, formatNumber, formatRelative } from '@/lib/format';
 import { qk } from '@/lib/queries';
+import { quotaRows } from '@/lib/quota';
 import { toast } from '@/stores/toast';
 import { confirm } from '@/components/feedback';
 import { Badge, Button, ErrorState, Field, IconButton, Loading, Meter, Modal, PageHeader, Section } from '@/components/ui';
@@ -406,13 +407,8 @@ function Quota() {
   const t = useT();
   const q = useQuery({ queryKey: qk.quota, queryFn: accountApi.quota });
   if (!q.data) return null;
-  const { limits, usage } = q.data;
-  const rows = [
-    { label: t('quota.servers'), used: usage.servers, max: limits.maxServers, fmt: (n: number) => formatNumber(n) },
-    { label: t('quota.ram'), used: usage.ram_mb, max: limits.maxRamMb, fmt: formatMb },
-    { label: t('quota.cpu'), used: usage.cpu, max: limits.maxCpu, fmt: (n: number) => formatNumber(n, 1) },
-    { label: t('quota.disk'), used: usage.disk_mb, max: limits.maxDiskMb, fmt: formatMb },
-  ];
+  const fmts = { servers: (n: number) => formatNumber(n), ram: formatMb, cpu: (n: number) => formatNumber(n, 1), disk: formatMb };
+  const rows = quotaRows(q.data).map((r) => ({ label: t(`quota.${r.key}`), used: r.used, max: r.max, fmt: fmts[r.key], hostBound: r.hostBound }));
   return (
     <Section title={t('account.quota')}>
       <div className="space-y-3">
@@ -422,6 +418,7 @@ function Quota() {
               <span>{r.label}</span>
               <span className="tabular-nums text-muted">
                 {r.fmt(r.used)} / {r.max == null ? t('wizard.unlimited') : r.fmt(r.max)}
+                {r.hostBound && <span className="ml-1 text-xs">({t('quota.hostBound')})</span>}
               </span>
             </div>
             {r.max ? <Meter value={r.used} max={r.max} tone={r.used / r.max > 0.9 ? 'warn' : 'accent'} /> : null}

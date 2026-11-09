@@ -6,6 +6,7 @@ import { ArrowLeft, ArrowRight, Check, Rocket } from 'lucide-react';
 import { accountApi, catalogApi, serversApi } from '@/api';
 import type { CatalogProject, CatalogVersion, CreateServerBody, ServerType } from '@/api/types';
 import { useT, type TKey } from '@/i18n';
+import { quotaRows } from '@/lib/quota';
 import { toast } from '@/stores/toast';
 import { formatDate, formatMb } from '@/lib/format';
 import { qk } from '@/lib/queries';
@@ -183,13 +184,19 @@ export default function CreateServer() {
   const firstRender = useRef(true);
 
   const quota = useQuery({ queryKey: qk.quota, queryFn: accountApi.quota, staleTime: 30_000 });
-  const limits = quota.data?.limits;
-  const usage = quota.data?.usage;
-  const freeRamMb = limits?.maxRamMb != null && usage ? Math.max(0, Number(limits.maxRamMb) - Number(usage.ram_mb)) : null;
-  const freeCpu = limits?.maxCpu != null && usage ? Math.max(0, Number(limits.maxCpu) - Number(usage.cpu)) : null;
-  const ramQuotaError = freeRamMb !== null && memoryMb > freeRamMb ? t('wizard.quotaRam', { free: formatMb(freeRamMb) }) : null;
-  const cpuQuotaError = freeCpu !== null && cpu > freeCpu ? t('wizard.quotaCpu', { free: Math.round(freeCpu * 10) / 10 }) : null;
-  const serversQuotaFull = limits?.maxServers != null && !!usage && Number(usage.servers) >= Number(limits.maxServers);
+  // Each row already folds in the host-wide cap, so "free" is what this user can really still take.
+  const rows = quota.data ? quotaRows(quota.data) : null;
+  const ramRow = rows?.find((r) => r.key === 'ram');
+  const cpuRow = rows?.find((r) => r.key === 'cpu');
+  const serversRow = rows?.find((r) => r.key === 'servers');
+  const freeOf = (r?: { max: number | null; used: number }) => (r && r.max !== null ? Math.max(0, r.max - r.used) : null);
+  const freeRamMb = freeOf(ramRow);
+  const freeCpu = freeOf(cpuRow);
+  const ramQuotaError =
+    freeRamMb !== null && memoryMb > freeRamMb ? t(ramRow?.hostBound ? 'wizard.hostRam' : 'wizard.quotaRam', { free: formatMb(freeRamMb) }) : null;
+  const cpuQuotaError =
+    freeCpu !== null && cpu > freeCpu ? t(cpuRow?.hostBound ? 'wizard.hostCpu' : 'wizard.quotaCpu', { free: Math.round(freeCpu * 10) / 10 }) : null;
+  const serversQuotaFull = !!serversRow && serversRow.max !== null && serversRow.used >= serversRow.max;
 
   const modpack = isModpack(type);
   const packMc = packVersion?.mcVersions?.find((v) => /^\d/.test(v));
@@ -271,7 +278,7 @@ export default function CreateServer() {
       </h2>
       {serversQuotaFull && (
         <p role="alert" className="mb-5 rounded-md border border-danger/30 bg-danger/5 px-4 py-3 text-sm text-danger">
-          {t('wizard.quotaServers')}
+          {t(serversRow?.hostBound ? 'wizard.hostServers' : 'wizard.quotaServers')}
         </p>
       )}
 

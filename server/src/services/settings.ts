@@ -9,6 +9,7 @@ export const SettingKeys = {
   curseforgeKey: 'curseforge_key',
   defaultJavaArgs: 'default_java_args',
   publicUrl: 'public_url',
+  globalLimits: 'global_limits',
 } as const;
 
 const cache = new Map<string, unknown>();

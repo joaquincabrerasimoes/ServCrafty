@@ -11,6 +11,7 @@ import { badRequest, conflict, forbidden, notFound, unauthorized } from '../lib/
 import { parse } from '../lib/validation.js';
 import { audit } from '../services/audit.js';
 import { toPublicUser, type UserRow } from '../services/types.js';
+import { getGlobalLimits, hostUsage } from '../services/globalLimits.js';
 import { quotaUsage } from '../services/users.js';
 
 function requireSessionAuth(req: Parameters<typeof requireUser>[0]) {
@@ -54,6 +55,8 @@ export default async function accountRoutes(app: FastifyInstance): Promise<void>
     return {
       limits: { maxServers: user.max_servers, maxRamMb: user.max_ram_mb, maxCpu: user.max_cpu, maxDiskMb: user.max_disk_mb },
       usage: await quotaUsage(user.id),
+      // Host-wide caps and what every user's servers use together, so the UI can show what is really left.
+      host: { limits: await getGlobalLimits(), usage: await hostUsage() },
     };
   });
 

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { CalendarClock, Pencil, Plus, Trash2 } from 'lucide-react';
 import { serversApi } from '@/api';
@@ -8,16 +8,10 @@ import { formatRelative } from '@/lib/format';
 import { toast } from '@/stores/toast';
 import { confirm } from '@/components/feedback';
 import { Button, EmptyState, ErrorState, Field, IconButton, Loading, Modal, Toggle } from '@/components/ui';
+import { CronPicker } from './CronPicker';
 import { useServerCtx } from './ServerLayout';
 
 const ACTIONS: ScheduleAction[] = ['restart', 'backup', 'command', 'start', 'stop'];
-const PRESETS: Array<{ cron: string; key: TKey }> = [
-  { cron: '0 4 * * *', key: 'schedules.preset.daily4' },
-  { cron: '0 */6 * * *', key: 'schedules.preset.every6h' },
-  { cron: '0 * * * *', key: 'schedules.preset.hourly' },
-  { cron: '0 5 * * 1', key: 'schedules.preset.weekly' },
-];
-
 type Draft = Omit<Schedule, 'id' | 'lastRunAt' | 'serverId'> & { id?: string };
 const blank: Draft = { cron: '0 4 * * *', action: 'restart', payload: '', enabled: true };
 
@@ -29,6 +23,8 @@ export default function Schedules() {
   const q = useQuery({ queryKey: key, queryFn: () => serversApi.schedules(server.id) });
   const [draft, setDraft] = useState<Draft | null>(null);
   const [busy, setBusy] = useState(false);
+  // Escape in the cron guide must not also close the schedule dialog underneath it.
+  const helpOpen = useRef(false);
   const refresh = () => qc.invalidateQueries({ queryKey: key });
 
   const save = async () => {
@@ -112,7 +108,7 @@ export default function Schedules() {
 
       <Modal
         open={!!draft}
-        onClose={() => setDraft(null)}
+        onClose={() => !helpOpen.current && setDraft(null)}
         title={draft?.id ? t('schedules.edit') : t('schedules.add')}
         footer={
           <>
@@ -141,16 +137,7 @@ export default function Schedules() {
                 <input className="input font-mono" value={draft.payload ?? ''} onChange={(e) => setDraft({ ...draft, payload: e.target.value })} placeholder="say Restarting soon" />
               </Field>
             )}
-            <Field label={t('schedules.cron')} hint={t('schedules.cronHint')}>
-              <input className="input font-mono" value={draft.cron} onChange={(e) => setDraft({ ...draft, cron: e.target.value })} />
-            </Field>
-            <div className="flex flex-wrap gap-1.5">
-              {PRESETS.map((p) => (
-                <button key={p.cron} type="button" className="rounded-[2px] border border-line px-2 py-1 text-xs hover:border-accent" onClick={() => setDraft({ ...draft, cron: p.cron })}>
-                  {t(p.key)}
-                </button>
-              ))}
-            </div>
+            <CronPicker value={draft.cron} onChange={(cron) => setDraft({ ...draft, cron })} onHelpToggle={(o) => (helpOpen.current = o)} />
             <Toggle checked={draft.enabled} onChange={(v) => setDraft({ ...draft, enabled: v })} label={t('common.enabled')} />
           </div>
         )}

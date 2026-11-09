@@ -37,9 +37,25 @@ export interface Quotas {
   maxDiskMb?: number | null;
 }
 
+export interface HostLimits {
+  maxServers: number | null;
+  maxRamMb: number | null;
+  maxCpu: number | null;
+  maxDiskMb: number | null;
+}
+
+export interface UsageTotals {
+  servers: number;
+  ram_mb: number;
+  cpu: number;
+  disk_mb: number;
+}
+
 export interface QuotaResponse {
   limits: Quotas;
-  usage: { servers: number; ram_mb: number; cpu: number; disk_mb: number };
+  usage: UsageTotals;
+  /** Host-wide caps and the combined use of every user's servers. */
+  host?: { limits: HostLimits; usage: UsageTotals };
 }
 
 export interface TotpSetup {
@@ -203,6 +219,16 @@ export interface ListedPlayer {
   expires?: string;
 }
 
+/** A player the whitelist turned away, seen in the server log. */
+export interface JoinAttempt {
+  name: string;
+  uuid: string | null;
+  ip: string | null;
+  attempts: number;
+  firstSeen: string;
+  lastSeen: string;
+}
+
 export interface FileEntry {
   name: string;
   path?: string;
@@ -302,6 +328,8 @@ export interface CatalogVersion {
 }
 
 export interface AdminSettings {
+  globalLimits?: HostLimits;
+  hostUsage?: UsageTotals;
   portPool: string;
   curseforgeKeySet: boolean;
   curseforgeKey?: string;

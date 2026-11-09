@@ -9,6 +9,7 @@ import { useT } from '@/i18n';
 import { useServers, qk } from '@/lib/queries';
 import { canOperate } from '@/lib/access';
 import { formatMb, formatNumber } from '@/lib/format';
+import { quotaRows } from '@/lib/quota';
 import { Badge, Button, EmptyState, ErrorState, LinkButton, Loading, Meter, PageHeader } from '@/components/ui';
 import { StatusBadge } from '@/components/StatusBadge';
 import { PowerButtons } from '@/components/PowerButtons';
@@ -27,20 +28,15 @@ function QuotaStrip() {
   const t = useT();
   const { data } = useQuery({ queryKey: qk.quota, queryFn: accountApi.quota });
   if (!data) return null;
-  const { limits, usage } = data;
-  const items = [
-    { label: t('quota.servers'), used: usage.servers, max: limits.maxServers, fmt: (n: number) => formatNumber(n) },
-    { label: t('quota.ram'), used: usage.ram_mb, max: limits.maxRamMb, fmt: formatMb },
-    { label: t('quota.cpu'), used: usage.cpu, max: limits.maxCpu, fmt: (n: number) => formatNumber(n, 1) },
-    { label: t('quota.disk'), used: usage.disk_mb, max: limits.maxDiskMb, fmt: formatMb },
-  ];
+  const fmts = { servers: (n: number) => formatNumber(n), ram: formatMb, cpu: (n: number) => formatNumber(n, 1), disk: formatMb };
+  const items = quotaRows(data).map((r) => ({ label: t(`quota.${r.key}`), used: r.used, max: r.max, fmt: fmts[r.key], hostBound: r.hostBound }));
   return (
     <div className="mb-6 grid grid-cols-2 gap-x-6 gap-y-3 border-y border-line py-3 sm:grid-cols-4">
       {items.map((i) => (
         <div key={i.label}>
           <div className="flex justify-between text-xs text-muted">
             <span>{i.label}</span>
-            <span className="tabular-nums">
+            <span className="tabular-nums" title={i.hostBound ? t('quota.hostBound') : undefined}>
               {i.fmt(i.used)} / {i.max === null || i.max === undefined ? '∞' : i.fmt(i.max)}
             </span>
           </div>
