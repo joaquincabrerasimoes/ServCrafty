@@ -36,7 +36,7 @@ RCON_PUBLISH_LOCAL=1                          # container IPs aren't routable fr
 
 ### Extra env vars (beyond the spec)
 
-`HOST` (0.0.0.0), `LOG_LEVEL` (info), `TRUST_PROXY` (1 behind a reverse proxy), `WEB_DIST`, `RCON_PUBLISH_LOCAL`, `ALLOW_PRIVATE_WEBHOOKS`.
+`HOST` (0.0.0.0), `LOG_LEVEL` (info), `GITHUB_TOKEN` (optional, update checks), `TRUST_PROXY` (1 behind a reverse proxy), `WEB_DIST`, `RCON_PUBLISH_LOCAL`, `ALLOW_PRIVATE_WEBHOOKS`.
 
 `ALLOW_PRIVATE_WEBHOOKS=1` lets webhooks target loopback, private (RFC 1918), link-local and other non-public addresses. By default these are rejected when a webhook is saved and again at delivery (SSRF protection); redirects are never followed. Turn it on only if you notify services on your own LAN.
 
@@ -77,6 +77,56 @@ migrations/001_init.sql
 - **TOTP replay.** The last accepted 30 s time step is stored per user (`users.totp_last_step`); a code at or before it is rejected, so a code cannot be used twice.
 - **Export.** `serverpack` leaves out `logs`, `libraries`, `versions` and similar caches. It also leaves out the world unless `?includeWorld=true` is passed. The pack carries a `servcrafty.json` so it can be imported again. Mods that Modrinth or CurseForge don't recognise go into `overrides/mods`. Warnings come back in the `X-ServCrafty-Warnings` header.
 
+## Self-update and releases
+
+The contract is SPEC "Self-update feature (v0.2)". The code is in `src/services/updater.ts`, `src/routes/update.ts` (`/api/admin/update*`, admin only) and `lxc/apply-update.sh`.
+
+**Env:** `UPDATE_REPO` (`joaquincabrerasimoes/ServCrafty`), `UPDATE_CHECK` (`0` turns off all GitHub calls), `INSTALL_TYPE` (`docker` in the image, `lxc` from the LXC installer; when unset, a `.git` in the app root means `lxc`, otherwise `source`), `GITHUB_TOKEN` (optional).
+
+**Checks.**
+- The check reads `GET /repos/<repo>/releases?per_page=30`. Drafts, prereleases and any tag that is not a plain `vX.Y.Z` are dropped, and the highest remaining version wins. That tag is then resolved to its commit through `git/ref/tags/<tag>` (following annotated tags) and `commits/<sha>`. `verified` is GitHub's signature verification of the tag object or of the commit.
+- Results are cached for 6 h. Requests send `If-None-Match`, and the ETag cache is kept in `$DATA_DIR/update/check-cache.json` so it survives a restart. When the release list comes back `304`, the resolved commit is reused. This matters because unauthenticated 304s still count against GitHub's 60 req/h limit.
+- When `x-ratelimit-remaining` reaches 0, requests stop until the reset time. A failed check is retried after 15 minutes at the earliest.
+- Network errors only set `checkError`. They are never thrown.
+- `POST /admin/update/check` is limited to 6 per 10 minutes per admin.
+- With no releases, the payload has `latest: null` and `checkError: null`.
+
+**`canUpdate`** requires all of:
+- install type `lxc` or `source`
+- a `.git` directory and `git` on PATH
+- `systemd-run` and `systemctl`
+- running as root
+- a writable app root
+
+`cannotUpdateReason` gives the first one that fails.
+
+**Apply.**
+- `POST /admin/update/apply {version?}` takes the cached latest release, re-checking first if the cache is older than 10 min. `version` may name another stable release, but it must be newer than the running version. Downgrades go through rollback.
+- The server copies `lxc/apply-update.sh` to `$DATA_DIR/update/` and writes `status.json` as `running/starting`. It then runs `systemd-run --unit=servcrafty-updater --collect --no-block --setenv=UPDATE_REPO=… --setenv=PORT=… --setenv=PATH=… --setenv=HOME=… bash <copy> <tag> <sha> <appRoot> <dataDir>`.
+- If a `running` status is older than 2 min and the unit is no longer active, it is reported as `failed`.
+- The version and commit are read once at startup. During an update, `/api/health` therefore reports the version that is actually running.
+
+**`apply-update.sh`** (bash, shellcheck-clean, runs outside the service cgroup):
+- **verify:** `remote.origin.url` must be `https://github.com/<UPDATE_REPO>(.git)`. Credentials in the URL are accepted and masked in messages. The script then runs `git fetch --tags --force origin` and checks that the tag exists and that `rev-parse <tag>^{commit}` equals the SHA from GitHub. It refuses to run if tracked files are modified (`package-lock.json` changes that `npm install` regenerated are discarded first).
+- **backup:** the current SHA and version go to `previous.json`, and `server/dist` and `web/dist` are copied to `prev/`.
+- **checkout:** `git checkout --detach <tag>`. The script also checks that `server/package.json` reports the expected version.
+- **install, build:** `npm install … --include=dev`, then the web and server builds.
+- **restart, health:** `systemctl restart servcrafty`, then it waits up to 120 s for `/api/health` to show `ok:true` and the target `version`.
+- **Automatic rollback:** any failure after the backup starts triggers it. The script checks out the previous SHA, runs `npm install`, restores the saved dist (or rebuilds if it is missing), restores the earlier `previous.json`/`prev/`, restarts and waits for a healthy panel. The final state is `rolled_back`, or `failed` if the rollback itself had problems.
+- **`--rollback`:** takes the same path to the commit in `previous.json`. It reuses that version's saved build instead of rebuilding, and afterwards `previous.json` points at the version you came from.
+- **Logging and locking:** every step is written to `status.json` and appended to `update.log`. A `flock` on `update/lock` stops two updaters from running at once.
+- **Database:** migrations are forward-only. A rollback does not revert them.
+- **Test overrides:** `SERVICE_NAME`, `HEALTH_TIMEOUT`, `HEALTH_URL` and `UPDATE_RESTART_CMD`.
+
+`lxc/update.sh` is still there as a manual fallback that follows `main`.
+
+**Docker installs** only get a notification. The payload carries `dockerCommand: "docker compose pull && docker compose up -d"`, and the compose file uses `ghcr.io/joaquincabrerasimoes/servcrafty:${SERVCRAFTY_TAG:-latest}`, falling back to `build: .`.
+
+**Releasing.**
+1. Run `scripts/release.sh patch|minor|major|X.Y.Z[-pre]`. It bumps root/server/web `package.json` and the server/web lockfiles, commits `Release vX.Y.Z`, creates the annotated tag and prints the `git push` command. It does not push.
+2. Pushing the tag runs `.github/workflows/release.yml`. The workflow checks that the tag matches `server/package.json`, then builds and pushes `ghcr.io/<owner>/servcrafty:<version>` (linux/amd64). It also pushes `:latest`, but only for stable tags.
+3. The workflow then runs `gh release create --generate-notes --verify-tag` (with `--prerelease` when the tag has a `-` suffix). Prereleases are never offered by the updater.
+
 ### Endpoints added beyond the spec
 
 - `POST /schedules/:id/run`
@@ -104,4 +154,5 @@ Besides the spec messages, the socket sends `{type:"command_result", serverId, c
 | `GET /catalog/search` | `{hits, total, offset, limit}` |
 | `GET /catalog/minecraft/versions` | `{type, versions: string[], latest}` |
 | `GET /admin/audit` | `{items, total}` |
+| `GET /api/health` | `{ok, db, docker, version}` |
 | Player actions | `{applied:"live"\|"file", output}` |
