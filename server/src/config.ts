@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
@@ -31,6 +32,19 @@ const EnvSchema = z.object({
    * (needed with Docker Desktop, where container IPs are not routable).
    */
   RCON_PUBLISH_LOCAL: z.string().optional(),
+  /** GitHub `owner/name` the self-updater checks for releases. */
+  UPDATE_REPO: z
+    .string()
+    .regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/, 'UPDATE_REPO must look like owner/name')
+    .default('joaquincabrerasimoes/ServCrafty'),
+  /** "0" (or "false"/"off") disables the network update check. */
+  UPDATE_CHECK: z.string().optional(),
+  INSTALL_TYPE: z.preprocess(
+    (v) => (typeof v === 'string' ? v.trim().toLowerCase() || undefined : v),
+    z.enum(['docker', 'lxc', 'source']).optional(),
+  ),
+  /** Optional token for GitHub API calls (raises the 60 req/h anonymous limit). */
+  GITHUB_TOKEN: z.string().optional(),
 });
 
 export type AppConfig = {
@@ -57,6 +71,10 @@ export type AppConfig = {
   trustProxy: boolean;
   logLevel: string;
   rconPublishLocal: boolean;
+  updateRepo: string;
+  updateCheck: boolean;
+  installType: 'docker' | 'lxc' | 'source' | undefined;
+  githubToken: string | undefined;
 };
 
 function load(): AppConfig {
@@ -91,6 +109,10 @@ function load(): AppConfig {
     trustProxy: e.TRUST_PROXY === '1' || e.TRUST_PROXY === 'true',
     logLevel: e.LOG_LEVEL,
     rconPublishLocal: e.RCON_PUBLISH_LOCAL === '1' || e.RCON_PUBLISH_LOCAL === 'true',
+    updateRepo: e.UPDATE_REPO,
+    updateCheck: !['0', 'false', 'off', 'no'].includes((e.UPDATE_CHECK ?? '').trim().toLowerCase()),
+    installType: e.INSTALL_TYPE,
+    githubToken: e.GITHUB_TOKEN || undefined,
   };
 }
 
@@ -102,5 +124,22 @@ export function config(): AppConfig {
   return cached;
 }
 
-export const APP_VERSION = '0.1.0';
+/** Repository root (parent of `server/`). */
+export const APP_ROOT = path.resolve(SERVER_ROOT, '..');
+
+/**
+ * Version of the running code, read once from `server/package.json` at startup.
+ * Read once on purpose: during a self-update the file on disk changes before the
+ * process is restarted, and /api/health must keep reporting the running version.
+ */
+function readPackageVersion(): string {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(SERVER_ROOT, 'package.json'), 'utf8')) as { version?: unknown };
+    return typeof pkg.version === 'string' && pkg.version ? pkg.version : '0.0.0';
+  } catch {
+    return '0.0.0';
+  }
+}
+
+export const APP_VERSION = readPackageVersion();
 export const USER_AGENT = `ServCrafty/${APP_VERSION} (self-hosted Minecraft panel)`;

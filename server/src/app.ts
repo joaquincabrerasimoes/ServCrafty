@@ -6,7 +6,7 @@ import cookie from '@fastify/cookie';
 import multipart from '@fastify/multipart';
 import fastifyStatic from '@fastify/static';
 import websocket from '@fastify/websocket';
-import { config } from './config.js';
+import { APP_VERSION, config } from './config.js';
 import { queryOne } from './db/pool.js';
 import { registerAuth } from './auth/plugin.js';
 import { AppError } from './lib/errors.js';
@@ -21,6 +21,7 @@ import scheduleRoutes from './routes/schedules.js';
 import serverRoutes from './routes/servers.js';
 import shareRoutes from './routes/shares.js';
 import templateRoutes from './routes/templates.js';
+import updateRoutes from './routes/update.js';
 import userRoutes from './routes/users.js';
 import webhookRoutes from './routes/webhooks.js';
 import wsRoutes from './routes/ws.js';
@@ -83,12 +84,13 @@ export async function buildApp(): Promise<FastifyInstance> {
         } catch {
           dbOk = false;
         }
-        return { ok: dbOk, db: dbOk, docker: await dockerAvailable() };
+        return { ok: dbOk, db: dbOk, docker: await dockerAvailable(), version: APP_VERSION };
       });
       await api.register(authRoutes);
       await api.register(accountRoutes);
       await api.register(userRoutes);
       await api.register(adminRoutes);
+      await api.register(updateRoutes);
       await api.register(serverRoutes);
       await api.register(fileRoutes);
       await api.register(backupRoutes);
