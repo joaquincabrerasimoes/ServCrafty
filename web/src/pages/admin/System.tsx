@@ -1,7 +1,49 @@
 import { useQuery } from '@tanstack/react-query';
 import { adminApi } from '@/api';
 import { useT } from '@/i18n';
-import { ErrorState, Loading, PageHeader, Section } from '@/components/ui';
+import { Badge, ErrorState, LinkButton, Loading, PageHeader, Section } from '@/components/ui';
+import { fmtVersion, useAppVersion, useUpdateInfo } from '@/lib/updates';
+
+/** Panel version + update status (the rest of the page is the open-ended /admin/system payload). */
+function PanelVersion() {
+  const t = useT();
+  const health = useAppVersion();
+  const { data } = useUpdateInfo();
+  const version = data?.currentVersion ?? health;
+  return (
+    <Section
+      title="ServCrafty"
+      className="mb-4"
+      actions={
+        <LinkButton to="/admin/update" size="sm">
+          {t('update.manage')}
+        </LinkButton>
+      }
+    >
+      <dl className="divide-y divide-line/60">
+        <div className="grid gap-1 py-1.5 sm:grid-cols-[12rem_1fr] sm:gap-4">
+          <dt className="text-sm text-muted">{t('update.current')}</dt>
+          <dd className="flex flex-wrap items-center gap-2 text-sm">
+            <span className="font-mono text-[13px]">{fmtVersion(version)}</span>
+            {data?.updateAvailable && data.latest && <Badge tone="accent">{t('update.available', { version: fmtVersion(data.latest.version) })}</Badge>}
+          </dd>
+        </div>
+        {data && (
+          <>
+            <div className="grid gap-1 py-1.5 sm:grid-cols-[12rem_1fr] sm:gap-4">
+              <dt className="text-sm text-muted">{t('update.installType')}</dt>
+              <dd className="text-sm">{t(`update.installType.${data.installType}`)}</dd>
+            </div>
+            <div className="grid gap-1 py-1.5 sm:grid-cols-[12rem_1fr] sm:gap-4">
+              <dt className="text-sm text-muted">{t('update.commit')}</dt>
+              <dd className="break-all font-mono text-[13px]">{data.commit ?? '–'}</dd>
+            </div>
+          </>
+        )}
+      </dl>
+    </Section>
+  );
+}
 
 /** Renders the open-ended /admin/system payload as nested definition lists. */
 function Value({ v }: { v: unknown }) {
@@ -40,6 +82,7 @@ export default function System() {
   return (
     <>
       <PageHeader title={t('admin.systemTitle')} />
+      <PanelVersion />
       {q.isLoading ? (
         <Loading />
       ) : q.error ? (

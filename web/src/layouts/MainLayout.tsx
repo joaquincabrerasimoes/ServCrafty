@@ -3,6 +3,7 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-do
 import clsx from 'clsx';
 import {
   Activity,
+  ArrowUpCircle,
   Boxes,
   Cog,
   LayoutGrid,
@@ -23,6 +24,8 @@ import { StatusDot } from '@/components/StatusBadge';
 import { LocaleSelect, ThemeSwitch } from '@/components/PrefsControls';
 import { liveSocket } from '@/ws/live';
 import { queryClient } from '@/lib/queryClient';
+import { UpdateBanner } from '@/components/UpdateBanner';
+import { fmtVersion, useAppVersion, useUpdateInfo } from '@/lib/updates';
 
 function NavItem({ to, icon: Icon, children, end }: { to: string; icon: typeof Cog; children: React.ReactNode; end?: boolean }) {
   return (
@@ -49,6 +52,8 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const navigate = useNavigate();
   const { data: servers } = useServers();
   const isAdmin = user?.role === 'admin';
+  const version = useAppVersion();
+  const updateAvailable = !!useUpdateInfo().data?.updateAvailable;
 
   return (
     <div className="flex h-full flex-col" onClick={(e) => (e.target as HTMLElement).closest('a') && onNavigate?.()}>
@@ -116,6 +121,12 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
               <NavItem to="/admin/system" icon={Activity}>
                 {t('nav.system')}
               </NavItem>
+              <NavItem to="/admin/update" icon={ArrowUpCircle}>
+                <span className="flex items-center gap-2">
+                  {t('nav.updates')}
+                  {updateAvailable && <span className="h-1.5 w-1.5 rounded-full bg-accent" aria-label={t('update.availableShort')} />}
+                </span>
+              </NavItem>
             </div>
           </div>
         )}
@@ -148,6 +159,16 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
             <LogOut className="h-4 w-4" />
           </button>
         </div>
+        {version && (
+          <div className="flex items-center justify-between px-1 text-[11px] text-muted">
+            <span className="font-mono">ServCrafty {fmtVersion(version)}</span>
+            {isAdmin && updateAvailable && (
+              <Link to="/admin/update" className="font-medium text-accent hover:underline">
+                {t('update.availableShort')}
+              </Link>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -191,6 +212,7 @@ export function MainLayout() {
           </Link>
         </header>
         <main className="min-w-0 flex-1 overflow-y-auto">
+          <UpdateBanner />
           <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
             <Outlet />
           </div>
