@@ -3,6 +3,7 @@ import clsx from 'clsx';
 import { Info, Plus, Trash2, X } from 'lucide-react';
 import { useT, type TKey } from '@/i18n';
 import { Button, Field, IconButton, Toggle } from '@/components/ui';
+import { LanAnnounceField } from './LanAnnounceField';
 import {
   BEDROCK_PLAYER,
   FLAT_PRESETS,
@@ -176,12 +177,16 @@ export function MinecraftConfigStep({
   errors,
   edition,
   modpack,
+  lanAnnounce,
+  onLanAnnounce,
 }: {
   form: McForm;
   set: <K extends keyof McForm>(k: K, v: McForm[K]) => void;
   errors: McErrors;
   edition: Edition;
   modpack: boolean;
+  lanAnnounce: boolean;
+  onLanAnnounce: (v: boolean) => void;
 }) {
   const t = useT();
   const has = fieldsFor(edition);
@@ -279,6 +284,7 @@ export function MinecraftConfigStep({
           {has.spawnMobs && toggle('spawnMonsters', 'mc.spawnMonsters')}
           {has.spawnMobs && toggle('spawnNpcs', 'mc.spawnNpcs')}
         </ToggleGrid>
+        {!bedrock && <LanAnnounceField checked={lanAnnounce} onChange={onLanAnnounce} />}
         {!form.onlineMode && <Note>{t('mc.offlineWarning')}</Note>}
         {form.hardcore && has.hardcore && <Note>{t('mc.hardcoreNote')}</Note>}
       </Group>

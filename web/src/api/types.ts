@@ -114,6 +114,7 @@ export interface Server {
   containerId?: string | null;
   status: ServerStatus;
   autoRestart?: boolean;
+  lanAnnounce?: boolean;
   createdAt?: string;
   access: Access;
 }
@@ -130,6 +131,7 @@ export interface CreateServerBody {
   port?: number;
   env?: Record<string, string>;
   autoRestart?: boolean;
+  lanAnnounce?: boolean;
   minecraft?: MinecraftConfig;
   eula: true;
 }

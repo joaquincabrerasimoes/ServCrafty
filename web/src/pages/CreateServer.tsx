@@ -173,6 +173,7 @@ export default function CreateServer() {
   const [diskMb, setDiskMb] = useState<number | ''>('');
   const [port, setPort] = useState<number | ''>('');
   const [autoRestart, setAutoRestart] = useState(true);
+  const [lanAnnounce, setLanAnnounce] = useState(false);
   const [eula, setEula] = useState(false);
   const [busy, setBusy] = useState(false);
   const edition: Edition = type === 'BEDROCK' ? 'bedrock' : 'java';
@@ -218,6 +219,7 @@ export default function CreateServer() {
 
   const pickType = (tp: ServerType) => {
     if ((tp === 'BEDROCK') !== (type === 'BEDROCK')) setMc(mcDefaults()); // option sets differ per edition
+    if (tp === 'BEDROCK') setLanAnnounce(false);
     setType(tp);
     setPack(null);
     setPackVersion(null);
@@ -237,6 +239,7 @@ export default function CreateServer() {
         eula: true,
       };
       if (mcConfig) body.minecraft = mcConfig;
+      if (lanAnnounce && edition === 'java') body.lanAnnounce = true;
       if (hasLoader(type) && loaderVersion.trim()) body.loaderVersion = loaderVersion.trim();
       if (diskMb) body.diskMb = diskMb;
       if (port) body.port = port;
@@ -373,7 +376,7 @@ export default function CreateServer() {
         </div>
       )}
 
-      {step === STEP_MINECRAFT && <MinecraftConfigStep form={mc} set={setMcField} errors={mcErrors} edition={edition} modpack={modpack} />}
+      {step === STEP_MINECRAFT && <MinecraftConfigStep form={mc} set={setMcField} errors={mcErrors} edition={edition} modpack={modpack} lanAnnounce={lanAnnounce} onLanAnnounce={setLanAnnounce} />}
 
       {step === STEP_REVIEW && (
         <div className="space-y-5">
@@ -389,6 +392,7 @@ export default function CreateServer() {
               [t('server.disk'), diskMb ? formatMb(diskMb) : t('wizard.unlimited')],
               [t('server.port'), port ? String(port) : t('wizard.auto')],
               [t('server.autoRestart'), autoRestart ? t('common.yes') : t('common.no')],
+              ...(edition === 'java' ? [[t('lan.label'), lanAnnounce ? t('common.yes') : t('common.no')]] : []),
             ].map(([k, v]) => (
               <div key={k} className="flex justify-between gap-4 px-4 py-2.5">
                 <dt className="text-muted">{k}</dt>

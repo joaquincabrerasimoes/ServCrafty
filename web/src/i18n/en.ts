@@ -138,6 +138,9 @@ export const en = {
   'server.port': 'Port',
   'server.javaArgs': 'Java arguments',
   'server.autoRestart': 'Restart automatically after a crash',
+  'lan.label': 'Show on the local network',
+  'lan.hint': 'Shows this server under "Scanning for games on your local network" in Minecraft Java for players on the same network. Works when ServCrafty runs directly on your network (Proxmox LXC, or Docker with host networking).',
+  'lan.bedrock': 'LAN discovery is only available for Minecraft Java servers.',
   'server.owner': 'Owner',
   'server.notFound': 'Server not found',
 

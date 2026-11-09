@@ -9,6 +9,7 @@ import { qk } from '@/lib/queries';
 import { toast } from '@/stores/toast';
 import { confirm } from '@/components/feedback';
 import { Button, Field, IconButton, Section, Toggle } from '@/components/ui';
+import { LanAnnounceField } from '../create/LanAnnounceField';
 import { useServerCtx } from './ServerLayout';
 
 export default function ServerSettings() {
@@ -26,6 +27,7 @@ export default function ServerSettings() {
     port: server.port,
     javaArgs: server.javaArgs ?? '',
     autoRestart: server.autoRestart ?? false,
+    lanAnnounce: server.lanAnnounce ?? false,
   });
   const [env, setEnv] = useState<Array<[string, string]>>(Object.entries(server.env ?? {}));
   const [saving, setSaving] = useState(false);
@@ -44,6 +46,7 @@ export default function ServerSettings() {
         port: Number(form.port),
         javaArgs: form.javaArgs.trim() || null,
         autoRestart: form.autoRestart,
+        ...(server.type === 'BEDROCK' ? {} : { lanAnnounce: form.lanAnnounce }),
         env: Object.fromEntries(env.filter(([k]) => k.trim()).map(([k, v]) => [k.trim(), v])),
       });
       await qc.invalidateQueries({ queryKey: qk.server(server.id) });
@@ -105,6 +108,9 @@ export default function ServerSettings() {
           </Field>
           <div className="sm:col-span-2">
             <Toggle checked={form.autoRestart} onChange={(v) => set('autoRestart', v)} label={t('server.autoRestart')} />
+          </div>
+          <div className="sm:col-span-2">
+            <LanAnnounceField checked={form.lanAnnounce} onChange={(v) => set('lanAnnounce', v)} bedrock={server.type === 'BEDROCK'} />
           </div>
         </div>
       </Section>
