@@ -36,7 +36,7 @@ RCON_PUBLISH_LOCAL=1                          # container IPs aren't routable fr
 
 ### Extra env vars (beyond the spec)
 
-`HOST` (0.0.0.0), `LOG_LEVEL` (info), `GITHUB_TOKEN` (optional, update checks), `TRUST_PROXY` (1 behind a reverse proxy), `WEB_DIST`, `RCON_PUBLISH_LOCAL`, `ALLOW_PRIVATE_WEBHOOKS`.
+`HOST` (0.0.0.0), `LOG_LEVEL` (info), `GITHUB_TOKEN` (optional, update checks), `TRUST_PROXY` (1 behind a reverse proxy), `WEB_DIST`, `RCON_PUBLISH_LOCAL`, `ALLOW_PRIVATE_WEBHOOKS`, `LAN_ANNOUNCE` (`0`/`false`/`off`/`no` disables the LAN discovery announcer), `LAN_ANNOUNCE_INTERFACES` (optional comma list of local IPv4 addresses to send from; default: every non-internal, non-link-local, non-virtual interface).
 
 `ALLOW_PRIVATE_WEBHOOKS=1` lets webhooks target loopback, private (RFC 1918), link-local and other non-public addresses. By default these are rejected when a webhook is saved and again at delivery (SSRF protection); redirects are never followed. Turn it on only if you notify services on your own LAN.
 
@@ -59,6 +59,8 @@ migrations/001_init.sql
 ```
 
 ## Behaviour notes
+
+- **LAN discovery** (`services/lanAnnouncer.ts`). Per-server `lan_announce` flag (migration 004; `lanAnnounce` in the API, PATCH needs manager; rejected with 400 `lan_announce_unsupported` for Bedrock). One 1.5 s timer sends `[MOTD]<name>[/MOTD][AD]<port>[/AD]` to `224.0.2.60:4445` from one UDP socket per usable IPv4 interface (re-enumerated every 30 s) for every running Java server with the flag on. The name is the sanitised `minecraft.motd`, falling back to the server name. It re-evaluates on every runtime status event and on create/update/delete. Send errors are logged once per interface and error.
 
 - **Containers.** Each start recreates `servcrafty-<id>` from the current config, so edits take effect on the next start. RestartPolicy is `no`; ServCrafty watches docker `die` events.
   - Exit code 0 or 143, or a stop it requested, counts as a normal stop. Anything else marks the server `crashed`.

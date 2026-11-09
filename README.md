@@ -31,6 +31,7 @@ A self-hosted web panel for running and managing Minecraft servers. Each server 
 - [Requirements](#requirements)
 - [Quick start with Docker](#quick-start-with-docker)
 - [Install on Proxmox (LXC)](#install-on-proxmox-lxc)
+- [LAN discovery](#lan-discovery)
 - [Configuration](#configuration)
 - [First login](#first-login)
 - [Updating](#updating)
@@ -48,6 +49,7 @@ A self-hosted web panel for running and managing Minecraft servers. Each server 
 - Java: Vanilla, Paper, Purpur, Folia, Fabric, Quilt, Forge and NeoForge; Bedrock Edition as well.
 - Modpacks straight from Modrinth or CurseForge (itzg `MODRINTH` / `AUTO_CURSEFORGE`).
 - Create-server wizard: type, Minecraft version, searchable loader version, resources, and an initial Minecraft configuration (game mode, difficulty, MOTD, whitelist, ops, seed, resource pack and more) applied on the first start.
+- Optional LAN discovery for Java servers: players on the same network see them under "Scanning for games on your local network".
 - Server templates, and one-click clone.
 - Import and export: CurseForge manifest zip, Modrinth `.mrpack` and server-pack zip.
 
@@ -185,6 +187,21 @@ pct exec <CTID> -- journalctl -u servcrafty -f
 
 Inside the CT the app is in `/opt/servcrafty`, configuration in `/etc/servcrafty/env` and data in `/data`.
 
+## LAN discovery
+
+Minecraft Java clients list "LAN World" entries from UDP multicast packets sent to `224.0.2.60:4445` about every 1.5 seconds (the payload is `[MOTD]name[/MOTD][AD]port[/AD]`). Dedicated servers never send them, so ServCrafty can do it on their behalf.
+
+- Turn on **Show on the local network** for a Java server (in the create wizard's Minecraft step, or later in the server's Settings). It is off by default.
+- While the server is **running**, ServCrafty announces it from every usable IPv4 interface of the machine it runs on (loopback, link-local, Docker bridges and veth interfaces are skipped). The listed name is the server's MOTD if one is set, otherwise the server name; the port is the server's game port.
+- Players on the same network then see it in the Multiplayer screen, under "Scanning for games on your local network". Announcing stops when the server stops, crashes, is deleted or the toggle is turned off.
+- `LAN_ANNOUNCE=0` disables the feature; `LAN_ANNOUNCE_INTERFACES=192.168.1.10` restricts it to specific addresses.
+
+Caveats:
+- ServCrafty must sit directly on the players' network. That is the case for the **Proxmox LXC** install (bridged to your LAN) and for Docker with **host networking** (`network_mode: host`). With the default Docker bridge network the packets leave from the container's private address and never reach the LAN.
+- Multicast has to reach the clients: some Wi-Fi access points, managed switches with IGMP snooping and firewalls block or filter `224.0.2.60`. Allow outbound UDP to `224.0.2.60:4445` and multicast on the VLAN.
+- It only works within one broadcast domain (no routing across subnets or VPNs).
+- **Bedrock** servers are not supported yet; the option is hidden for them and the API rejects it.
+
 ## Configuration
 
 Set these as environment variables (a `.env` for Docker Compose, `/etc/servcrafty/env` on LXC). Only `DATABASE_URL` and `SECRET_KEY` are required.
@@ -213,6 +230,8 @@ Set these as environment variables (a `.env` for Docker Compose, `/etc/servcraft
 | `ALLOW_PRIVATE_WEBHOOKS` | off | `1` allows webhooks to target loopback / private-network addresses (disables part of the SSRF protection). |
 | `UPDATE_REPO` | `joaquincabrerasimoes/ServCrafty` | GitHub `owner/name` checked for releases. |
 | `UPDATE_CHECK` | on | `0`, `false`, `off` or `no` disables all update-check network calls. |
+| `LAN_ANNOUNCE` | on | `0`, `false`, `off` or `no` disables the LAN discovery announcer entirely (see [LAN discovery](#lan-discovery)). |
+| `LAN_ANNOUNCE_INTERFACES` | all usable | Optional comma list of local IPv4 addresses the announcer sends from, e.g. `192.168.1.10`. |
 | `INSTALL_TYPE` | auto | `docker`, `lxc` or `source`. Set by the image and the LXC installer; otherwise a `.git` directory means `lxc`, else `source`. |
 | `GITHUB_TOKEN` | none | Optional token to raise the GitHub API rate limit for update checks. |
 | `EXTERNAL_DOCKER` | `0` | Docker image only: `1` skips starting the bundled `dockerd`. |
@@ -316,6 +335,7 @@ Dockerfile, docker-compose.yml, SPEC.md
 - **Docker inside LXC needs a recent Proxmox** (LXC 7.x, Proxmox VE 9.1+); see the note in *Install on Proxmox*.
 - The **disk limit is soft**: it is checked on file writes and uploads and by the stats poller (which can raise a `disk.exceeded` webhook), but Docker does not enforce it.
 - **Bedrock** servers have no RCON: no TPS or tick-time graph, and the player list comes from log lines. Memory and CPU still come from Docker stats. Commands go through the itzg `send-command` helper and their output shows up in the log.
+- **LAN discovery** is Java only and needs the host on the players' network (see [LAN discovery](#lan-discovery)).
 - **Hangar** is plugin-only and available for Paper, Purpur and Folia servers.
 - **CurseForge** needs your own API key, and some files have no download URL in the API (authors can disable third-party distribution) and cannot be installed; such dependencies are reported as skipped.
 - Only **linux/amd64** images are built by the release workflow.
