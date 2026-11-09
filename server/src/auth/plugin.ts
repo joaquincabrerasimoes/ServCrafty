@@ -1,6 +1,7 @@
 import type {} from '@fastify/cookie';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { forbidden, unauthorized } from '../lib/errors.js';
+import { blockedForRemote } from '../services/lanOnly.js';
 import type { UserRow } from '../services/types.js';
 import { loadSession, loadUserByToken, SESSION_COOKIE, touchSession, type SessionRow } from './sessions.js';
 
@@ -28,7 +29,8 @@ export function registerAuth(app: FastifyInstance): void {
     if (authz && /^Bearer\s+/i.test(authz)) {
       const token = authz.replace(/^Bearer\s+/i, '').trim();
       const user = await loadUserByToken(token);
-      if (user && !user.disabled) {
+      // LAN-only accounts are ignored when the request comes from outside the LAN.
+      if (user && !user.disabled && !(await blockedForRemote(req, user, 'token'))) {
         req.user = user;
         req.authVia = 'token';
       }
@@ -40,6 +42,7 @@ export function registerAuth(app: FastifyInstance): void {
     if (!unsigned.valid || !unsigned.value) return;
     const loaded = await loadSession(unsigned.value);
     if (!loaded || loaded.user.disabled) return;
+    if (await blockedForRemote(req, loaded.user, 'session')) return;
     req.session = loaded.session;
     if (loaded.session.mfa_ok) {
       req.user = loaded.user;

@@ -11,6 +11,8 @@ import { intQuery, parse } from '../lib/validation.js';
 import { audit, listAudit } from '../services/audit.js';
 import { docker } from '../services/docker.js';
 import { getGlobalLimits, hostUsage, setGlobalLimits } from '../services/globalLimits.js';
+import { getLanNetworksSpec } from '../services/lanOnly.js';
+import { isRemoteRequest, parseNetworks } from '../lib/network.js';
 import {
   deleteSetting,
   getCurseforgeKey,
@@ -23,6 +25,7 @@ import {
 
 async function settingsPayload() {
   return {
+    lanNetworks: await getLanNetworksSpec(),
     globalLimits: await getGlobalLimits(),
     hostUsage: await hostUsage(),
     portPool: await getPortPoolSpec(),
@@ -47,6 +50,7 @@ export default async function adminRoutes(app: FastifyInstance): Promise<void> {
           curseforgeKey: z.string().max(500).nullable(),
           defaultJavaArgs: z.string().max(4096),
           publicUrl: z.string().url().or(z.literal('')),
+          lanNetworks: z.string().max(1000),
           globalLimits: z.object({
             maxServers: z.number().int().min(1).nullable(),
             maxRamMb: z.number().int().min(256).nullable(),
@@ -86,6 +90,17 @@ export default async function adminRoutes(app: FastifyInstance): Promise<void> {
       if (body.publicUrl) await setSetting(SettingKeys.publicUrl, body.publicUrl.replace(/\/+$/, ''));
       else await deleteSetting(SettingKeys.publicUrl);
       changed.push('publicUrl');
+    }
+    if (body.lanNetworks !== undefined) {
+      const spec = body.lanNetworks.trim();
+      const nets = parseNetworks(spec);
+      // Refuse a range this very request is not inside: it would lock out the admin saving it.
+      if (nets.length && isRemoteRequest(req, nets)) {
+        throw badRequest('Save this from a device inside the range (not through the tunnel), or you would lock yourself out', 'lan_networks_lockout');
+      }
+      if (spec) await setSetting(SettingKeys.lanNetworks, spec);
+      else await deleteSetting(SettingKeys.lanNetworks);
+      changed.push('lanNetworks');
     }
     if (body.globalLimits !== undefined) {
       // Existing servers are left alone if a cap is set below what they already use; it only blocks new growth.

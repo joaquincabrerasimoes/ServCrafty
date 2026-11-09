@@ -328,6 +328,7 @@ export interface CatalogVersion {
 }
 
 export interface AdminSettings {
+  lanNetworks?: string;
   globalLimits?: HostLimits;
   hostUsage?: UsageTotals;
   portPool: string;

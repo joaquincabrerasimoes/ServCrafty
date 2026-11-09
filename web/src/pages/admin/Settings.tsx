@@ -29,7 +29,7 @@ export default function AdminSettings() {
 
   useEffect(() => {
     if (!q.data) return;
-    setForm({ portPool: q.data.portPool, defaultJavaArgs: q.data.defaultJavaArgs ?? '', publicUrl: q.data.publicUrl ?? '' });
+    setForm({ portPool: q.data.portPool, defaultJavaArgs: q.data.defaultJavaArgs ?? '', publicUrl: q.data.publicUrl ?? '', lanNetworks: q.data.lanNetworks ?? '' });
     const g = q.data.globalLimits;
     const s = (v: number | null | undefined) => (v == null ? '' : String(v));
     setLimits({ maxServers: s(g?.maxServers), maxRamMb: s(g?.maxRamMb), maxCpu: s(g?.maxCpu), maxDiskMb: s(g?.maxDiskMb) });
@@ -82,6 +82,11 @@ export default function AdminSettings() {
               <input className="input font-mono" value={form.publicUrl ?? ''} onChange={(e) => setForm({ ...form, publicUrl: e.target.value })} placeholder="https://craft.example.com" />
             </Field>
           </div>
+        </Section>
+        <Section title={t('admin.lanOnly')} description={t('admin.lanOnlyBody')} actions={form.lanNetworks?.trim() ? <Badge tone="ok"><Check className="h-3 w-3" />{t('admin.lanOnlyOn')}</Badge> : <Badge tone="warn">{t('admin.lanOnlyOff')}</Badge>}>
+          <Field label={t('admin.lanNetworks')} hint={t('admin.lanNetworksHint')}>
+            <textarea className="input min-h-[4.5rem] font-mono" spellCheck={false} value={form.lanNetworks ?? ''} onChange={(e) => setForm({ ...form, lanNetworks: e.target.value })} placeholder={'192.168.69.0/24\n192.168.69.0 255.255.255.0'} />
+          </Field>
         </Section>
         <Section title={t('admin.hostLimits')} description={t('admin.hostLimitsHint')}>
           <div className="grid gap-4 sm:grid-cols-2">

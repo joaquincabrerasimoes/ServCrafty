@@ -11,6 +11,7 @@ import { unauthorized } from '../lib/errors.js';
 import { RateLimiter } from '../lib/rateLimit.js';
 import { parse } from '../lib/validation.js';
 import { audit } from '../services/audit.js';
+import { blockedForRemote } from '../services/lanOnly.js';
 import { toPublicUser, type UserRow } from '../services/types.js';
 import { findUserByUsername } from '../services/users.js';
 
@@ -42,6 +43,8 @@ export default async function authRoutes(app: FastifyInstance): Promise<void> {
       await audit(req, 'auth.login_failed', 'user', user?.id ?? null, { username: body.username }, user?.id ?? null);
       throw unauthorized('Invalid username or password', 'invalid_credentials');
     }
+    // Same answer as a wrong password, so the tunnel cannot tell this account exists.
+    if (await blockedForRemote(req, user, 'login')) throw unauthorized('Invalid username or password', 'invalid_credentials');
     loginLimiter.reset(key);
     if (req.session) await deleteSession(req.session.id);
     const mfa = await mfaInfo(user.id);

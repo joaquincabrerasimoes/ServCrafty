@@ -10,6 +10,7 @@ export const SettingKeys = {
   defaultJavaArgs: 'default_java_args',
   publicUrl: 'public_url',
   globalLimits: 'global_limits',
+  lanNetworks: 'lan_networks',
 } as const;
 
 const cache = new Map<string, unknown>();
