@@ -86,7 +86,7 @@ export default function Schedules() {
         <div className="panel divide-y divide-line">
           {q.data.map((s) => (
             <div key={s.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
-              <Toggle checked={s.enabled} onChange={(v) => void toggle(s, v)} />
+              <Toggle checked={s.enabled} onChange={(v) => void toggle(s, v)} ariaLabel={t('common.enabled')} />
               <div className="min-w-0 flex-1">
                 <div className="font-medium">
                   {t(`schedules.action.${s.action}` as TKey)}

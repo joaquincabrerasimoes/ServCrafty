@@ -92,16 +92,25 @@ export function Field({
   );
 }
 
+/**
+ * Accessible on/off switch. The track is 44x24 (border-box, 1px border => 42x22 inside); the
+ * 18px knob is pinned to the inline start with an explicit offset (an absolutely positioned
+ * child without one inherits the button's centred static position and slides out of the
+ * track) and travels 20px, mirrored in RTL.
+ */
 export function Toggle({
   checked,
   onChange,
   label,
   disabled,
+  ariaLabel,
 }: {
   checked: boolean;
   onChange: (v: boolean) => void;
   label?: ReactNode;
   disabled?: boolean;
+  /** Accessible name when there is no visible label. */
+  ariaLabel?: string;
 }) {
   const id = useId();
   return (
@@ -111,17 +120,21 @@ export function Toggle({
         type="button"
         role="switch"
         aria-checked={checked}
+        aria-label={label ? undefined : ariaLabel}
         disabled={disabled}
         onClick={() => onChange(!checked)}
         className={clsx(
-          'relative h-6 w-11 shrink-0 rounded-block border transition-colors disabled:opacity-50',
+          'relative inline-block h-6 w-11 shrink-0 overflow-hidden rounded-block border p-0 align-middle transition-colors',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg',
+          'disabled:cursor-not-allowed disabled:opacity-50',
           checked ? 'border-accent bg-accent' : 'border-line bg-raised',
         )}
       >
         <span
+          aria-hidden="true"
           className={clsx(
-            'absolute top-0.5 h-[18px] w-[18px] rounded-[2px] bg-surface shadow transition-transform',
-            checked ? 'translate-x-[22px]' : 'translate-x-0.5',
+            'pointer-events-none absolute start-[2px] top-[2px] block h-[18px] w-[18px] rounded-[2px] shadow-sm transition-transform duration-150',
+            checked ? 'translate-x-5 bg-accent-ink rtl:-translate-x-5' : 'translate-x-0 bg-muted',
           )}
         />
       </button>

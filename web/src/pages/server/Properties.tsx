@@ -83,7 +83,7 @@ export default function Properties() {
                 {k}
               </label>
               {isBool ? (
-                <Toggle checked={v === 'true'} onChange={(b) => setDraft({ ...draft, [k]: String(b) })} />
+                <Toggle checked={v === 'true'} onChange={(b) => setDraft({ ...draft, [k]: String(b) })} ariaLabel={k} />
               ) : ENUMS[k] ? (
                 <select id={`p-${k}`} className="input h-9 py-0" value={v} onChange={(e) => setDraft({ ...draft, [k]: e.target.value })}>
                   {!ENUMS[k].includes(v) && <option value={v}>{v}</option>}
