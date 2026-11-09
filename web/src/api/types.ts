@@ -110,6 +110,7 @@ export interface Server {
   diskMb?: number | null;
   port: number;
   env?: Record<string, string>;
+  minecraft?: MinecraftConfig | null;
   containerId?: string | null;
   status: ServerStatus;
   autoRestart?: boolean;
@@ -129,7 +130,44 @@ export interface CreateServerBody {
   port?: number;
   env?: Record<string, string>;
   autoRestart?: boolean;
+  minecraft?: MinecraftConfig;
   eula: true;
+}
+
+/** Initial Minecraft configuration (POST /servers `minecraft`), applied on the first start. */
+export interface MinecraftConfig {
+  levelName?: string;
+  gameMode?: 'survival' | 'creative' | 'adventure' | 'spectator';
+  forceGamemode?: boolean;
+  hardcore?: boolean;
+  difficulty?: 'peaceful' | 'easy' | 'normal' | 'hard';
+  motd?: string;
+  maxPlayers?: number;
+  pvp?: boolean;
+  onlineMode?: boolean;
+  allowFlight?: boolean;
+  allowCheats?: boolean;
+  commandBlocks?: boolean;
+  allowNether?: boolean;
+  spawnAnimals?: boolean;
+  spawnMonsters?: boolean;
+  spawnNpcs?: boolean;
+  playerIdleTimeout?: number;
+  seed?: string;
+  levelType?: 'default' | 'flat' | 'largebiomes' | 'amplified' | 'single_biome_surface' | 'legacy';
+  generateStructures?: boolean;
+  generatorSettings?: string;
+  spawnProtection?: number;
+  maxWorldSize?: number;
+  whitelist?: { enabled?: boolean; enforce?: boolean; users?: string[] };
+  ops?: string[];
+  viewDistance?: number;
+  simulationDistance?: number;
+  tickDistance?: number;
+  entityBroadcastRange?: number;
+  networkCompressionThreshold?: number;
+  resourcePack?: { url?: string; sha1?: string; required?: boolean };
+  extra?: Record<string, string>;
 }
 
 export interface Stats {

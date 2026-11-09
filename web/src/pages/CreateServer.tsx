@@ -1,9 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { ArrowLeft, ArrowRight, Check, Rocket } from 'lucide-react';
-import { catalogApi, serversApi } from '@/api';
+import { accountApi, catalogApi, serversApi } from '@/api';
 import type { CatalogProject, CatalogVersion, CreateServerBody, ServerType } from '@/api/types';
 import { useT, type TKey } from '@/i18n';
 import { toast } from '@/stores/toast';
@@ -11,6 +11,9 @@ import { formatDate, formatMb } from '@/lib/format';
 import { qk } from '@/lib/queries';
 import { Button, ErrorState, Field, PageHeader, Spinner, Toggle } from '@/components/ui';
 import { CatalogSearch, ProjectIcon } from '@/components/CatalogSearch';
+import { MEMORY_API_MAX_MB, MemoryField } from './create/MemoryField';
+import { MinecraftConfigStep } from './create/MinecraftConfigStep';
+import { mcDefaults, summarizeMc, toMinecraftConfig, validateMc, type Edition, type McForm } from './create/minecraftForm';
 
 const GROUPS: Array<{ id: string; types: ServerType[] }> = [
   { id: 'vanilla', types: ['VANILLA'] },
@@ -23,22 +26,34 @@ const GROUPS: Array<{ id: string; types: ServerType[] }> = [
 const isModpack = (t: ServerType) => t === 'CURSEFORGE' || t === 'MODRINTH';
 const hasLoader = (t: ServerType) => ['FABRIC', 'QUILT', 'FORGE', 'NEOFORGE'].includes(t);
 
-const STEPS = ['wizard.stepType', 'wizard.stepVersion', 'wizard.stepResources', 'wizard.stepReview'] as const;
+const STEPS = ['wizard.stepType', 'wizard.stepVersion', 'wizard.stepResources', 'wizard.stepMinecraft', 'wizard.stepReview'] as const;
+const STEP_TYPE = 0;
+const STEP_VERSION = 1;
+const STEP_RESOURCES = 2;
+const STEP_MINECRAFT = 3;
+const STEP_REVIEW = 4;
 
 function Stepper({ step }: { step: number }) {
   const t = useT();
   return (
-    <ol className="mb-8 grid grid-cols-4 gap-2">
-      {STEPS.map((k, i) => (
-        <li key={k} className="min-w-0">
-          <div className={clsx('h-1.5 rounded-[1px]', i <= step ? 'bg-accent' : 'bg-line')} />
-          <div className={clsx('mt-2 flex items-center gap-1.5 text-xs sm:text-sm', i === step ? 'font-medium text-ink' : 'text-muted')}>
-            <span className="tabular-nums">{i + 1}.</span>
-            <span className="truncate">{t(k)}</span>
-          </div>
-        </li>
-      ))}
-    </ol>
+    <nav aria-label={t('wizard.progress')} className="mb-8">
+      <ol className="grid grid-cols-5 gap-2">
+        {STEPS.map((k, i) => (
+          <li key={k} className="min-w-0" aria-current={i === step ? 'step' : undefined}>
+            <div className={clsx('h-1.5 rounded-[1px]', i <= step ? 'bg-accent' : 'bg-line')} />
+            <div className={clsx('mt-2 flex items-center gap-1.5 text-xs sm:text-sm', i === step ? 'font-medium text-ink' : 'text-muted')}>
+              <span className="tabular-nums">{i + 1}.</span>
+              {/* Narrow screens: only the numbers, plus the current step's name below. */}
+              <span className="hidden truncate sm:inline">{t(k)}</span>
+              <span className="sr-only sm:hidden">{t(k)}</span>
+            </div>
+          </li>
+        ))}
+      </ol>
+      <p className="mt-2 text-sm font-medium sm:hidden" aria-hidden="true">
+        {t('wizard.stepOf', { n: step + 1, total: STEPS.length })} · {t(STEPS[step]!)}
+      </p>
+    </nav>
   );
 }
 
@@ -118,18 +133,49 @@ export default function CreateServer() {
   const [autoRestart, setAutoRestart] = useState(true);
   const [eula, setEula] = useState(false);
   const [busy, setBusy] = useState(false);
+  const edition: Edition = type === 'BEDROCK' ? 'bedrock' : 'java';
+  const [mc, setMc] = useState<McForm>(mcDefaults);
+  const setMcField = <K extends keyof McForm>(k: K, v: McForm[K]) => setMc((f) => ({ ...f, [k]: v }));
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const firstRender = useRef(true);
+
+  const quota = useQuery({ queryKey: qk.quota, queryFn: accountApi.quota, staleTime: 30_000 });
+  const limits = quota.data?.limits;
+  const usage = quota.data?.usage;
+  const freeRamMb = limits?.maxRamMb != null && usage ? Math.max(0, Number(limits.maxRamMb) - Number(usage.ram_mb)) : null;
+  const freeCpu = limits?.maxCpu != null && usage ? Math.max(0, Number(limits.maxCpu) - Number(usage.cpu)) : null;
+  const ramQuotaError = freeRamMb !== null && memoryMb > freeRamMb ? t('wizard.quotaRam', { free: formatMb(freeRamMb) }) : null;
+  const cpuQuotaError = freeCpu !== null && cpu > freeCpu ? t('wizard.quotaCpu', { free: Math.round(freeCpu * 10) / 10 }) : null;
+  const serversQuotaFull = limits?.maxServers != null && !!usage && Number(usage.servers) >= Number(limits.maxServers);
 
   const modpack = isModpack(type);
   const packMc = packVersion?.mcVersions?.find((v) => /^\d/.test(v));
+  const mcErrors = useMemo(() => validateMc(mc, edition, t), [mc, edition, t]);
+  const mcConfig = useMemo(() => toMinecraftConfig(mc, edition), [mc, edition]);
+  const cpuValid = Number.isFinite(cpu) && cpu >= 0.1 && cpu <= 256;
 
   const canNext = useMemo(() => {
-    if (step === 1) return modpack ? !!pack && !!packVersion : !!mcVersion;
-    if (step === 2) return name.trim().length > 0 && memoryMb >= 512 && cpu > 0;
-    if (step === 3) return eula;
+    if (step === STEP_VERSION) return modpack ? !!pack && !!packVersion : !!mcVersion;
+    if (step === STEP_RESOURCES)
+      return name.trim().length > 0 && memoryMb >= 1024 && memoryMb <= MEMORY_API_MAX_MB && cpuValid && !ramQuotaError && !cpuQuotaError;
+    if (step === STEP_MINECRAFT) return Object.keys(mcErrors).length === 0;
+    if (step === STEP_REVIEW) return eula;
     return true;
-  }, [step, modpack, pack, packVersion, mcVersion, name, memoryMb, cpu, eula]);
+  }, [step, modpack, pack, packVersion, mcVersion, name, memoryMb, cpuValid, ramQuotaError, cpuQuotaError, mcErrors, eula]);
+
+  // Move focus to the step heading so keyboard and screen reader users land on the new step.
+  useEffect(() => {
+    if (firstRender.current) {
+      firstRender.current = false;
+      return;
+    }
+    headingRef.current?.focus({ preventScroll: true });
+    window.scrollTo({ top: 0 });
+    document.querySelector('main')?.scrollTo?.({ top: 0 });
+  }, [step]);
 
   const pickType = (tp: ServerType) => {
+    if ((tp === 'BEDROCK') !== (type === 'BEDROCK')) setMc(mcDefaults()); // option sets differ per edition
     setType(tp);
     setPack(null);
     setPackVersion(null);
@@ -148,6 +194,7 @@ export default function CreateServer() {
         autoRestart,
         eula: true,
       };
+      if (mcConfig) body.minecraft = mcConfig;
       if (hasLoader(type) && loaderVersion.trim()) body.loaderVersion = loaderVersion.trim();
       if (diskMb) body.diskMb = diskMb;
       if (port) body.port = port;
@@ -174,8 +221,16 @@ export default function CreateServer() {
     <div className="mx-auto max-w-3xl">
       <PageHeader title={t('wizard.title')} subtitle={t('wizard.subtitle')} />
       <Stepper step={step} />
+      <h2 ref={headingRef} tabIndex={-1} className="sr-only">
+        {t(STEPS[step]!)}
+      </h2>
+      {serversQuotaFull && (
+        <p role="alert" className="mb-5 rounded-md border border-danger/30 bg-danger/5 px-4 py-3 text-sm text-danger">
+          {t('wizard.quotaServers')}
+        </p>
+      )}
 
-      {step === 0 && (
+      {step === STEP_TYPE && (
         <div className="space-y-6">
           {GROUPS.map((g) => (
             <div key={g.id}>
@@ -203,7 +258,7 @@ export default function CreateServer() {
         </div>
       )}
 
-      {step === 1 && (
+      {step === STEP_VERSION && (
         <div className="space-y-5">
           {modpack ? (
             <>
@@ -243,17 +298,29 @@ export default function CreateServer() {
         </div>
       )}
 
-      {step === 2 && (
+      {step === STEP_RESOURCES && (
         <div className="space-y-5">
           <Field label={t('server.name')}>
             <input className="input" value={name} onChange={(e) => setName(e.target.value)} maxLength={64} autoFocus placeholder={t('wizard.namePlaceholder')} />
           </Field>
-          <Field label={`${t('server.memory')}: ${formatMb(memoryMb)}`} hint={t('wizard.memoryHint')}>
-            <input type="range" min={1024} max={32768} step={512} value={memoryMb} onChange={(e) => setMemoryMb(Number(e.target.value))} className="w-full accent-[rgb(var(--accent))]" />
-          </Field>
+          <MemoryField
+            valueMb={memoryMb}
+            onChange={setMemoryMb}
+            maxMb={Math.max(1024, Math.min(MEMORY_API_MAX_MB, freeRamMb ?? MEMORY_API_MAX_MB))}
+            quotaError={ramQuotaError}
+          />
           <div className="grid gap-4 sm:grid-cols-3">
-            <Field label={t('server.cpu')}>
-              <input className="input" type="number" min={0.5} step={0.5} value={cpu} onChange={(e) => setCpu(Number(e.target.value))} />
+            <Field label={t('server.cpu')} error={cpuQuotaError ?? (cpuValid ? null : t('wizard.cpuInvalid'))}>
+              <input
+                className="input"
+                type="number"
+                min={0.5}
+                max={256}
+                step={0.5}
+                value={Number.isNaN(cpu) ? '' : cpu}
+                aria-invalid={!cpuValid || !!cpuQuotaError}
+                onChange={(e) => setCpu(e.target.value === '' ? Number.NaN : Number(e.target.value))}
+              />
             </Field>
             <Field label={t('server.disk')} hint={t('wizard.optional')}>
               <input className="input" type="number" min={1024} step={1024} value={diskMb} onChange={(e) => setDiskMb(e.target.value ? Number(e.target.value) : '')} placeholder="MB" />
@@ -266,7 +333,9 @@ export default function CreateServer() {
         </div>
       )}
 
-      {step === 3 && (
+      {step === STEP_MINECRAFT && <MinecraftConfigStep form={mc} set={setMcField} errors={mcErrors} edition={edition} modpack={modpack} />}
+
+      {step === STEP_REVIEW && (
         <div className="space-y-5">
           <dl className="panel divide-y divide-line text-sm">
             {[
@@ -283,10 +352,32 @@ export default function CreateServer() {
             ].map(([k, v]) => (
               <div key={k} className="flex justify-between gap-4 px-4 py-2.5">
                 <dt className="text-muted">{k}</dt>
-                <dd className="text-right font-medium">{v}</dd>
+                <dd className="min-w-0 break-words text-end font-medium">{v}</dd>
               </div>
             ))}
           </dl>
+          <section aria-labelledby="review-mc" className="panel text-sm">
+            <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-2">
+              <h3 id="review-mc" className="text-base font-semibold">
+                {t('wizard.stepMinecraft')}
+              </h3>
+              <Button size="sm" variant="ghost" onClick={() => setStep(STEP_MINECRAFT)}>
+                {t('common.edit')}
+              </Button>
+            </div>
+            {mcConfig ? (
+              <dl className="divide-y divide-line">
+                {summarizeMc(mcConfig, edition, t).map(([k, v]) => (
+                  <div key={k} className="flex justify-between gap-4 px-4 py-2.5">
+                    <dt className="shrink-0 text-muted">{k}</dt>
+                    <dd className="min-w-0 break-words text-end font-medium">{v}</dd>
+                  </div>
+                ))}
+              </dl>
+            ) : (
+              <p className="px-4 py-3 text-muted">{t('mc.allDefaults')}</p>
+            )}
+          </section>
           <label className="flex items-start gap-3 rounded-md border border-line bg-surface p-4 text-sm">
             <input type="checkbox" className="mt-0.5 h-4 w-4 accent-[rgb(var(--accent))]" checked={eula} onChange={(e) => setEula(e.target.checked)} />
             <span>
@@ -300,16 +391,16 @@ export default function CreateServer() {
       )}
 
       <div className="mt-8 flex justify-between gap-2 border-t border-line pt-5">
-        <Button variant="ghost" onClick={() => (step === 0 ? navigate(-1) : setStep(step - 1))} icon={<ArrowLeft className="h-4 w-4" />}>
-          {step === 0 ? t('common.cancel') : t('common.back')}
+        <Button variant="ghost" onClick={() => (step === STEP_TYPE ? navigate(-1) : setStep(step - 1))} icon={<ArrowLeft className="h-4 w-4 rtl:-scale-x-100" />}>
+          {step === STEP_TYPE ? t('common.cancel') : t('common.back')}
         </Button>
-        {step < 3 ? (
+        {step < STEP_REVIEW ? (
           <Button variant="primary" disabled={!canNext} onClick={() => setStep(step + 1)}>
             {t('common.next')}
-            <ArrowRight className="h-4 w-4" />
+            <ArrowRight className="h-4 w-4 rtl:-scale-x-100" />
           </Button>
         ) : (
-          <Button variant="primary" disabled={!canNext} loading={busy} onClick={() => void submit()} icon={<Rocket className="h-4 w-4" />}>
+          <Button variant="primary" disabled={!canNext || serversQuotaFull} loading={busy} onClick={() => void submit()} icon={<Rocket className="h-4 w-4" />}>
             {t('wizard.create')}
           </Button>
         )}
