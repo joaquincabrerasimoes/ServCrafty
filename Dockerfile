@@ -20,6 +20,8 @@ COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/server/package.json ./server/package.json
 COPY --from=build /app/server/dist ./server/dist
 COPY --from=build /app/server/migrations ./server/migrations
+# Built-in SteamCMD game definitions (read at boot).
+COPY --from=build /app/server/games ./server/games
 COPY --from=build /app/web/dist ./web/dist
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh

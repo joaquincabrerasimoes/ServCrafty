@@ -24,6 +24,7 @@ export default function AdminSettings() {
   const q = useQuery({ queryKey: ['admin-settings'], queryFn: adminApi.settings });
   const [form, setForm] = useState<Partial<Settings>>({});
   const [cfKey, setCfKey] = useState('');
+  const [steamKey, setSteamKey] = useState('');
   const [limits, setLimits] = useState<Record<LimitKey, string>>({ maxServers: '', maxRamMb: '', maxCpu: '', maxDiskMb: '' });
   const [busy, setBusy] = useState(false);
 
@@ -58,8 +59,10 @@ export default function AdminSettings() {
         globalLimits: { maxServers: limitValue('maxServers'), maxRamMb: limitValue('maxRamMb'), maxCpu: limitValue('maxCpu'), maxDiskMb: limitValue('maxDiskMb') },
       };
       if (cfKey.trim()) body.curseforgeKey = cfKey.trim();
+      if (steamKey.trim()) body.steamApiKey = steamKey.trim();
       await adminApi.saveSettings(body);
       setCfKey('');
+      setSteamKey('');
       await qc.invalidateQueries({ queryKey: ['admin-settings'] });
       toast.success(t('admin.settingsSaved'));
     } catch (err) {
@@ -124,6 +127,25 @@ export default function AdminSettings() {
         <Section title="CurseForge" description={t('admin.cfBody')} actions={q.data?.curseforgeKeySet ? <Badge tone="ok"><Check className="h-3 w-3" />{t('admin.cfSet')}</Badge> : <Badge tone="warn">{t('admin.cfMissing')}</Badge>}>
           <Field label={t('admin.cfKey')} hint={t('admin.cfKeyHint')}>
             <input className="input font-mono" type="password" autoComplete="off" value={cfKey} onChange={(e) => setCfKey(e.target.value)} placeholder={q.data?.curseforgeKeySet ? '••••••••' : ''} />
+          </Field>
+        </Section>
+        <Section
+          title="Steam"
+          description={t('admin.steamBody')}
+          actions={q.data?.steamKeySet ? <Badge tone="ok"><Check className="h-3 w-3" />{t('admin.cfSet')}</Badge> : <Badge tone="warn">{t('admin.cfMissing')}</Badge>}
+        >
+          <Field
+            label={t('admin.steamKey')}
+            hint={
+              <>
+                {t('admin.steamKeyHint')}{' '}
+                <a href="https://steamcommunity.com/dev/apikey" target="_blank" rel="noreferrer" className="text-accent underline">
+                  steamcommunity.com/dev/apikey
+                </a>
+              </>
+            }
+          >
+            <input className="input font-mono" type="password" autoComplete="off" value={steamKey} onChange={(e) => setSteamKey(e.target.value)} placeholder={q.data?.steamKeySet ? '••••••••' : ''} />
           </Field>
         </Section>
         <Section title={t('admin.defaults')}>

@@ -4,9 +4,11 @@ import type { TFn } from '@/i18n';
 /** Variants per game, in the order the wizard shows them. */
 export const TERRARIA_TYPES = ['TERRARIA', 'TSHOCK', 'TMODLOADER'] as const satisfies readonly ServerType[];
 
+/** Games with their own fixed UI; SteamCMD games come from game definitions (GET /games). */
 export const GAMES: Game[] = ['minecraft', 'terraria'];
 
 export function gameOf(type: ServerType | string | undefined | null): Game {
+  if (type === 'STEAMCMD') return 'steam';
   return (TERRARIA_TYPES as readonly string[]).includes(type ?? '') ? 'terraria' : 'minecraft';
 }
 
@@ -42,6 +44,10 @@ export interface GameCaps {
   hasTerrariaConfig: boolean;
   /** tModLoader Workshop mod ids. */
   hasWorkshopMods: boolean;
+  /** Generic SteamCMD game: variables form, ports list, game-file updates. */
+  hasSteamConfig: boolean;
+  /** Kick / ban and the ban list on the Players tab. */
+  hasPlayerModeration: boolean;
   /** Lowest memory the API accepts. */
   minMemoryMb: number;
   defaultMemoryMb: number;
@@ -49,6 +55,7 @@ export interface GameCaps {
 
 export function capsOf(type: ServerType, game: Game = gameOf(type)): GameCaps {
   const mc = game === 'minecraft';
+  const steam = game === 'steam';
   return {
     hasProperties: mc,
     hasMods: mc,
@@ -61,10 +68,13 @@ export function capsOf(type: ServerType, game: Game = gameOf(type)): GameCaps {
     hasOpsWhitelist: mc,
     hasPlayerHeads: mc,
     needsEula: mc,
-    hasTerrariaConfig: !mc,
+    hasTerrariaConfig: game === 'terraria',
     hasWorkshopMods: type === 'TMODLOADER',
+    hasSteamConfig: steam,
+    hasPlayerModeration: !steam,
+    // SteamCMD games: the definition's resources override these (see lib/gameDefs.ts).
     minMemoryMb: mc ? 1024 : 512,
-    defaultMemoryMb: mc ? 4096 : 2048,
+    defaultMemoryMb: mc ? 4096 : steam ? 4096 : 2048,
   };
 }
 

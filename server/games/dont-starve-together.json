@@ -1,0 +1,243 @@
+{
+  "schema": 1,
+  "id": "dont-starve-together",
+  "name": "Don't Starve Together",
+  "description": "Don't Starve Together dedicated server (Steam app 343050, native Linux 64-bit, anonymous login). A cluster token is REQUIRED: create it at https://accounts.klei.com/account/game/servers?game=DontStarveTogether (Klei account) and paste it in. Runs the overworld (Master shard) only: a Caves shard needs a second server process, which this definition cannot start. Cluster settings are written to /data/dst/config/Cluster on every start; /data/dst is part of the default backups. Mods: Workshop mods for DST are not downloaded via SteamCMD. They are configured in the game's own files: edit mods/dedicated_server_mods_setup.lua (ServerModSetup(\"workshop-ID\") lines, downloaded at start) and the shard's modoverrides.lua (enable each mod) with the Files tab; both files are created empty on first start and never overwritten.",
+  "icon": "https://cdn.cloudflare.steamstatic.com/steam/apps/322330/header.jpg",
+  "steam": {
+    "appId": 343050,
+    "branch": "public",
+    "betaPassword": null,
+    "platform": "linux",
+    "login": "anonymous"
+  },
+  "resources": {
+    "memoryMb": 2048,
+    "memoryMinMb": 1024,
+    "cpu": 2,
+    "diskMb": 4096
+  },
+  "ports": [
+    {
+      "id": "game",
+      "label": "Game (UDP)",
+      "protocol": "udp",
+      "containerPort": 10999,
+      "mirror": true,
+      "publish": true,
+      "main": true
+    },
+    {
+      "id": "steammaster",
+      "label": "Steam master server port (UDP)",
+      "protocol": "udp",
+      "containerPort": 27018,
+      "mirror": true,
+      "publish": true
+    },
+    {
+      "id": "steamauth",
+      "label": "Steam authentication port (UDP)",
+      "protocol": "udp",
+      "containerPort": 8768,
+      "mirror": true,
+      "publish": true
+    }
+  ],
+  "variables": [
+    {
+      "key": "clusterToken",
+      "label": "Cluster token",
+      "description": "Klei server token (cluster_token.txt). Required: the server refuses to start without a valid token. Treat it like a password.",
+      "type": "password",
+      "required": true,
+      "min": 10,
+      "max": 200,
+      "pattern": "^[A-Za-z0-9_.$-]+$",
+      "group": "Access"
+    },
+    {
+      "key": "clusterName",
+      "label": "Cluster name",
+      "description": "Server name shown in the browser (cluster_name).",
+      "type": "string",
+      "default": "ServCrafty DST Server",
+      "required": true,
+      "min": 1,
+      "max": 64,
+      "pattern": "^[^=\\[\\]]+$",
+      "group": "Server"
+    },
+    {
+      "key": "clusterDescription",
+      "label": "Description",
+      "description": "Server description (cluster_description). May be empty.",
+      "type": "string",
+      "default": "",
+      "required": false,
+      "max": 200,
+      "pattern": "^[^=\\[\\]]*$",
+      "group": "Server"
+    },
+    {
+      "key": "serverPassword",
+      "label": "Server password",
+      "description": "Password players need to join (cluster_password). Leave empty for a public server.",
+      "type": "password",
+      "default": "",
+      "required": false,
+      "max": 32,
+      "pattern": "^[\\x21-\\x7e]*$",
+      "group": "Access"
+    },
+    {
+      "key": "gameMode",
+      "label": "Game mode",
+      "description": "game_mode.",
+      "type": "select",
+      "default": "survival",
+      "required": true,
+      "options": [
+        {
+          "value": "survival",
+          "label": "Survival"
+        },
+        {
+          "value": "endless",
+          "label": "Endless"
+        },
+        {
+          "value": "wilderness",
+          "label": "Wilderness"
+        }
+      ],
+      "group": "Game"
+    },
+    {
+      "key": "intention",
+      "label": "Playstyle",
+      "description": "cluster_intention shown in the browser.",
+      "type": "select",
+      "default": "cooperative",
+      "required": true,
+      "options": [
+        {
+          "value": "cooperative",
+          "label": "Cooperative"
+        },
+        {
+          "value": "social",
+          "label": "Social"
+        },
+        {
+          "value": "competitive",
+          "label": "Competitive"
+        },
+        {
+          "value": "madness",
+          "label": "Madness"
+        }
+      ],
+      "group": "Game"
+    },
+    {
+      "key": "maxPlayers",
+      "label": "Max players",
+      "description": "Maximum simultaneous players (max_players), 1 to 64.",
+      "type": "number",
+      "default": 6,
+      "required": true,
+      "min": 1,
+      "max": 64,
+      "integer": true,
+      "group": "Game"
+    },
+    {
+      "key": "pvp",
+      "label": "PVP",
+      "description": "Allow players to damage each other (pvp).",
+      "type": "boolean",
+      "default": false,
+      "required": false,
+      "group": "Game"
+    },
+    {
+      "key": "pauseEmpty",
+      "label": "Pause when empty",
+      "description": "Pause the world while nobody is connected (pause_when_empty).",
+      "type": "boolean",
+      "default": true,
+      "required": false,
+      "group": "Game"
+    }
+  ],
+  "launch": {
+    "cwd": "bin64",
+    "command": [
+      "./dontstarve_dedicated_server_nullrenderer_x64",
+      "-console",
+      "-bind_ip",
+      "0.0.0.0",
+      "-persistent_storage_root",
+      "/data/dst",
+      "-conf_dir",
+      "config",
+      "-cluster",
+      "Cluster",
+      "-shard",
+      "Master"
+    ],
+    "env": {}
+  },
+  "files": [
+    {
+      "type": "template",
+      "path": "dst/config/Cluster/cluster_token.txt",
+      "when": "always",
+      "content": "{{clusterToken}}\n"
+    },
+    {
+      "type": "template",
+      "path": "dst/config/Cluster/cluster.ini",
+      "when": "always",
+      "content": "[GAMEPLAY]\ngame_mode = {{gameMode}}\nmax_players = {{maxPlayers}}\npvp = {{pvp}}\npause_when_empty = {{pauseEmpty}}\n\n[NETWORK]\ncluster_name = {{clusterName}}\ncluster_description = {{clusterDescription}}\ncluster_password = {{serverPassword}}\ncluster_intention = {{intention}}\nlan_only_cluster = false\n\n[MISC]\nconsole_enabled = true\n\n[SHARD]\nshard_enabled = false\n"
+    },
+    {
+      "type": "template",
+      "path": "dst/config/Cluster/Master/server.ini",
+      "when": "always",
+      "content": "[NETWORK]\nserver_port = {{ports.game}}\n\n[SHARD]\nis_master = true\n\n[STEAM]\nmaster_server_port = {{ports.steammaster}}\nauthentication_port = {{ports.steamauth}}\n\n[ACCOUNT]\nencode_user_path = true\n"
+    },
+    {
+      "type": "template",
+      "path": "dst/config/Cluster/Master/modoverrides.lua",
+      "when": "missing",
+      "content": "return {\n}\n"
+    },
+    {
+      "type": "template",
+      "path": "mods/dedicated_server_mods_setup.lua",
+      "when": "missing",
+      "content": "-- ServerModSetup(\"workshop-123456789\")\n"
+    }
+  ],
+  "stop": {
+    "type": "stdin",
+    "command": "c_shutdown()",
+    "timeoutSec": 60
+  },
+  "console": {
+    "stdin": true
+  },
+  "ready": null,
+  "players": {
+    "joinRegex": "\\[Join Announcement\\] (?<name>.+)",
+    "leaveRegex": "\\[Leave Announcement\\] (?<name>.+)"
+  },
+  "query": null,
+  "workshop": null,
+  "webui": [],
+  "scripts": {
+    "postInstall": "mkdir -p /data/dst; if [ ! -e dst ] || [ -L dst ]; then rm -f dst; ln -s /data/dst dst; fi; mkdir -p /data/dst/config/Cluster/Master mods"
+  }
+}

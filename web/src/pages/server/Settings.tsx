@@ -1,11 +1,11 @@
 import { usePublicConfig } from '@/components/CopyAddress';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { Plus, Save, Trash2, X } from 'lucide-react';
-import { serversApi } from '@/api';
+import { HardDriveDownload, Plus, Save, Trash2, X } from 'lucide-react';
+import { ApiError, serversApi, toIssues } from '@/api';
 import { useT } from '@/i18n';
-import { isFull } from '@/lib/access';
+import { canManage, canOperate, isFull } from '@/lib/access';
 import { serverCaps } from '@/lib/games';
 import { qk } from '@/lib/queries';
 import { toast } from '@/stores/toast';
@@ -15,6 +15,10 @@ import { LanAnnounceField } from '../create/LanAnnounceField';
 import { TerrariaConfigFields } from '../create/TerrariaConfigStep';
 import { toTerrariaPatch, trFromConfig, validateTr, type TrForm } from '../create/terrariaForm';
 import { TerrariaWorlds, useTerrariaWorlds } from './TerrariaWorlds';
+import { cleanVariables, diffSteamVars, isGenerated, steamFromVars, validateSteam, type SteamErrors, type SteamForm } from '../create/steamForm';
+import { SteamVariablesForm } from '../create/SteamVariablesForm';
+import { Note } from '../create/TerrariaConfigStep';
+import { SteamPorts } from './SteamPorts';
 import { useServerCtx } from './ServerLayout';
 
 export default function ServerSettings() {
@@ -22,7 +26,7 @@ export default function ServerSettings() {
   const { installType } = usePublicConfig();
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const { server } = useServerCtx();
+  const { server, def } = useServerCtx();
   const [form, setForm] = useState({
     name: server.name,
     mcVersion: server.mcVersion,
@@ -54,12 +58,76 @@ export default function ServerSettings() {
     }
     return e;
   }, [caps.hasTerrariaConfig, tr, server.type, t, worldLocked]);
-  const memoryInvalid = !Number.isFinite(form.memoryMb) || form.memoryMb < caps.minMemoryMb;
-  const invalid = Object.keys(trErrors).length > 0 || (caps.hasTerrariaConfig && memoryInvalid);
+  // SteamCMD games: the variables form is generated from the definition once it has loaded.
+  const steam = caps.hasSteamConfig;
+  const steamVars = useMemo(() => cleanVariables(def?.variables), [def]);
+  const steamInitial = useMemo(() => steamFromVars(steamVars, server.steam?.vars), [steamVars, server.steam?.vars]);
+  const [steamVals, setSteamVals] = useState<SteamForm | null>(null);
+  useEffect(() => {
+    if (def && steamVals === null) setSteamVals(steamFromVars(cleanVariables(def.variables), server.steam?.vars));
+  }, [def, steamVals, server.steam?.vars]);
+  const [updateOnStart, setUpdateOnStart] = useState(server.steam?.updateOnStart ?? true);
+  const [steamApiErrors, setSteamApiErrors] = useState<SteamErrors>({});
+  // Secrets the API blanked for this user (below manager): shown as "hidden", never overwritten with ''.
+  const hiddenSecrets = useMemo(
+    () => new Set(canManage(server.access) ? [] : steamVars.filter((v) => (v.type === 'password' || isGenerated(v)) && !server.steam?.vars?.[v.key]).map((v) => v.key)),
+    [server.access, steamVars, server.steam?.vars],
+  );
+  const steamErrors = useMemo(() => {
+    if (!steam || !steamVals) return {};
+    const skip = new Set([...hiddenSecrets].filter((k) => steamVals[k] === ''));
+    return { ...steamApiErrors, ...validateSteam(steamVars, steamVals, t, skip) };
+  }, [steam, steamVals, steamVars, hiddenSecrets, steamApiErrors, t]);
+  const minMemoryMb = steam ? Math.max(512, def?.resources?.memoryMinMb ?? caps.minMemoryMb) : caps.minMemoryMb;
+  const checkMemory = caps.hasTerrariaConfig || steam;
+  const memoryInvalid = !Number.isFinite(form.memoryMb) || form.memoryMb < minMemoryMb;
+  const invalid = Object.keys(trErrors).length > 0 || Object.keys(steamErrors).length > 0 || (checkMemory && memoryInvalid);
+
+  const regenerate = async (key: string) => {
+    const v = steamVars.find((x) => x.key === key);
+    const ok = await confirm({
+      title: t('steam.generateNewTitle', { name: v?.label || key }),
+      body: t('steam.generateNewBody'),
+      confirmLabel: t('steam.generateNew'),
+    });
+    if (!ok) return;
+    try {
+      const r = await serversApi.steamRegenerate(server.id, key);
+      if (typeof r?.value === 'string') setSteamVals((f) => ({ ...(f ?? {}), [key]: r.value }));
+      await qc.invalidateQueries({ queryKey: qk.server(server.id) });
+      toast.success(t('steam.generateNewDone', { name: v?.label || key }));
+    } catch (e) {
+      toast.error(e);
+    }
+  };
+
+  const updateGameFiles = async () => {
+    const running = server.status !== 'stopped' && server.status !== 'crashed';
+    const ok = await confirm({
+      title: t('steam.updateNowTitle'),
+      body: running ? t('steam.updateNowBodyRunning') : t('steam.updateNowBodyStopped'),
+      confirmLabel: t('steam.updateNow'),
+    });
+    if (!ok) return;
+    try {
+      await serversApi.steamUpdate(server.id);
+      toast.success(running ? t('steam.updateNowDoneRunning') : t('steam.updateNowDoneStopped'));
+      void qc.invalidateQueries({ queryKey: qk.server(server.id) });
+    } catch (e) {
+      toast.error(e);
+    }
+  };
 
   const save = async () => {
     if (invalid) return;
     setSaving(true);
+    setSteamApiErrors({});
+    const steamPatch = steam
+      ? (() => {
+          const vars = steamVals ? diffSteamVars(steamVars, steamVals, steamInitial, hiddenSecrets) : {};
+          return { ...(Object.keys(vars).length ? { vars } : {}), updateOnStart };
+        })()
+      : undefined;
     try {
       await serversApi.update(server.id, {
         name: form.name.trim(),
@@ -72,18 +140,27 @@ export default function ServerSettings() {
         memoryMb: Number(form.memoryMb),
         cpu: Number(form.cpu),
         diskMb: form.diskMb === '' ? null : Number(form.diskMb),
-        port: Number(form.port),
+        ...(steam ? {} : { port: Number(form.port) }),
         ...(caps.hasJava ? { javaArgs: form.javaArgs.trim() || null } : {}),
         autoRestart: form.autoRestart,
         autoStart: form.autoStart,
         ...(caps.hasJava && server.type !== 'BEDROCK' ? { lanAnnounce: form.lanAnnounce } : {}),
         ...(caps.hasTerrariaConfig ? { terraria: toTerrariaPatch(tr, server.type, worldLocked) } : {}),
+        ...(steamPatch ? { steam: steamPatch } : {}),
         env: Object.fromEntries(env.filter(([k]) => k.trim()).map(([k, v]) => [k.trim(), v])),
       });
       await qc.invalidateQueries({ queryKey: qk.server(server.id) });
       void qc.invalidateQueries({ queryKey: qk.servers });
       toast.success(server.status === 'running' ? t('settings.savedRestart') : t('settings.saved'));
     } catch (e) {
+      if (e instanceof ApiError && e.code === 'invalid_steam_config') {
+        const errs: SteamErrors = {};
+        for (const i of toIssues(e.details)) {
+          const key = i.path.replace(/^(steam\.)?vars\./, '').split('.')[0] ?? '';
+          if (key && steamVars.some((v) => v.key === key)) errs[key] = i.message;
+        }
+        setSteamApiErrors(errs);
+      }
       toast.error(e);
     } finally {
       setSaving(false);
@@ -128,15 +205,15 @@ export default function ServerSettings() {
           )}
           <Field
             label={t('server.memory') + ' (MB)'}
-            error={caps.hasTerrariaConfig && memoryInvalid ? t('settings.memoryMin', { min: caps.minMemoryMb }) : null}
+            error={checkMemory && memoryInvalid ? t('settings.memoryMin', { min: minMemoryMb }) : null}
           >
             <input
               className="input"
               type="number"
-              min={512}
+              min={steam ? minMemoryMb : 512}
               step={256}
               value={form.memoryMb}
-              aria-invalid={caps.hasTerrariaConfig && memoryInvalid}
+              aria-invalid={checkMemory && memoryInvalid}
               onChange={(e) => set('memoryMb', Number(e.target.value))}
             />
           </Field>
@@ -146,9 +223,11 @@ export default function ServerSettings() {
           <Field label={t('server.disk') + ' (MB)'} hint={t('wizard.optional')}>
             <input className="input" type="number" min={0} step={1024} value={form.diskMb} onChange={(e) => set('diskMb', e.target.value === '' ? '' : Number(e.target.value))} />
           </Field>
-          <Field label={t('server.port')}>
-            <input className="input" type="number" min={1} max={65535} value={form.port} onChange={(e) => set('port', Number(e.target.value))} />
-          </Field>
+          {!steam && (
+            <Field label={t('server.port')}>
+              <input className="input" type="number" min={1} max={65535} value={form.port} onChange={(e) => set('port', Number(e.target.value))} />
+            </Field>
+          )}
           {caps.hasJava && (
             <Field label={t('server.javaArgs')} className="sm:col-span-2" hint={t('settings.javaArgsHint')}>
               <input className="input font-mono text-[13px]" value={form.javaArgs} onChange={(e) => set('javaArgs', e.target.value)} placeholder="-XX:+UseG1GC" />
@@ -189,7 +268,60 @@ export default function ServerSettings() {
         </section>
       )}
 
-      <Section title={t('settings.env')} description={caps.hasTerrariaConfig ? t('settings.envBodyTr') : t('settings.envBody')}>
+      {steam && (
+        <section aria-labelledby="steam-settings" className="space-y-3">
+          <div>
+            <h2 id="steam-settings" className="text-base font-semibold">
+              {def?.name ?? server.steam?.gameId ?? t('game.steam')}
+            </h2>
+            <p className="mt-0.5 text-sm text-muted">{t('steam.settingsBody')}</p>
+          </div>
+          {!def ? (
+            <Note>{t('steam.defMissing', { id: server.steam?.gameId ?? '' })}</Note>
+          ) : steamVals ? (
+            <SteamVariablesForm
+              variables={steamVars}
+              values={steamVals}
+              onChange={(k, v) => {
+                setSteamVals((f) => ({ ...(f ?? {}), [k]: v }));
+                setSteamApiErrors((e) => {
+                  if (!(k in e)) return e;
+                  const n = { ...e };
+                  delete n[k];
+                  return n;
+                });
+              }}
+              errors={steamErrors}
+              hiddenSecrets={hiddenSecrets}
+              mode="edit"
+              onRegenerate={canManage(server.access) ? (k) => void regenerate(k) : undefined}
+              footer={
+                <div className="space-y-4">
+                  <div>
+                    <Toggle checked={updateOnStart} onChange={setUpdateOnStart} label={t('steam.updateOnStart')} />
+                    <p className="hint">{t('steam.updateOnStartHint')}</p>
+                  </div>
+                  {canOperate(server.access) && (
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
+                      <p className="max-w-md text-sm text-muted">
+                        {server.steam?.validateNext ? t('steam.validatePending') : t('steam.updateNowHint')}
+                      </p>
+                      <Button onClick={() => void updateGameFiles()} icon={<HardDriveDownload className="h-4 w-4" />}>
+                        {t('steam.updateNow')}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              }
+            />
+          ) : null}
+          <Section title={t('steam.portsTitle')} description={t('steam.portsBody')}>
+            <SteamPorts server={server} def={def} />
+          </Section>
+        </section>
+      )}
+
+      <Section title={t('settings.env')} description={steam ? t('settings.envBodySteam') : caps.hasTerrariaConfig ? t('settings.envBodyTr') : t('settings.envBody')}>
         <div className="space-y-2">
           {env.map(([k, v], i) => (
             <div key={i} className="flex gap-2">

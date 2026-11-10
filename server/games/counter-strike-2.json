@@ -1,0 +1,219 @@
+{
+  "schema": 1,
+  "id": "counter-strike-2",
+  "name": "Counter-Strike 2",
+  "description": "Counter-Strike 2 dedicated server (Steam app 730, native Linux, anonymous login). Port 27015 carries the game (UDP) and RCON (TCP) and is advertised to Steam, so it is mirrored. A Game Server Login Token (GSLT) is strongly recommended. The install is the full 55-60 GB game depot and the first start takes a long time. Not covered: Workshop maps (they need a Steam Web API key via -authkey and +host_workshop_map; duplicate this definition to add them) and SourceTV.",
+  "icon": "https://cdn.cloudflare.steamstatic.com/steam/apps/730/header.jpg",
+  "steam": {
+    "appId": 730,
+    "branch": "public",
+    "betaPassword": null,
+    "platform": "linux",
+    "login": "anonymous"
+  },
+  "resources": {
+    "memoryMb": 4096,
+    "memoryMinMb": 2048,
+    "cpu": 2,
+    "diskMb": 61440
+  },
+  "ports": [
+    {
+      "id": "game",
+      "label": "Game, query and RCON (UDP + TCP)",
+      "protocol": "both",
+      "containerPort": 27015,
+      "mirror": true,
+      "publish": true,
+      "main": true
+    }
+  ],
+  "variables": [
+    {
+      "key": "serverName",
+      "label": "Server name",
+      "description": "Name shown in the server browser (hostname convar).",
+      "type": "string",
+      "default": "ServCrafty CS2 Server",
+      "required": true,
+      "min": 1,
+      "max": 64,
+      "group": "Server"
+    },
+    {
+      "key": "serverPassword",
+      "label": "Server password",
+      "description": "Password players need to join (sv_password). Leave empty for a public server.",
+      "type": "password",
+      "default": "",
+      "required": false,
+      "max": 32,
+      "pattern": "^[\\x21-\\x7e]*$",
+      "group": "Access"
+    },
+    {
+      "key": "rconPassword",
+      "label": "RCON password",
+      "description": "Remote console password (rcon_password), also needed by external admin tools. Leave empty to have one generated when the server is created (20 characters); managers can read and regenerate it in Settings.",
+      "type": "password",
+      "required": true,
+      "min": 6,
+      "max": 64,
+      "generate": {
+        "length": 20,
+        "charset": "alnum"
+      },
+      "group": "Access"
+    },
+    {
+      "key": "gslt",
+      "label": "Game Server Login Token (GSLT)",
+      "description": "Steam game server login token, 32 hexadecimal characters, created at https://steamcommunity.com/dev/managegameservers for app 730. Optional but strongly recommended: without it the server may run as an anonymous, unlisted or restricted server.",
+      "type": "password",
+      "default": "",
+      "required": false,
+      "pattern": "^([A-Fa-f0-9]{32})?$",
+      "group": "Access"
+    },
+    {
+      "key": "map",
+      "label": "Starting map",
+      "description": "Map the server starts on (for example de_dust2, de_mirage, de_inferno, cs_office). The map must exist on the server.",
+      "type": "string",
+      "default": "de_dust2",
+      "required": true,
+      "pattern": "^[A-Za-z0-9_.-]+$",
+      "group": "Game"
+    },
+    {
+      "key": "gameType",
+      "label": "Game type",
+      "description": "game_type: 0 = Classic, 1 = Gun Game. Together with Game mode this selects the mode: Classic 0 = Casual, 1 = Competitive, 2 = Wingman; Gun Game 0 = Arms Race, 1 = Demolition, 2 = Deathmatch.",
+      "type": "select",
+      "default": "0",
+      "required": true,
+      "options": [
+        {
+          "value": "0",
+          "label": "Classic"
+        },
+        {
+          "value": "1",
+          "label": "Gun Game"
+        }
+      ],
+      "group": "Game"
+    },
+    {
+      "key": "gameMode",
+      "label": "Game mode",
+      "description": "game_mode (0, 1 or 2); the meaning depends on Game type, see its description.",
+      "type": "select",
+      "default": "0",
+      "required": true,
+      "options": [
+        {
+          "value": "0",
+          "label": "0 (Casual / Arms Race)"
+        },
+        {
+          "value": "1",
+          "label": "1 (Competitive / Demolition)"
+        },
+        {
+          "value": "2",
+          "label": "2 (Wingman / Deathmatch)"
+        }
+      ],
+      "group": "Game"
+    },
+    {
+      "key": "maxPlayers",
+      "label": "Max players",
+      "description": "Maximum number of players.",
+      "type": "number",
+      "default": 10,
+      "required": true,
+      "min": 1,
+      "max": 64,
+      "integer": true,
+      "group": "Game"
+    },
+    {
+      "key": "insecure",
+      "label": "Disable VAC (insecure)",
+      "description": "Start with -insecure so Valve Anti-Cheat is off. Insecure servers are not shown to VAC-protected clients by default.",
+      "type": "boolean",
+      "default": false,
+      "required": false,
+      "group": "Advanced"
+    }
+  ],
+  "launch": {
+    "cwd": "",
+    "command": [
+      "./game/bin/linuxsteamrt64/cs2",
+      "-dedicated",
+      "-console",
+      "-usercon",
+      "-port",
+      "{{ports.game}}",
+      "-maxplayers",
+      "{{maxPlayers}}",
+      {
+        "value": "-insecure",
+        "if": "insecure"
+      },
+      "+game_type",
+      "{{gameType}}",
+      "+game_mode",
+      "{{gameMode}}",
+      "+map",
+      "{{map}}",
+      "+hostname",
+      "{{serverName}}",
+      {
+        "value": "+sv_password",
+        "if": "serverPassword"
+      },
+      {
+        "value": "{{serverPassword}}",
+        "if": "serverPassword"
+      },
+      "+rcon_password",
+      "{{rconPassword}}",
+      {
+        "value": "+sv_setsteamaccount",
+        "if": "gslt"
+      },
+      {
+        "value": "{{gslt}}",
+        "if": "gslt"
+      }
+    ],
+    "env": {
+      "LD_LIBRARY_PATH": "/data/game/game/bin/linuxsteamrt64"
+    }
+  },
+  "files": [],
+  "stop": {
+    "type": "stdin",
+    "command": "quit",
+    "timeoutSec": 30
+  },
+  "console": {
+    "stdin": true
+  },
+  "ready": {
+    "logRegex": "Connection to Steam servers successful"
+  },
+  "players": null,
+  "query": {
+    "a2s": {
+      "portId": "game"
+    }
+  },
+  "workshop": null,
+  "webui": [],
+  "scripts": {}
+}

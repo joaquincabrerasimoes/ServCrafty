@@ -1,0 +1,11 @@
+{
+  "name": "servcrafty-steam-run",
+  "version": "0.3.0",
+  "private": true,
+  "description": "Executor for the ServCrafty SteamCMD image (consumes /servcrafty/plan.json)",
+  "license": "UNLICENSED",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "node --test"
+  }
+}

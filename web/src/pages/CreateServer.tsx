@@ -2,16 +2,18 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
-import { ArrowLeft, ArrowRight, Check, Pickaxe, RefreshCw, Rocket, Trees } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, Download, Gamepad2, Pickaxe, RefreshCw, Rocket, Trees } from 'lucide-react';
 import { accountApi, catalogApi, serversApi } from '@/api';
-import type { CatalogProject, CatalogVersion, CreateServerBody, Game, ServerType } from '@/api/types';
+import type { CatalogProject, CatalogVersion, CreateServerBody, Game, GameSummary, ServerType } from '@/api/types';
 import { useT, type TKey } from '@/i18n';
 import { quotaRows } from '@/lib/quota';
 import { toast } from '@/stores/toast';
 import { formatDate, formatMb } from '@/lib/format';
 import { qk } from '@/lib/queries';
 import { GAMES, TERRARIA_TYPES, capsOf } from '@/lib/games';
-import { Button, ErrorState, Field, Meter, PageHeader, Spinner, Toggle } from '@/components/ui';
+import { protocolLabel, publishedPorts, useGameDefs } from '@/lib/gameDefs';
+import { GameIcon } from '@/components/GameBits';
+import { Badge, Button, ErrorState, Field, Meter, PageHeader, Spinner, Toggle } from '@/components/ui';
 import { errorMessage } from '@/api/client';
 import { CatalogSearch, ProjectIcon } from '@/components/CatalogSearch';
 import { Combobox, type ComboOption } from '@/components/Combobox';
@@ -20,6 +22,9 @@ import { MinecraftConfigStep } from './create/MinecraftConfigStep';
 import { mcDefaults, summarizeMc, toMinecraftConfig, validateMc, type Edition, type McForm } from './create/minecraftForm';
 import { TerrariaConfigFields, WorldFilePicker } from './create/TerrariaConfigStep';
 import { summarizeTr, toTerrariaConfig, trDefaults, validateTr, validateWorldFiles, type TrForm } from './create/terrariaForm';
+import { cleanVariables, steamDefaults, summarizeSteam, toSteamVars, validateSteam, type SteamForm } from './create/steamForm';
+import { SteamVariablesForm } from './create/SteamVariablesForm';
+import { Note } from './create/TerrariaConfigStep';
 
 const GROUPS: Array<{ id: string; types: ServerType[] }> = [
   { id: 'vanilla', types: ['VANILLA'] },
@@ -32,10 +37,11 @@ const GROUPS: Array<{ id: string; types: ServerType[] }> = [
 const isModpack = (t: ServerType) => t === 'CURSEFORGE' || t === 'MODRINTH';
 const hasLoader = (t: ServerType) => ['FABRIC', 'QUILT', 'FORGE', 'NEOFORGE'].includes(t);
 
-type StepId = 'game' | 'type' | 'version' | 'resources' | 'minecraft' | 'terraria' | 'review';
+type StepId = 'game' | 'type' | 'version' | 'resources' | 'minecraft' | 'terraria' | 'steam' | 'review';
 const STEPS_BY_GAME: Record<Game, StepId[]> = {
   minecraft: ['game', 'type', 'version', 'resources', 'minecraft', 'review'],
   terraria: ['game', 'type', 'resources', 'terraria', 'review'],
+  steam: ['game', 'resources', 'steam', 'review'],
 };
 const STEP_LABEL: Record<StepId, TKey> = {
   game: 'wizard.stepGame',
@@ -44,10 +50,32 @@ const STEP_LABEL: Record<StepId, TKey> = {
   resources: 'wizard.stepResources',
   minecraft: 'wizard.stepMinecraft',
   terraria: 'wizard.stepWorld',
+  steam: 'wizard.stepSettings',
   review: 'wizard.stepReview',
 };
-const GAME_ICON: Record<Game, typeof Pickaxe> = { minecraft: Pickaxe, terraria: Trees };
-const DEFAULT_TYPE: Record<Game, ServerType> = { minecraft: 'PAPER', terraria: 'TERRARIA' };
+const GAME_ICON: Record<Game, typeof Pickaxe> = { minecraft: Pickaxe, terraria: Trees, steam: Gamepad2 };
+const DEFAULT_TYPE: Record<Game, ServerType> = { minecraft: 'PAPER', terraria: 'TERRARIA', steam: 'STEAMCMD' };
+
+/** One card of the Game step. */
+function GameCard({ on, onClick, icon, title, body, extra }: { on: boolean; onClick: () => void; icon: React.ReactNode; title: string; body?: string; extra?: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={on}
+      className={clsx(
+        'relative flex min-w-0 flex-col items-start gap-3 rounded-md border p-5 text-left',
+        on ? 'border-accent bg-accent/10' : 'border-line bg-surface hover:border-muted',
+      )}
+    >
+      {icon}
+      <span className="pe-6 text-lg font-semibold">{title}</span>
+      {body && <span className="line-clamp-3 text-sm text-muted">{body}</span>}
+      {extra && <span className="text-xs text-muted">{extra}</span>}
+      {on && <Check className="absolute right-3 top-3 h-5 w-5 text-accent" aria-hidden="true" />}
+    </button>
+  );
+}
 
 function Stepper({ steps, step }: { steps: StepId[]; step: number }) {
   const t = useT();
@@ -203,6 +231,12 @@ export default function CreateServer() {
   const [createdId, setCreatedId] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [uploadError, setUploadError] = useState<unknown>(null);
+  // SteamCMD games (one card per game definition)
+  const defs = useGameDefs();
+  const [steamDef, setSteamDef] = useState<GameSummary | null>(null);
+  const steamVars = useMemo(() => cleanVariables(steamDef?.variables), [steamDef]);
+  const [steamVals, setSteamVals] = useState<SteamForm>({});
+  const [updateOnStart, setUpdateOnStart] = useState(true);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const firstRender = useRef(true);
 
@@ -210,6 +244,9 @@ export default function CreateServer() {
   const current = steps[step] ?? 'game';
   const caps = capsOf(type, game);
   const terraria = game === 'terraria';
+  const steam = game === 'steam';
+  const minMemoryMb = steam ? Math.max(512, steamDef?.resources?.memoryMinMb ?? 512) : caps.minMemoryMb;
+  const steamErrors = useMemo(() => (steam ? validateSteam(steamVars, steamVals, t) : {}), [steam, steamVars, steamVals, t]);
 
   const quota = useQuery({ queryKey: qk.quota, queryFn: accountApi.quota, staleTime: 30_000 });
   // Each row already folds in the host-wide cap, so "free" is what this user can really still take.
@@ -247,12 +284,13 @@ export default function CreateServer() {
   const canNext = useMemo(() => {
     if (current === 'version') return modpack ? !!pack && !!packVersion : !!mcVersion;
     if (current === 'resources')
-      return name.trim().length > 0 && memoryMb >= caps.minMemoryMb && memoryMb <= MEMORY_API_MAX_MB && cpuValid && !ramQuotaError && !cpuQuotaError;
+      return name.trim().length > 0 && memoryMb >= minMemoryMb && memoryMb <= MEMORY_API_MAX_MB && cpuValid && !ramQuotaError && !cpuQuotaError;
     if (current === 'minecraft') return Object.keys(mcErrors).length === 0;
+    if (current === 'steam') return Object.keys(steamErrors).length === 0;
     if (current === 'terraria') return Object.keys(trErrors).length === 0 && !worldFileError;
     if (current === 'review') return caps.needsEula ? eula : !worldFileError;
     return true;
-  }, [current, modpack, pack, packVersion, mcVersion, name, memoryMb, caps, cpuValid, ramQuotaError, cpuQuotaError, mcErrors, trErrors, worldFileError, eula]);
+  }, [current, modpack, pack, packVersion, mcVersion, name, memoryMb, minMemoryMb, caps, cpuValid, ramQuotaError, cpuQuotaError, mcErrors, steamErrors, trErrors, worldFileError, eula]);
 
   // Move focus to the step heading so keyboard and screen reader users land on the new step.
   useEffect(() => {
@@ -265,8 +303,26 @@ export default function CreateServer() {
     document.querySelector('main')?.scrollTo?.({ top: 0 });
   }, [step]);
 
+  const pickSteamGame = (d: GameSummary) => {
+    if (steam && steamDef?.id === d.id) return;
+    setGame('steam');
+    setType('STEAMCMD');
+    setSteamDef(d);
+    setSteamVals(steamDefaults(cleanVariables(d.variables)));
+    setUpdateOnStart(true);
+    setPack(null);
+    setPackVersion(null);
+    setWorldFiles([]);
+    const min = Math.max(512, d.resources?.memoryMinMb ?? 512);
+    setMemoryMb(Math.max(min, d.resources?.memoryMb ?? capsOf('STEAMCMD', 'steam').defaultMemoryMb));
+    setCpu(d.resources?.cpu ?? 2);
+    setDiskMb(d.resources?.diskMb ? d.resources.diskMb : '');
+    setPort('');
+  };
+
   const pickGame = (g: Game) => {
     if (g === game) return;
+    setSteamDef(null);
     setGame(g);
     setType(DEFAULT_TYPE[g]);
     setPack(null);
@@ -313,13 +369,15 @@ export default function CreateServer() {
         const body: CreateServerBody = {
           name: name.trim(),
           type,
-          mcVersion: terraria ? 'LATEST' : modpack ? packMc ?? 'LATEST' : mcVersion,
+          mcVersion: terraria || steam ? 'LATEST' : modpack ? packMc ?? 'LATEST' : mcVersion,
           memoryMb,
           cpu,
           autoRestart,
           eula: true,
         };
-        if (terraria) {
+        if (steam && steamDef) {
+          body.steam = { gameId: steamDef.id, vars: toSteamVars(steamVars, steamVals), updateOnStart };
+        } else if (terraria) {
           body.terraria = trConfig;
         } else {
           if (mcConfig) body.minecraft = mcConfig;
@@ -334,7 +392,7 @@ export default function CreateServer() {
           }
         }
         if (diskMb) body.diskMb = diskMb;
-        if (port) body.port = port;
+        if (port && !steam) body.port = port;
         const server = await serversApi.create(body);
         id = server?.id ?? null;
         await qc.invalidateQueries({ queryKey: qk.servers });
@@ -352,9 +410,9 @@ export default function CreateServer() {
   };
 
   const reviewRows: string[][] = [
-    [t('wizard.stepGame'), t(`game.${game}`)],
+    [t('wizard.stepGame'), steam ? steamDef?.name ?? '' : t(`game.${game}`)],
     [t('server.name'), name],
-    [t('server.type'), t(`type.${type}`)],
+    ...(steam ? [] : [[t('server.type'), t(`type.${type}`)]]),
     ...(caps.hasMcVersion
       ? [[t('server.mcVersion'), modpack ? packMc ?? t('wizard.latest') : mcVersion === 'LATEST' ? t('wizard.latest') : mcVersion]]
       : []),
@@ -363,16 +421,22 @@ export default function CreateServer() {
     [t('server.memory'), formatMb(memoryMb)],
     [t('server.cpu'), String(cpu)],
     [t('server.disk'), diskMb ? formatMb(diskMb) : t('wizard.unlimited')],
-    [t('server.port'), port ? String(port) : t('wizard.auto')],
+    ...(steam ? [] : [[t('server.port'), port ? String(port) : t('wizard.auto')]]),
     [t('server.autoRestart'), autoRestart ? t('common.yes') : t('common.no')],
+    ...(steam ? [[t('steam.updateOnStart'), updateOnStart ? t('common.yes') : t('common.no')]] : []),
     ...(caps.hasLan ? [[t('lan.label'), lanAnnounce ? t('common.yes') : t('common.no')]] : []),
   ];
-  const configStep: StepId = terraria ? 'terraria' : 'minecraft';
-  const configRows = terraria
-    ? summarizeTr(trConfig, t, importing ? worldFiles.map((f) => f.name).join(', ') : null)
-    : mcConfig
-      ? summarizeMc(mcConfig, edition, t)
-      : null;
+  const configStep: StepId = steam ? 'steam' : terraria ? 'terraria' : 'minecraft';
+  const configRows = steam
+    ? steamVars.length
+      ? summarizeSteam(steamVars, steamVals, t)
+      : null
+    : terraria
+      ? summarizeTr(trConfig, t, importing ? worldFiles.map((f) => f.name).join(', ') : null)
+      : mcConfig
+        ? summarizeMc(mcConfig, edition, t)
+        : null;
+  const steamPorts = steam ? publishedPorts(steamDef ?? undefined) : [];
   const locked = createdId !== null; // the server exists; only the world upload is left
 
   return (
@@ -395,27 +459,44 @@ export default function CreateServer() {
               const Icon = GAME_ICON[g];
               const on = game === g;
               return (
-                <button
+                <GameCard
                   key={g}
-                  type="button"
+                  on={on}
                   onClick={() => pickGame(g)}
-                  aria-pressed={on}
-                  className={clsx(
-                    'relative flex flex-col items-start gap-3 rounded-md border p-5 text-left',
-                    on ? 'border-accent bg-accent/10' : 'border-line bg-surface hover:border-muted',
-                  )}
-                >
-                  <span className={clsx('flex h-11 w-11 items-center justify-center rounded-block', on ? 'bg-accent text-accent-ink' : 'bg-raised text-muted')}>
-                    <Icon className="h-6 w-6" aria-hidden="true" />
-                  </span>
-                  <span className="text-lg font-semibold">{t(`game.${g}`)}</span>
-                  <span className="text-sm text-muted">{t(`wizard.gameHint.${g}`)}</span>
-                  {on && <Check className="absolute right-3 top-3 h-5 w-5 text-accent" aria-hidden="true" />}
-                </button>
+                  icon={
+                    <span className={clsx('flex h-11 w-11 items-center justify-center rounded-block', on ? 'bg-accent text-accent-ink' : 'bg-raised text-muted')}>
+                      <Icon className="h-6 w-6" aria-hidden="true" />
+                    </span>
+                  }
+                  title={t(`game.${g}`)}
+                  body={t(`wizard.gameHint.${g as 'minecraft' | 'terraria'}`)}
+                />
+              );
+            })}
+            {defs.data?.map((d) => {
+              const on = steam && steamDef?.id === d.id;
+              const r = d.resources;
+              return (
+                <GameCard
+                  key={d.id}
+                  on={on}
+                  onClick={() => pickSteamGame(d)}
+                  icon={<GameIcon src={d.icon} active={on} />}
+                  title={d.name}
+                  body={d.description}
+                  extra={r?.memoryMb || r?.memoryMinMb ? t('wizard.steamResources', { ram: formatMb(r.memoryMb ?? r.memoryMinMb), cpu: r.cpu ?? 2 }) : undefined}
+                />
               );
             })}
           </div>
-          <p className="text-sm text-muted">{t('wizard.moreGames')}</p>
+          {defs.isLoading && (
+            <p className="flex items-center gap-2 text-sm text-muted">
+              <Spinner className="h-4 w-4" />
+              {t('wizard.loadingGames')}
+            </p>
+          )}
+          {defs.error && <ErrorState error={defs.error} onRetry={() => void defs.refetch()} />}
+          {!defs.isLoading && !defs.error && !defs.data?.length && <p className="text-sm text-muted">{t('wizard.moreGames')}</p>}
         </div>
       )}
 
@@ -515,18 +596,24 @@ export default function CreateServer() {
               onChange={(e) => setName(e.target.value)}
               maxLength={64}
               autoFocus
-              placeholder={t(terraria ? 'wizard.namePlaceholderTr' : 'wizard.namePlaceholder')}
+              placeholder={steam ? steamDef?.name : t(terraria ? 'wizard.namePlaceholderTr' : 'wizard.namePlaceholder')}
             />
           </Field>
           <MemoryField
             valueMb={memoryMb}
             onChange={setMemoryMb}
-            minMb={caps.minMemoryMb}
-            hint={terraria ? t('wizard.memoryHintTr') : undefined}
-            maxMb={Math.max(caps.minMemoryMb, Math.min(MEMORY_API_MAX_MB, freeRamMb ?? MEMORY_API_MAX_MB))}
+            minMb={minMemoryMb}
+            hint={
+              steam
+                ? t('wizard.memoryHintSteam', { min: formatMb(minMemoryMb), rec: formatMb(steamDef?.resources?.memoryMb ?? minMemoryMb) })
+                : terraria
+                  ? t('wizard.memoryHintTr')
+                  : undefined
+            }
+            maxMb={Math.max(minMemoryMb, Math.min(MEMORY_API_MAX_MB, freeRamMb ?? MEMORY_API_MAX_MB))}
             quotaError={ramQuotaError}
           />
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className={clsx('grid gap-4', steam ? 'sm:grid-cols-2' : 'sm:grid-cols-3')}>
             <Field label={t('server.cpu')} error={cpuQuotaError ?? (cpuValid ? null : t('wizard.cpuInvalid'))}>
               <input
                 className="input"
@@ -542,15 +629,36 @@ export default function CreateServer() {
             <Field label={t('server.disk')} hint={t('wizard.optional')}>
               <input className="input" type="number" min={1024} step={1024} value={diskMb} onChange={(e) => setDiskMb(e.target.value ? Number(e.target.value) : '')} placeholder="MB" />
             </Field>
-            <Field label={t('server.port')} hint={t('wizard.portHint')}>
-              <input className="input" type="number" min={1} max={65535} value={port} onChange={(e) => setPort(e.target.value ? Number(e.target.value) : '')} placeholder={t('wizard.auto')} />
-            </Field>
+            {!steam && (
+              <Field label={t('server.port')} hint={t('wizard.portHint')}>
+                <input className="input" type="number" min={1} max={65535} value={port} onChange={(e) => setPort(e.target.value ? Number(e.target.value) : '')} placeholder={t('wizard.auto')} />
+              </Field>
+            )}
           </div>
+          {steam && <Note>{t('wizard.steamPortsAuto', { n: steamPorts.length })}</Note>}
           <Toggle checked={autoRestart} onChange={setAutoRestart} label={t('server.autoRestart')} />
         </div>
       )}
 
       {current === 'minecraft' && <MinecraftConfigStep form={mc} set={setMcField} errors={mcErrors} edition={edition} modpack={modpack} lanAnnounce={lanAnnounce} onLanAnnounce={setLanAnnounce} />}
+
+      {current === 'steam' && (
+        <div className="space-y-4">
+          <p className="text-sm text-muted">{t('steam.intro')}</p>
+          <SteamVariablesForm
+            variables={steamVars}
+            values={steamVals}
+            onChange={(k, v) => setSteamVals((f) => ({ ...f, [k]: v }))}
+            errors={steamErrors}
+            footer={
+              <div>
+                <Toggle checked={updateOnStart} onChange={setUpdateOnStart} label={t('steam.updateOnStart')} />
+                <p className="hint">{t('steam.updateOnStartHint')}</p>
+              </div>
+            }
+          />
+        </div>
+      )}
 
       {current === 'terraria' && (
         <div className="space-y-4">
@@ -601,6 +709,37 @@ export default function CreateServer() {
               <p className="px-4 py-3 text-muted">{t('mc.allDefaults')}</p>
             )}
           </section>
+          {steam && (
+            <section aria-labelledby="review-ports" className="panel text-sm">
+              <h3 id="review-ports" className="border-b border-line px-4 py-2 text-base font-semibold">
+                {t('steam.portsTitle')}
+              </h3>
+              {steamPorts.length ? (
+                <ul className="divide-y divide-line">
+                  {steamPorts.map((p) => (
+                    <li key={p.id} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-4 py-2.5">
+                      <span className="min-w-0">
+                        <span className="font-medium">{p.label || p.id}</span>
+                        {p.main && <Badge tone="accent" className="ms-2">{t('steam.mainPort')}</Badge>}
+                      </span>
+                      <span className="text-muted">
+                        {protocolLabel(p.protocol)} · {t('steam.hostPortAuto')}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="px-4 py-3 text-muted">{t('steam.noPorts')}</p>
+              )}
+              <p className="border-t border-line px-4 py-2.5 text-xs text-muted">{t('steam.portsReviewHint')}</p>
+            </section>
+          )}
+          {steam && (
+            <p className="flex gap-2 rounded-md border border-accent/30 bg-accent/5 px-4 py-3 text-sm">
+              <Download className="mt-0.5 h-4 w-4 shrink-0 text-accent" aria-hidden="true" />
+              <span>{t('steam.firstStartNote')}</span>
+            </p>
+          )}
           {caps.needsEula && (
             <label className="flex items-start gap-3 rounded-md border border-line bg-surface p-4 text-sm">
               <input type="checkbox" className="mt-0.5 h-4 w-4 accent-[rgb(var(--accent))]" checked={eula} onChange={(e) => setEula(e.target.checked)} />

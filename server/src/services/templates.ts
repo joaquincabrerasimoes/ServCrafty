@@ -2,7 +2,8 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
 import { query, queryOne } from '../db/pool.js';
-import { forbidden, notFound } from '../lib/errors.js';
+import { AppError, forbidden, notFound } from '../lib/errors.js';
+import { gameOf } from '../lib/games.js';
 import { serializeProperties } from '../lib/properties.js';
 import { createServer, serverConfigSchema } from './servers.js';
 import type { ServerRow, UserRow } from './types.js';
@@ -81,7 +82,8 @@ export const instantiateSchema = z.object({
   loaderVersion: z.string().max(128).nullable().optional(),
   env: z.record(z.string()).optional(),
   autoRestart: z.boolean().optional(),
-  eula: z.literal(true, { errorMap: () => ({ message: 'You must accept the Minecraft EULA' }) }),
+  /** Required (true) unless the template is a SteamCMD server. */
+  eula: z.literal(true, { errorMap: () => ({ message: 'You must accept the Minecraft EULA' }) }).optional(),
   ownerId: z.string().uuid().optional(),
 });
 
@@ -92,6 +94,9 @@ export async function instantiateTemplate(
 ): Promise<ServerRow> {
   const cfg = templateConfigSchema.parse(t.config);
   const { properties, ...base } = cfg;
+  if (gameOf(base.type) !== 'steam' && overrides.eula !== true) {
+    throw new AppError(400, 'validation_error', 'eula: You must accept the Minecraft EULA');
+  }
   return createServer(
     user,
     {

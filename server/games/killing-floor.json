@@ -1,0 +1,479 @@
+{
+  "schema": 1,
+  "id": "killing-floor",
+  "name": "Killing Floor",
+  "description": "Killing Floor (the 2009 original, Unreal Engine 2) dedicated server: Steam app 215360, native Linux 32-bit binary (System/ucc-bin), anonymous SteamCMD login. All settings are written to System/KillingFloor.ini on every start, seeded from the game's Default.ini the first time. The classic WebAdmin runs on an internal port and is reachable only through the panel (WebAdmin tab; HTTP basic auth with the admin name and password). Steam Workshop: items are downloaded with SteamCMD (workshop app 1250) and their files are copied into System/. Limitation: a downloaded item is NOT activated automatically; mutators and server packages still have to be enabled (use 'Extra URL options' such as ?Mutator=Package.Class, or edit System/KillingFloor.ini with the Files tab), and the item's sounds/textures/animations may need to be moved to the matching game folders by hand. The Steam query port is always the game port + 1, which the panel allocates and publishes automatically so the server can be listed in the Steam server browser.",
+  "icon": "https://cdn.cloudflare.steamstatic.com/steam/apps/1250/header.jpg",
+  "steam": {
+    "appId": 215360,
+    "branch": null,
+    "betaPassword": null,
+    "platform": "linux",
+    "login": "anonymous"
+  },
+  "resources": {
+    "memoryMb": 1024,
+    "memoryMinMb": 512,
+    "cpu": 1,
+    "diskMb": 5120
+  },
+  "ports": [
+    {
+      "id": "game",
+      "label": "Game (UDP)",
+      "protocol": "udp",
+      "containerPort": 7707,
+      "mirror": true,
+      "publish": true,
+      "main": true
+    },
+    {
+      "id": "steamquery",
+      "label": "Steam query (UDP, game port + 1)",
+      "protocol": "udp",
+      "containerPort": 7708,
+      "mirror": true,
+      "publish": true,
+      "offset": {
+        "from": "game",
+        "by": 1
+      }
+    },
+    {
+      "id": "gamespy",
+      "label": "GameSpy query (UDP)",
+      "protocol": "udp",
+      "containerPort": 7717,
+      "mirror": true,
+      "publish": true
+    },
+    {
+      "id": "web",
+      "label": "WebAdmin (TCP, panel proxy only)",
+      "protocol": "tcp",
+      "containerPort": 8075,
+      "mirror": false,
+      "publish": false
+    }
+  ],
+  "variables": [
+    {
+      "key": "serverName",
+      "label": "Server name",
+      "description": "Name shown in the server browser (Engine.GameReplicationInfo ServerName).",
+      "type": "string",
+      "default": "ServCrafty KF Server",
+      "required": true,
+      "min": 1,
+      "max": 64,
+      "pattern": "^[\\x20-\\x7e]+$",
+      "group": "Server"
+    },
+    {
+      "key": "shortName",
+      "label": "Short name",
+      "description": "Short server name (ShortName).",
+      "type": "string",
+      "default": "ServCrafty",
+      "required": false,
+      "max": 20,
+      "pattern": "^[\\x20-\\x7e]*$",
+      "group": "Server"
+    },
+    {
+      "key": "motd",
+      "label": "Message of the day",
+      "description": "Message shown to joining players (MessageOfTheDay). May be empty.",
+      "type": "string",
+      "default": "",
+      "required": false,
+      "max": 300,
+      "pattern": "^[\\x20-\\x7e]*$",
+      "group": "Server"
+    },
+    {
+      "key": "gamePassword",
+      "label": "Game password",
+      "description": "Password players must enter to join. Leave empty for a public server.",
+      "type": "password",
+      "default": "",
+      "required": false,
+      "max": 16,
+      "pattern": "^[\\x21-\\x7e]*$",
+      "group": "Access"
+    },
+    {
+      "key": "adminName",
+      "label": "Admin name",
+      "description": "Administrator name (GameReplicationInfo AdminName). It is also the user name the panel sends to the WebAdmin. Letters, digits, dot, dash and underscore only.",
+      "type": "string",
+      "default": "Admin",
+      "required": true,
+      "min": 1,
+      "max": 32,
+      "pattern": "^[A-Za-z0-9._-]+$",
+      "group": "Access"
+    },
+    {
+      "key": "adminPassword",
+      "label": "Admin password",
+      "description": "Admin password for the in-game admin login and the WebAdmin. Leave empty to have one generated when the server is created (12 characters); managers can read and regenerate it in Settings. 6 to 16 characters, no spaces.",
+      "type": "password",
+      "required": true,
+      "min": 6,
+      "max": 16,
+      "group": "Access",
+      "generate": {
+        "length": 12,
+        "charset": "alnum"
+      }
+    },
+    {
+      "key": "adminEmail",
+      "label": "Admin e-mail",
+      "description": "Contact e-mail shown in the server info (AdminEmail). May be empty.",
+      "type": "string",
+      "default": "",
+      "required": false,
+      "max": 100,
+      "pattern": "^[\\x21-\\x7e]*$",
+      "group": "Access"
+    },
+    {
+      "key": "webAdmin",
+      "label": "Enable WebAdmin",
+      "description": "Enables the built-in web administration (UWeb.WebServer). It is not published to the internet: it is only reachable through the panel's WebAdmin tab.",
+      "type": "boolean",
+      "default": true,
+      "required": false,
+      "valueMap": {
+        "true": "True",
+        "false": "False"
+      },
+      "group": "Access"
+    },
+    {
+      "key": "map",
+      "label": "Starting map",
+      "description": "Map the server starts on, without extension, for example KF-BioticsLab, KF-Farm, KF-Manor, KF-WestLondon. Must exist in the Maps folder.",
+      "type": "string",
+      "default": "KF-BioticsLab",
+      "required": true,
+      "pattern": "^[A-Za-z0-9_-]+$",
+      "group": "Game"
+    },
+    {
+      "key": "difficulty",
+      "label": "Difficulty",
+      "description": "GameDifficulty: Beginner 1, Normal 2, Hard 4, Suicidal 5, Hell on Earth 7.",
+      "type": "select",
+      "default": "4",
+      "required": true,
+      "options": [
+        {
+          "value": "1",
+          "label": "Beginner"
+        },
+        {
+          "value": "2",
+          "label": "Normal"
+        },
+        {
+          "value": "4",
+          "label": "Hard"
+        },
+        {
+          "value": "5",
+          "label": "Suicidal"
+        },
+        {
+          "value": "7",
+          "label": "Hell on Earth"
+        }
+      ],
+      "group": "Game"
+    },
+    {
+      "key": "gameLength",
+      "label": "Game length",
+      "description": "KFGameLength: Short 4 waves, Medium 7 waves, Long 10 waves. 'Custom' uses the wave counts configured in the ini.",
+      "type": "select",
+      "default": "1",
+      "required": true,
+      "options": [
+        {
+          "value": "0",
+          "label": "Short (4 waves)"
+        },
+        {
+          "value": "1",
+          "label": "Medium (7 waves)"
+        },
+        {
+          "value": "2",
+          "label": "Long (10 waves)"
+        },
+        {
+          "value": "3",
+          "label": "Custom"
+        }
+      ],
+      "group": "Game"
+    },
+    {
+      "key": "maxPlayers",
+      "label": "Max players",
+      "description": "Maximum number of players (Engine.GameInfo MaxPlayers and the MaxPlayers URL option). The game is designed for 6; more players need a capable CPU and the server mod ecosystem.",
+      "type": "number",
+      "default": 6,
+      "required": true,
+      "min": 1,
+      "max": 32,
+      "integer": true,
+      "group": "Game"
+    },
+    {
+      "key": "maxSpectators",
+      "label": "Max spectators",
+      "description": "Maximum number of spectators (Engine.GameInfo MaxSpectators).",
+      "type": "number",
+      "default": 6,
+      "required": false,
+      "min": 0,
+      "max": 32,
+      "integer": true,
+      "group": "Game"
+    },
+    {
+      "key": "friendlyFire",
+      "label": "Friendly fire scale",
+      "description": "FriendlyFireScale from 0.0 (off) to 1.0 (full damage to teammates).",
+      "type": "number",
+      "default": 0,
+      "required": false,
+      "min": 0,
+      "max": 1,
+      "group": "Game"
+    },
+    {
+      "key": "specimenEvent",
+      "label": "Seasonal specimens",
+      "description": "SpecialEventType: which seasonal zed set to use.",
+      "type": "select",
+      "default": "ET_None",
+      "required": false,
+      "options": [
+        {
+          "value": "ET_None",
+          "label": "None (default)"
+        },
+        {
+          "value": "ET_SummerSideshow",
+          "label": "Summer Sideshow"
+        },
+        {
+          "value": "ET_HillbillyHorror",
+          "label": "Hillbilly Horror (Halloween)"
+        },
+        {
+          "value": "ET_TwistedChristmas",
+          "label": "Twisted Christmas"
+        }
+      ],
+      "group": "Game"
+    },
+    {
+      "key": "vacSecured",
+      "label": "VAC secured",
+      "description": "Start the server with Valve Anti-Cheat (VACSecured=true). Disable it to allow clients with mods that VAC would block.",
+      "type": "boolean",
+      "default": true,
+      "required": false,
+      "group": "Advanced"
+    },
+    {
+      "key": "redirectUrl",
+      "label": "Fast download URL",
+      "description": "HTTP redirect server URL for custom content (IpDrv.HTTPDownload RedirectToURL), starting with http:// or https://. Empty disables fast download.",
+      "type": "string",
+      "default": "",
+      "required": false,
+      "max": 200,
+      "pattern": "^(https?://[\\x21-\\x7e]+)?$",
+      "group": "Advanced"
+    },
+    {
+      "key": "extraOptions",
+      "label": "Extra URL options",
+      "description": "Advanced. Extra options appended to the map URL, WITHOUT a leading question mark; separate several with a question mark, for example Mutator=Package.Class?FriendlyFireScale=0.5. Leave empty if unsure. A wrong value can prevent the server from starting.",
+      "type": "string",
+      "default": "",
+      "required": false,
+      "max": 500,
+      "pattern": "^([A-Za-z0-9_.=,:-]+(\\?[A-Za-z0-9_.=,:-]+)*)?$",
+      "group": "Advanced"
+    }
+  ],
+  "launch": {
+    "cwd": "System",
+    "command": [
+      "./ucc-bin",
+      "server",
+      {
+        "parts": [
+          "{{map}}.rom",
+          "game=KFmod.KFGameType",
+          "VACSecured={{vacSecured}}",
+          "MaxPlayers={{maxPlayers}}",
+          {
+            "value": "{{extraOptions}}",
+            "if": "extraOptions"
+          }
+        ],
+        "separator": "?"
+      },
+      "-nohomedir",
+      "-ini=KillingFloor.ini"
+    ],
+    "env": {}
+  },
+  "files": [
+    {
+      "type": "ini",
+      "path": "System/KillingFloor.ini",
+      "when": "always",
+      "set": [
+        {
+          "section": "URL",
+          "key": "Port",
+          "value": "{{ports.game}}"
+        },
+        {
+          "section": "IpDrv.UdpGamespyQuery",
+          "key": "OldQueryPortNumber",
+          "value": "{{ports.gamespy}}"
+        },
+        {
+          "section": "UWeb.WebServer",
+          "key": "bEnabled",
+          "value": "{{webAdmin}}"
+        },
+        {
+          "section": "UWeb.WebServer",
+          "key": "ListenPort",
+          "value": "{{ports.web}}"
+        },
+        {
+          "section": "Engine.GameReplicationInfo",
+          "key": "ServerName",
+          "value": "{{serverName}}"
+        },
+        {
+          "section": "Engine.GameReplicationInfo",
+          "key": "ShortName",
+          "value": "{{shortName}}"
+        },
+        {
+          "section": "Engine.GameReplicationInfo",
+          "key": "MessageOfTheDay",
+          "value": "{{motd}}"
+        },
+        {
+          "section": "Engine.GameReplicationInfo",
+          "key": "AdminName",
+          "value": "{{adminName}}"
+        },
+        {
+          "section": "Engine.GameReplicationInfo",
+          "key": "AdminEmail",
+          "value": "{{adminEmail}}"
+        },
+        {
+          "section": "Engine.AccessControl",
+          "key": "AdminPassword",
+          "value": "{{adminPassword}}"
+        },
+        {
+          "section": "Engine.AccessControl",
+          "key": "GamePassword",
+          "value": "{{gamePassword}}"
+        },
+        {
+          "section": "Engine.GameInfo",
+          "key": "MaxPlayers",
+          "value": "{{maxPlayers}}"
+        },
+        {
+          "section": "Engine.GameInfo",
+          "key": "MaxSpectators",
+          "value": "{{maxSpectators}}"
+        },
+        {
+          "section": "Engine.GameInfo",
+          "key": "GameDifficulty",
+          "value": "{{difficulty}}"
+        },
+        {
+          "section": "KFmod.KFGameType",
+          "key": "KFGameLength",
+          "value": "{{gameLength}}"
+        },
+        {
+          "section": "KFmod.KFGameType",
+          "key": "FriendlyFireScale",
+          "value": "{{friendlyFire}}"
+        },
+        {
+          "section": "KFmod.KFGameType",
+          "key": "SpecialEventType",
+          "value": "{{specimenEvent}}"
+        },
+        {
+          "section": "IpDrv.HTTPDownload",
+          "key": "RedirectToURL",
+          "value": "{{redirectUrl}}"
+        }
+      ],
+      "list": []
+    }
+  ],
+  "stop": {
+    "type": "signal",
+    "signal": "SIGINT",
+    "timeoutSec": 30
+  },
+  "console": {
+    "stdin": false
+  },
+  "ready": null,
+  "players": null,
+  "query": {
+    "a2s": {
+      "portId": "steamquery"
+    }
+  },
+  "workshop": {
+    "appId": 1250,
+    "install": "steamcmd",
+    "dir": "System"
+  },
+  "webui": [
+    {
+      "id": "webadmin",
+      "label": "WebAdmin",
+      "portId": "web",
+      "path": "/ServerAdmin/",
+      "auth": {
+        "type": "basic",
+        "user": "{{adminName}}",
+        "password": "{{adminPassword}}"
+      },
+      "minAccess": "manager",
+      "rewrite": true
+    }
+  ],
+  "scripts": {
+    "postInstall": "if [ ! -f System/KillingFloor.ini ] && [ -f System/Default.ini ]; then cp System/Default.ini System/KillingFloor.ini; fi",
+    "preStart": "for f in steamclient.so libtier0_s.so libvstdlib_s.so; do if [ -f /opt/steamcmd/linux32/$f ]; then cp -f /opt/steamcmd/linux32/$f System/$f; fi; done; true"
+  }
+}

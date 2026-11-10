@@ -9,6 +9,7 @@ import { useAuth } from '@/stores/auth';
 import { formatMb } from '@/lib/format';
 import { qk } from '@/lib/queries';
 import { gameOf } from '@/lib/games';
+import { useGameDefs } from '@/lib/gameDefs';
 import { toast } from '@/stores/toast';
 import { confirm } from '@/components/feedback';
 import { Badge, Button, EmptyState, ErrorState, Field, IconButton, Loading, Modal, PageHeader } from '@/components/ui';
@@ -19,6 +20,8 @@ export default function Templates() {
   const qc = useQueryClient();
   const user = useAuth((s) => s.user);
   const q = useQuery({ queryKey: qk.templates, queryFn: templatesApi.list });
+  const hasSteam = !!q.data?.some((tp) => tp.config?.type === 'STEAMCMD');
+  const defs = useGameDefs(hasSteam);
   const [using, setUsing] = useState<Template | null>(null);
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
@@ -73,7 +76,11 @@ export default function Templates() {
                 </div>
                 {tp.description && <p className="mt-1 text-sm text-muted">{tp.description}</p>}
                 <dl className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
-                  {c.type && <dd>{t(`type.${c.type}`)} {gameOf(c.type) === 'minecraft' ? c.mcVersion ?? '' : ''}</dd>}
+                  {c.type === 'STEAMCMD' ? (
+                    <dd>{defs.data?.find((d) => d.id === c.steam?.gameId)?.name ?? c.steam?.gameId ?? t('game.steam')}</dd>
+                  ) : (
+                    c.type && <dd>{t(`type.${c.type}`)} {gameOf(c.type) === 'minecraft' ? c.mcVersion ?? '' : ''}</dd>
+                  )}
                   {c.memoryMb && <dd>{formatMb(Number(c.memoryMb))}</dd>}
                   {c.modpack?.name && <dd>{c.modpack.name}</dd>}
                 </dl>

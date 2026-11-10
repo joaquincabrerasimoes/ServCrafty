@@ -20,7 +20,10 @@ const errCode = (fn: () => unknown): string | undefined => {
 };
 
 test('gameOf derives the game from the type', () => {
-  for (const t of serverTypes) assert.equal(gameOf(t), ['TERRARIA', 'TSHOCK', 'TMODLOADER'].includes(t) ? 'terraria' : 'minecraft');
+  for (const t of serverTypes) {
+    const expected = ['TERRARIA', 'TSHOCK', 'TMODLOADER'].includes(t) ? 'terraria' : t === 'STEAMCMD' ? 'steam' : 'minecraft';
+    assert.equal(gameOf(t), expected);
+  }
   assert.equal(capabilitiesOf('TSHOCK').hasRcon, false);
   assert.equal(capabilitiesOf('PAPER').hasMods, true);
 });

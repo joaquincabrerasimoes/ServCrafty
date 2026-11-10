@@ -17,6 +17,8 @@ export interface User {
   maxCpu?: number | null;
   maxDiskMb?: number | null;
   usage?: { servers: number; ram_mb: number; cpu: number; disk_mb: number };
+  /** May create and edit custom game definitions (admins always can). */
+  canAuthorGames?: boolean;
   totpEnabled?: boolean;
   createdAt?: string;
 }
@@ -99,11 +101,12 @@ export const SERVER_TYPES = [
   'TERRARIA',
   'TSHOCK',
   'TMODLOADER',
+  'STEAMCMD',
 ] as const;
 export type ServerType = (typeof SERVER_TYPES)[number];
 
 /** The game a server runs; `type` is the variant. Derived from `type` (see lib/games.ts). */
-export type Game = 'minecraft' | 'terraria';
+export type Game = 'minecraft' | 'terraria' | 'steam';
 
 export const TERRARIA_LANGUAGES = ['en-US', 'de-DE', 'it-IT', 'fr-FR', 'es-ES', 'ru-RU', 'zh-Hans', 'pt-BR', 'pl-PL'] as const;
 export type TerrariaLanguage = (typeof TERRARIA_LANGUAGES)[number];
@@ -168,6 +171,12 @@ export interface Server {
   minecraft?: MinecraftConfig | null;
   /** Null for Minecraft servers. */
   terraria?: TerrariaConfig | null;
+  /** SteamCMD servers only (null for the other games). */
+  steam?: ServerSteam | null;
+  /** Host port of every published definition port except the main one (which is `port`). */
+  extraPorts?: Record<string, number> | null;
+  /** Steam servers: the definition's features and the web UI URLs this viewer may open (redirect into the proxy session). */
+  steamGame?: ServerSteamGame | null;
   containerId?: string | null;
   status: ServerStatus;
   autoRestart?: boolean;
@@ -195,6 +204,8 @@ export interface CreateServerBody {
   minecraft?: MinecraftConfig;
   /** Terraria servers only. */
   terraria?: Partial<TerrariaConfig>;
+  /** SteamCMD servers only (type STEAMCMD). */
+  steam?: { gameId: string; vars: SteamVars; updateOnStart?: boolean };
   eula: true;
 }
 
@@ -247,8 +258,19 @@ export interface Stats {
   version?: string | null;
   packName?: string | null;
   packVersion?: string | null;
-  source: 'agent' | 'rcon' | 'docker';
+  /** Current map (Steam A2S query). */
+  map?: string | null;
+  source: 'agent' | 'rcon' | 'docker' | 'a2s';
   diskMb?: number;
+  /** SteamCMD servers while the executor installs or updates the game (null otherwise). */
+  install?: InstallProgress | null;
+}
+
+export type InstallPhase = 'install' | 'workshop' | 'configure' | 'launch';
+export interface InstallProgress {
+  phase: InstallPhase | string;
+  /** 0-100; null or absent while unknown. */
+  progress?: number | null;
 }
 
 export type PowerAction = 'start' | 'stop' | 'restart' | 'kill';
@@ -380,6 +402,9 @@ export interface AdminSettings {
   portPool: string;
   curseforgeKeySet: boolean;
   curseforgeKey?: string;
+  /** Steam Web API key (write-only; enables Workshop search). */
+  steamApiKey?: string;
+  steamKeySet?: boolean;
   defaultJavaArgs?: string;
   publicUrl?: string;
   /** Host name players use to reach game servers from outside. */
@@ -417,3 +442,200 @@ export type WsServerMessage =
   | { type: 'stats'; serverId: string; stats: Stats }
   | { type: 'status'; serverId: string; status: ServerStatus }
   | { type: 'error'; message: string; serverId?: string };
+
+/* ------------------------------------------------------------ SteamCMD games (v0.3.0) */
+
+export type SteamVarValue = string | number | boolean;
+export type SteamVars = Record<string, SteamVarValue>;
+
+/** servers.steam */
+export interface ServerSteam {
+  gameId: string;
+  vars: SteamVars;
+  workshop?: WorkshopRef[];
+  updateOnStart: boolean;
+  validateNext?: boolean;
+}
+
+export interface WorkshopRef {
+  id: string;
+  title?: string | null;
+}
+
+export type PortProtocol = 'udp' | 'tcp' | 'both';
+export type GameVarType = 'string' | 'number' | 'boolean' | 'select' | 'password';
+
+export interface GameSteamSource {
+  appId: number;
+  branch?: string | null;
+  betaPassword?: string | null;
+  platform?: 'linux' | 'windows';
+  login?: string;
+}
+
+export interface GameResources {
+  memoryMb?: number;
+  memoryMinMb?: number;
+  cpu?: number;
+  diskMb?: number | null;
+}
+
+export interface GamePort {
+  id: string;
+  label?: string;
+  protocol: PortProtocol;
+  containerPort: number;
+  mirror?: boolean;
+  publish?: boolean;
+  main?: boolean;
+}
+
+export interface GameVarOption {
+  value: string | number;
+  label?: string;
+}
+
+export interface GameVariable {
+  key: string;
+  label?: string;
+  description?: string;
+  type: GameVarType;
+  default?: SteamVarValue | null;
+  required?: boolean;
+  min?: number;
+  max?: number;
+  options?: GameVarOption[];
+  pattern?: string;
+  group?: string;
+  valueMap?: Record<string, string>;
+  /** string/password only: an empty value is filled with a random one by the panel. */
+  generate?: { length?: number; charset?: 'alnum' | 'hex' } | null;
+}
+
+/** A piece of a composite argument: literal text or a conditional piece. */
+export type LaunchPart = string | { value: string; if?: string };
+/**
+ * One argv element: a string, a conditional `{value, if}`, or a composite `{parts, separator?, if?}`
+ * whose included parts are joined with `separator` (default "") into ONE argument
+ * (Unreal-style `Map?Key=value?Other=...`).
+ */
+export type LaunchArg = string | { value: string; if: string } | { parts: LaunchPart[]; separator?: string; if?: string };
+
+export interface GameLaunch {
+  cwd?: string;
+  command: LaunchArg[];
+  env?: Record<string, string>;
+}
+
+export type FileWhen = 'always' | 'missing';
+export type GameFile =
+  | { type: 'template'; path: string; content: string; when?: FileWhen }
+  | {
+      type: 'ini';
+      path: string;
+      when?: FileWhen;
+      set?: Array<{ section: string; key: string; value: string }>;
+      list?: Array<{ section: string; key: string; valuesFrom: string }>;
+    };
+
+export interface GameStop {
+  type: 'signal' | 'stdin';
+  signal?: string;
+  command?: string;
+  timeoutSec?: number;
+}
+
+export interface GameWebUi {
+  id: string;
+  label: string;
+  portId: string;
+  path?: string;
+  auth?: { type: 'basic'; user: string; password: string } | { type: 'none' };
+  minAccess?: ShareLevel;
+  rewrite?: boolean;
+  /** Also proxy WebSocket upgrades (single-page admin UIs that talk over WebSockets). Default false. */
+  websocket?: boolean;
+}
+
+export interface GameWorkshop {
+  appId: number;
+  install: 'steamcmd' | 'config-list';
+  dir?: string;
+}
+
+/** Game definition v1 (SPEC.md "SteamCMD games"). */
+export interface GameDefinition {
+  schema: 1;
+  id: string;
+  name: string;
+  description?: string;
+  icon?: string | null;
+  steam: GameSteamSource;
+  resources?: GameResources;
+  ports: GamePort[];
+  variables?: GameVariable[];
+  launch: GameLaunch;
+  files?: GameFile[];
+  stop?: GameStop;
+  console?: { stdin: boolean };
+  ready?: { logRegex: string } | null;
+  players?: { joinRegex?: string; leaveRegex?: string } | null;
+  query?: { a2s?: { portId: string } } | null;
+  workshop?: GameWorkshop | null;
+  webui?: GameWebUi[];
+  scripts?: { postInstall?: string; preStart?: string };
+}
+
+/**
+ * GET /games item: the definition without `scripts`, plus list metadata. Only the summary fields are
+ * guaranteed by the contract; the rest is used when the API includes it.
+ */
+export type GameSummary = Partial<Omit<GameDefinition, 'scripts' | 'id' | 'name'>> & {
+  id: string;
+  name: string;
+  builtin: boolean;
+  hasWorkshop?: boolean;
+  hasWebui?: boolean;
+  ownerId?: string | null;
+  ownerName?: string | null;
+  updatedAt?: string;
+};
+
+/** One problem reported by POST /games/validate or invalid_steam_config. */
+export interface ValidationIssue {
+  path: string;
+  message: string;
+}
+
+/** Server JSON `steamGame`. `webui` is already filtered by the viewer's access; `url` is the entry URL to open. */
+export interface ServerSteamGame {
+  id: string;
+  name: string;
+  icon?: string | null;
+  builtin?: boolean;
+  hasWorkshop?: boolean;
+  hasWebui?: boolean;
+  hasConsole?: boolean;
+  hasPlayers?: boolean;
+  ports?: Array<{ id: string; label?: string; protocol: PortProtocol; hostPort: number | null; main: boolean }>;
+  webui?: Array<Partial<GameWebUi> & { id: string; label?: string; url?: string }>;
+}
+
+export interface WorkshopItem {
+  id: string;
+  /** Workshop app id of the item; `matchesGame` is set when `?gameId=` was passed. */
+  appId?: number | null;
+  matchesGame?: boolean;
+  title: string;
+  summary?: string | null;
+  previewUrl?: string | null;
+  author?: string | null;
+  subscribers?: number | null;
+  sizeBytes?: number | null;
+  updatedAt?: string | null;
+}
+
+export interface WorkshopSearchResult {
+  items: WorkshopItem[];
+  total: number;
+}

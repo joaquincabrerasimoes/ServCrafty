@@ -1,0 +1,243 @@
+{
+  "schema": 1,
+  "id": "unturned",
+  "name": "Unturned",
+  "description": "Unturned dedicated server (Steam app 1110390, native Linux, anonymous login). The server uses the game port and the two following UDP ports (Steam query and reserved), which the panel allocates as consecutive ports. The server id is fixed to \"servcrafty\"; its data folder Servers/servcrafty is linked to /data/unturned-servers so worlds and settings are part of the default backups. Name, map, mode, perspective, cheats and player limit are written to Servers/servcrafty/Server/Commands.dat on every start. Workshop (app 304930): item ids from the Workshop tab are written to WorkshopDownloadConfig.json and the server downloads them itself at start; maps from the Workshop must also be selected in the Map variable. A Game Server Login Token (GSLT) is recommended to be listed.",
+  "icon": "https://cdn.cloudflare.steamstatic.com/steam/apps/304930/header.jpg",
+  "steam": {
+    "appId": 1110390,
+    "branch": "public",
+    "betaPassword": null,
+    "platform": "linux",
+    "login": "anonymous"
+  },
+  "resources": {
+    "memoryMb": 2048,
+    "memoryMinMb": 1024,
+    "cpu": 2,
+    "diskMb": 4096
+  },
+  "ports": [
+    {
+      "id": "game",
+      "label": "Game (UDP)",
+      "protocol": "udp",
+      "containerPort": 27015,
+      "mirror": true,
+      "publish": true,
+      "main": true
+    },
+    {
+      "id": "query",
+      "label": "Steam query (UDP, game port + 1)",
+      "protocol": "udp",
+      "containerPort": 27016,
+      "mirror": true,
+      "publish": true,
+      "offset": {
+        "from": "game",
+        "by": 1
+      }
+    },
+    {
+      "id": "aux",
+      "label": "Reserved (UDP, game port + 2)",
+      "protocol": "udp",
+      "containerPort": 27017,
+      "mirror": true,
+      "publish": true,
+      "offset": {
+        "from": "game",
+        "by": 2
+      }
+    }
+  ],
+  "variables": [
+    {
+      "key": "serverName",
+      "label": "Server name",
+      "description": "Name shown in the server browser (Name).",
+      "type": "string",
+      "default": "ServCrafty Unturned Server",
+      "required": true,
+      "min": 1,
+      "max": 64,
+      "group": "Server"
+    },
+    {
+      "key": "serverPassword",
+      "label": "Server password",
+      "description": "Password players need to join (-Password). Leave empty for a public server.",
+      "type": "password",
+      "default": "",
+      "required": false,
+      "max": 32,
+      "pattern": "^[\\x21-\\x7e]*$",
+      "group": "Access"
+    },
+    {
+      "key": "gslt",
+      "label": "Game Server Login Token (GSLT)",
+      "description": "Steam game server login token (32 hex characters) created at https://steamcommunity.com/dev/managegameservers for app 304930. Optional but needed to be listed in the internet browser reliably.",
+      "type": "password",
+      "default": "",
+      "required": false,
+      "pattern": "^([A-Fa-f0-9]{32})?$",
+      "group": "Access"
+    },
+    {
+      "key": "map",
+      "label": "Map",
+      "description": "Map name (Map), for example PEI, Washington, Russia, Germany, Yukon, Hawaii. Workshop maps use the name shown by the map.",
+      "type": "string",
+      "default": "PEI",
+      "required": true,
+      "pattern": "^[A-Za-z0-9_ .-]+$",
+      "group": "Game"
+    },
+    {
+      "key": "mode",
+      "label": "Difficulty mode",
+      "description": "Mode (Easy, Normal or Hard).",
+      "type": "select",
+      "default": "Normal",
+      "required": true,
+      "options": [
+        {
+          "value": "Easy",
+          "label": "Easy"
+        },
+        {
+          "value": "Normal",
+          "label": "Normal"
+        },
+        {
+          "value": "Hard",
+          "label": "Hard"
+        }
+      ],
+      "group": "Game"
+    },
+    {
+      "key": "perspective",
+      "label": "Perspective",
+      "description": "Allowed camera perspective (Perspective).",
+      "type": "select",
+      "default": "Both",
+      "required": true,
+      "options": [
+        {
+          "value": "Both",
+          "label": "First and third person"
+        },
+        {
+          "value": "First",
+          "label": "First person only"
+        },
+        {
+          "value": "Third",
+          "label": "Third person only"
+        },
+        {
+          "value": "Vehicle",
+          "label": "Third person in vehicles"
+        }
+      ],
+      "group": "Game"
+    },
+    {
+      "key": "cheats",
+      "label": "Allow cheats",
+      "description": "Allow admins to use cheat commands (Cheats).",
+      "type": "boolean",
+      "default": false,
+      "required": false,
+      "valueMap": {
+        "true": "On",
+        "false": "Off"
+      },
+      "group": "Game"
+    },
+    {
+      "key": "maxPlayers",
+      "label": "Max players",
+      "description": "Maximum simultaneous players (MaxPlayers).",
+      "type": "number",
+      "default": 24,
+      "required": true,
+      "min": 1,
+      "max": 200,
+      "integer": true,
+      "group": "Game"
+    }
+  ],
+  "launch": {
+    "cwd": "",
+    "command": [
+      "./Unturned_Headless.x86_64",
+      "-batchmode",
+      "-nographics",
+      "-port",
+      "{{ports.game}}",
+      {
+        "value": "-GSLT",
+        "if": "gslt"
+      },
+      {
+        "value": "{{gslt}}",
+        "if": "gslt"
+      },
+      {
+        "value": "-Password",
+        "if": "serverPassword"
+      },
+      {
+        "value": "{{serverPassword}}",
+        "if": "serverPassword"
+      },
+      "+InternetServer/servcrafty"
+    ],
+    "env": {
+      "LD_LIBRARY_PATH": "./Unturned_Headless_Data/Plugins/x86_64/"
+    }
+  },
+  "files": [
+    {
+      "type": "template",
+      "path": "Servers/servcrafty/Server/Commands.dat",
+      "when": "always",
+      "content": "Name {{serverName}}\nMap {{map}}\nMode {{mode}}\nPerspective {{perspective}}\nCheats {{cheats}}\nMaxPlayers {{maxPlayers}}\n"
+    },
+    {
+      "type": "template",
+      "path": "Servers/servcrafty/WorkshopDownloadConfig.json",
+      "when": "always",
+      "content": "{\n  \"File_IDs\": [{{workshop.ids}}],\n  \"Ignore_Children_File_IDs\": [],\n  \"Query_Cache_Max_Age_Seconds\": 600,\n  \"Max_Query_Retries\": 2,\n  \"Use_Cached_Downloads\": true,\n  \"Should_Monitor_Updates\": true,\n  \"Shutdown_Update_Detected_Timer\": 600,\n  \"Shutdown_Update_Detected_Message\": \"Workshop file update detected, shutting down in: {0}\"\n}\n"
+    }
+  ],
+  "stop": {
+    "type": "stdin",
+    "command": "shutdown",
+    "timeoutSec": 60
+  },
+  "console": {
+    "stdin": true
+  },
+  "ready": {
+    "logRegex": "Loading level: 100%"
+  },
+  "players": null,
+  "query": {
+    "a2s": {
+      "portId": "query"
+    }
+  },
+  "workshop": {
+    "appId": 304930,
+    "install": "config-list"
+  },
+  "webui": [],
+  "scripts": {
+    "postInstall": "mkdir -p /data/unturned-servers; mkdir -p Servers; if [ -L Servers ]; then :; elif [ -d Servers ] && [ -z \"$(ls -A Servers)\" ]; then rmdir Servers; ln -s /data/unturned-servers Servers; elif [ ! -e Servers ]; then ln -s /data/unturned-servers Servers; fi; mkdir -p Servers/servcrafty/Server"
+  }
+}

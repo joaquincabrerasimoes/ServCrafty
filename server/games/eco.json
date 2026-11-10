@@ -1,0 +1,202 @@
+{
+  "schema": 1,
+  "id": "eco",
+  "name": "Eco",
+  "description": "Eco dedicated server (Steam app 739590, native Linux, anonymous login). Game UDP+TCP 3000 and the web server TCP 3001 are both published and mirrored: Eco clients fetch the server info from the web port, so it must be reachable by players. The same web server hosts the Eco web interface, which is also available from the panel (Web tab, proxied without any panel-side login; it is NOT reachable only through the panel, because players need the port). Configs/Network.eco is rewritten on every start from the variables below (unlisted keys fall back to the game defaults), so edit those settings here and not in the file. Mods are not Steam Workshop items: upload them to the Mods folder with the Files tab. To be listed in the in-game browser set Listed publicly and, if the server does not appear, provide an SLG user token. The world is in Storage/, which is linked to /data/eco-storage so it is part of the default backups; Configs/ (for example Users.eco) is not. Several parts of this definition are unverified, see docs/games.md.",
+  "icon": "https://cdn.cloudflare.steamstatic.com/steam/apps/739590/header.jpg",
+  "steam": {
+    "appId": 739590,
+    "branch": "public",
+    "betaPassword": null,
+    "platform": "linux",
+    "login": "anonymous"
+  },
+  "resources": {
+    "memoryMb": 4096,
+    "memoryMinMb": 2048,
+    "cpu": 2,
+    "diskMb": 5120
+  },
+  "ports": [
+    {
+      "id": "game",
+      "label": "Game (UDP + TCP)",
+      "protocol": "both",
+      "containerPort": 3000,
+      "mirror": true,
+      "publish": true,
+      "main": true
+    },
+    {
+      "id": "web",
+      "label": "Web server and web interface (TCP)",
+      "protocol": "tcp",
+      "containerPort": 3001,
+      "mirror": true,
+      "publish": true
+    }
+  ],
+  "variables": [
+    {
+      "key": "serverName",
+      "label": "Server name",
+      "description": "Name shown in the server browser (Description). Eco text markup is allowed; do not use double quotes or backslashes.",
+      "type": "string",
+      "default": "ServCrafty Eco Server",
+      "required": true,
+      "min": 1,
+      "max": 100,
+      "pattern": "^[^\"\\\\]+$",
+      "group": "Server"
+    },
+    {
+      "key": "detailedDescription",
+      "label": "Detailed description",
+      "description": "Long description shown when a player selects the server (DetailedDescription). No double quotes or backslashes. May be empty.",
+      "type": "string",
+      "default": "",
+      "required": false,
+      "max": 500,
+      "pattern": "^[^\"\\\\]*$",
+      "group": "Server"
+    },
+    {
+      "key": "category",
+      "label": "Server category",
+      "description": "ServerCategory shown to new players.",
+      "type": "select",
+      "default": "None",
+      "required": true,
+      "options": [
+        {
+          "value": "None",
+          "label": "None"
+        },
+        {
+          "value": "Beginner",
+          "label": "Beginner"
+        },
+        {
+          "value": "Established",
+          "label": "Established"
+        },
+        {
+          "value": "BeginnerHard",
+          "label": "Beginner (hard)"
+        },
+        {
+          "value": "Strange",
+          "label": "Strange"
+        }
+      ],
+      "group": "Server"
+    },
+    {
+      "key": "publicServer",
+      "label": "Listed publicly",
+      "description": "List the server in the in-game server browser (PublicServer).",
+      "type": "boolean",
+      "default": false,
+      "required": false,
+      "group": "Server"
+    },
+    {
+      "key": "maxConnections",
+      "label": "Max players",
+      "description": "Maximum concurrent players (MaxConnections); -1 means unlimited.",
+      "type": "number",
+      "default": -1,
+      "required": true,
+      "min": -1,
+      "max": 1000,
+      "integer": true,
+      "group": "Server"
+    },
+    {
+      "key": "discord",
+      "label": "Discord invite id",
+      "description": "The id after discord.gg/ (DiscordAddress). No quotes. May be empty.",
+      "type": "string",
+      "default": "",
+      "required": false,
+      "max": 50,
+      "pattern": "^[A-Za-z0-9_-]*$",
+      "group": "Server"
+    },
+    {
+      "key": "serverPassword",
+      "label": "Server password",
+      "description": "Password players need to join (Password). Leave empty for no password. No double quotes or backslashes.",
+      "type": "password",
+      "default": "",
+      "required": false,
+      "max": 32,
+      "pattern": "^[\\x21\\x23-\\x5b\\x5d-\\x7e]*$",
+      "group": "Access"
+    },
+    {
+      "key": "userToken",
+      "label": "SLG user token",
+      "description": "Optional Strange Loop Games user token passed as -userToken, needed for some servers to be authenticated and listed. Leave empty if unsure.",
+      "type": "password",
+      "default": "",
+      "required": false,
+      "max": 200,
+      "pattern": "^[A-Za-z0-9_.=-]*$",
+      "group": "Access"
+    }
+  ],
+  "launch": {
+    "cwd": "",
+    "command": [
+      "./EcoServer",
+      "-nogui",
+      {
+        "value": "-userToken={{userToken}}",
+        "if": "userToken"
+      }
+    ],
+    "env": {
+      "DOTNET_SYSTEM_GLOBALIZATION_INVARIANT": "1"
+    }
+  },
+  "files": [
+    {
+      "type": "template",
+      "path": "Configs/Network.eco",
+      "when": "always",
+      "content": "{\n  \"GameServerPort\": {{ports.game}},\n  \"WebServerPort\": {{ports.web}},\n  \"PublicServer\": {{publicServer}},\n  \"UPnPEnabled\": false,\n  \"Password\": \"{{serverPassword}}\",\n  \"Description\": \"{{serverName}}\",\n  \"DetailedDescription\": \"{{detailedDescription}}\",\n  \"MaxConnections\": {{maxConnections}},\n  \"DiscordAddress\": \"{{discord}}\",\n  \"ServerCategory\": \"{{category}}\"\n}\n"
+    }
+  ],
+  "stop": {
+    "type": "stdin",
+    "command": "exit",
+    "timeoutSec": 90
+  },
+  "console": {
+    "stdin": true
+  },
+  "ready": {
+    "logRegex": "Web Server now listening on"
+  },
+  "players": null,
+  "query": null,
+  "workshop": null,
+  "webui": [
+    {
+      "id": "web",
+      "label": "Web interface",
+      "portId": "web",
+      "path": "/",
+      "auth": {
+        "type": "none"
+      },
+      "minAccess": "manager",
+      "rewrite": true,
+      "websocket": true
+    }
+  ],
+  "scripts": {
+    "postInstall": "mkdir -p /data/eco-storage; if [ ! -e Storage ] || [ -L Storage ]; then rm -f Storage; ln -s /data/eco-storage Storage; fi"
+  }
+}

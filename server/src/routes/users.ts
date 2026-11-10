@@ -55,10 +55,11 @@ export default async function userRoutes(app: FastifyInstance): Promise<void> {
         role: z.enum(['admin', 'user']).default('user'),
         locale: z.enum(['en', 'es']).optional(),
         quotas: quotasSchema.optional(),
+        canAuthorGames: z.boolean().optional(),
       }),
       req.body,
     );
-    const u = await createUser({
+    const created = await createUser({
       username: body.username,
       password: body.password,
       email: body.email ?? null,
@@ -66,6 +67,9 @@ export default async function userRoutes(app: FastifyInstance): Promise<void> {
       locale: body.locale,
       quotas: body.quotas,
     });
+    const u = body.canAuthorGames
+      ? ((await queryOne<UserRow>('UPDATE users SET can_author_games = true WHERE id = $1 RETURNING *', [created.id])) ?? created)
+      : created;
     await audit(req, 'user.created', 'user', u.id, { username: u.username, role: u.role });
     reply.code(201);
     return toPublicUser(u);
@@ -84,6 +88,8 @@ export default async function userRoutes(app: FastifyInstance): Promise<void> {
           quotas: quotasSchema,
           password: z.string().min(PASSWORD_MIN).max(1024),
           resetMfa: z.boolean(),
+          /** May create/edit game definitions (SteamCMD games). */
+          canAuthorGames: z.boolean(),
         })
         .partial(),
       req.body,
@@ -98,7 +104,8 @@ export default async function userRoutes(app: FastifyInstance): Promise<void> {
     const q = body.quotas ?? {};
     const pick = <T>(v: T | undefined, cur: T) => (v !== undefined ? v : cur);
     const updated = await queryOne<UserRow>(
-      `UPDATE users SET username=$2, email=$3, role=$4, disabled=$5, max_servers=$6, max_ram_mb=$7, max_cpu=$8, max_disk_mb=$9
+      `UPDATE users SET username=$2, email=$3, role=$4, disabled=$5, max_servers=$6, max_ram_mb=$7, max_cpu=$8, max_disk_mb=$9,
+         can_author_games=$10
        WHERE id=$1 RETURNING *`,
       [
         id,
@@ -110,6 +117,7 @@ export default async function userRoutes(app: FastifyInstance): Promise<void> {
         pick(q.maxRamMb, u.max_ram_mb),
         pick(q.maxCpu, u.max_cpu),
         pick(q.maxDiskMb, u.max_disk_mb),
+        body.canAuthorGames ?? u.can_author_games,
       ],
     );
     if (body.password) {

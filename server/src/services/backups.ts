@@ -38,6 +38,20 @@ export function toPublicBackup(b: BackupRow & { created_by_name?: string | null 
 
 const busy = new Set<string>();
 const EXCLUDE_TOP = new Set(['logs', 'crash-reports', '.cache']);
+/**
+ * SteamCMD servers: the game install, Workshop downloads and the SteamCMD home are re-downloadable
+ * (often many GB) and left out unless asked for; restores keep the current copies of these dirs.
+ */
+export const STEAM_REDOWNLOADABLE = ['game', 'workshop', 'steam'] as const;
+
+/** Pure: should `rel` (path relative to the server dir) go into the archive? */
+export function includeInBackup(rel: string, opts: { steam: boolean; includeGame: boolean }): boolean {
+  const clean = rel.replace(/^\.\//, '');
+  const top = clean.split('/')[0] ?? '';
+  if (EXCLUDE_TOP.has(top)) return false;
+  if (opts.steam && !opts.includeGame && (STEAM_REDOWNLOADABLE as readonly string[]).includes(top)) return false;
+  return !/(\.scf-tmp|\.upload-tmp|\.part-[0-9a-f]+)$/.test(clean) && !clean.endsWith('session.lock');
+}
 
 export const backupDir = (serverId: string) => path.join(config().backupsDir, serverId);
 
@@ -68,6 +82,7 @@ export async function createBackup(
   kind: 'manual' | 'scheduled',
   userId: string | null,
   note?: string | null,
+  opts: { includeGame?: boolean } = {},
 ): Promise<BackupRow> {
   if (busy.has(server.id)) throw conflict('A backup or restore is already in progress', 'backup_in_progress');
   busy.add(server.id);
@@ -96,12 +111,7 @@ export async function createBackup(
         file,
         cwd: serverDir(server.id),
         portable: true,
-        filter: (p: string) => {
-          const rel = p.replace(/^\.\//, '');
-          const top = rel.split('/')[0] ?? '';
-          if (EXCLUDE_TOP.has(top)) return false;
-          return !/(\.scf-tmp|\.upload-tmp|\.part-[0-9a-f]+)$/.test(rel) && !rel.endsWith('session.lock');
-        },
+        filter: (p: string) => includeInBackup(p, { steam: gameOf(server.type) === 'steam', includeGame: !!opts.includeGame }),
       },
       ['.'],
     );
@@ -164,6 +174,14 @@ export async function restoreBackup(server: ServerRow, b: BackupRow): Promise<vo
     try {
       await fsp.mkdir(dir, { recursive: true });
       await tar.x({ file: archive, cwd: dir, strict: true });
+      if (gameOf(server.type) === 'steam') {
+        // Backups usually leave the game install out: keep the current one instead of forcing a re-download.
+        for (const d of STEAM_REDOWNLOADABLE) {
+          const inArchive = await fsp.stat(path.join(dir, d)).then(() => true, () => false);
+          if (inArchive) continue;
+          await fsp.rename(path.join(aside, d), path.join(dir, d)).catch(() => undefined);
+        }
+      }
       await fsp.rm(aside, { recursive: true, force: true });
     } catch (err) {
       await fsp.rm(dir, { recursive: true, force: true }).catch(() => undefined);

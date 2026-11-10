@@ -6,6 +6,7 @@ import {
   ArrowUpCircle,
   Boxes,
   Cog,
+  Gamepad2,
   LayoutGrid,
   LogOut,
   Menu,
@@ -26,6 +27,7 @@ import { liveSocket } from '@/ws/live';
 import { queryClient } from '@/lib/queryClient';
 import { UpdateBanner } from '@/components/UpdateBanner';
 import { fmtVersion, useAppVersion, useUpdateInfo } from '@/lib/updates';
+import { canAuthorGames } from '@/lib/gameDefs';
 
 function NavItem({ to, icon: Icon, children, end }: { to: string; icon: typeof Cog; children: React.ReactNode; end?: boolean }) {
   return (
@@ -73,6 +75,11 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
           <NavItem to="/account" icon={UserRound}>
             {t('nav.account')}
           </NavItem>
+          {!isAdmin && canAuthorGames(user) && (
+            <NavItem to="/admin/games" icon={Gamepad2}>
+              {t('nav.games')}
+            </NavItem>
+          )}
         </div>
 
         <div>
@@ -111,6 +118,9 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
               </NavItem>
               <NavItem to="/admin/settings" icon={Cog}>
                 {t('nav.settings')}
+              </NavItem>
+              <NavItem to="/admin/games" icon={Gamepad2}>
+                {t('nav.games')}
               </NavItem>
               <NavItem to="/admin/ports" icon={Network}>
                 {t('nav.ports')}

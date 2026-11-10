@@ -17,15 +17,19 @@ import authRoutes from './routes/auth.js';
 import backupRoutes from './routes/backups.js';
 import catalogRoutes from './routes/catalog.js';
 import fileRoutes from './routes/files.js';
+import gameRoutes from './routes/games.js';
 import modRoutes from './routes/mods.js';
 import scheduleRoutes from './routes/schedules.js';
 import serverRoutes from './routes/servers.js';
 import shareRoutes from './routes/shares.js';
+import steamRoutes from './routes/steam.js';
 import templateRoutes from './routes/templates.js';
 import terrariaRoutes from './routes/terraria.js';
 import updateRoutes from './routes/update.js';
 import userRoutes from './routes/users.js';
 import webhookRoutes from './routes/webhooks.js';
+import webuiRoutes, { selectProtocol } from './routes/webui.js';
+import { WS_MAX_MESSAGE_BYTES } from './lib/webuiProxy.js';
 import wsRoutes from './routes/ws.js';
 import { dockerAvailable } from './services/docker.js';
 
@@ -57,7 +61,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   const cookieSecret = crypto.createHash('sha256').update(`servcrafty:cookie:${c.secretKey}`).digest('hex');
   await app.register(cookie, { secret: cookieSecret });
   await app.register(multipart, { limits: { fileSize: MAX_UPLOAD_BYTES, files: 50, fields: 50, fieldSize: 64 * 1024 } });
-  await app.register(websocket, { options: { maxPayload: 64 * 1024 } });
+  // 1 MiB: proxied game web UI sockets (routes/webui.ts); the panel's own /ws keeps a 64 KiB limit itself.
+  await app.register(websocket, { options: { maxPayload: WS_MAX_MESSAGE_BYTES, handleProtocols: selectProtocol } });
   registerAuth(app);
 
   app.setErrorHandler((err: FastifyError | AppError | Error, req, reply) => {
@@ -102,6 +107,9 @@ export async function buildApp(): Promise<FastifyInstance> {
       await api.register(shareRoutes);
       await api.register(modRoutes);
       await api.register(terrariaRoutes);
+      await api.register(gameRoutes);
+      await api.register(steamRoutes);
+      await api.register(webuiRoutes);
       await api.register(templateRoutes);
       await api.register(catalogRoutes);
     },

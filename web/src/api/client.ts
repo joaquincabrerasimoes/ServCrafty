@@ -5,6 +5,8 @@ export class ApiError extends Error {
     public status: number,
     public code: string,
     message: string,
+    /** Extra error data from the API (e.g. `[{path, message}]` validation issues). */
+    public details?: unknown,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -42,18 +44,21 @@ export function buildUrl(path: string, query?: Query): string {
 async function parseError(res: Response): Promise<ApiError> {
   let code = `http_${res.status}`;
   let message = res.statusText || 'Request failed';
+  let details: unknown;
   try {
     const data = await res.json();
     if (data?.error) {
       code = data.error.code ?? code;
       message = data.error.message ?? message;
+      details = data.error.details ?? data.details;
     } else if (typeof data?.message === 'string') {
       message = data.message;
+      details = data.details;
     }
   } catch {
     /* non-JSON error body */
   }
-  return new ApiError(res.status, code, message);
+  return new ApiError(res.status, code, message, details);
 }
 
 export async function request<T>(method: string, path: string, opts: RequestOptions = {}): Promise<T> {

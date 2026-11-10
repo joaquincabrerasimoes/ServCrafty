@@ -1,0 +1,211 @@
+{
+  "schema": 1,
+  "id": "garrys-mod",
+  "name": "Garry's Mod",
+  "description": "Garry's Mod dedicated server (Steam app 4020, native Linux 32-bit srcds, anonymous login). Port 27015 carries the game (UDP) and RCON (TCP) and is mirrored. Workshop: GMod does not use the panel's Workshop tab; instead set 'Workshop collection ID' and the server downloads the whole collection itself (+host_workshop_collection) and makes clients download it too. Individual .gma addons dropped into garrysmod/addons with the Files tab also work but clients will not auto-download them without a Lua resource.AddWorkshop line. Counter-Strike: Source content (for textures of many maps) is not installed. A GSLT is recommended. Server data in garrysmod/ is not part of the default backups; include game files when you back up.",
+  "icon": "https://cdn.cloudflare.steamstatic.com/steam/apps/4000/header.jpg",
+  "steam": {
+    "appId": 4020,
+    "branch": "public",
+    "betaPassword": null,
+    "platform": "linux",
+    "login": "anonymous"
+  },
+  "resources": {
+    "memoryMb": 2048,
+    "memoryMinMb": 1024,
+    "cpu": 2,
+    "diskMb": 6144
+  },
+  "ports": [
+    {
+      "id": "game",
+      "label": "Game, query and RCON (UDP + TCP)",
+      "protocol": "both",
+      "containerPort": 27015,
+      "mirror": true,
+      "publish": true,
+      "main": true
+    }
+  ],
+  "variables": [
+    {
+      "key": "serverName",
+      "label": "Server name",
+      "description": "Name shown in the server browser (hostname convar).",
+      "type": "string",
+      "default": "ServCrafty Garry's Mod Server",
+      "required": true,
+      "min": 1,
+      "max": 64,
+      "group": "Server"
+    },
+    {
+      "key": "serverPassword",
+      "label": "Server password",
+      "description": "Password players need to join (sv_password). Leave empty for a public server.",
+      "type": "password",
+      "default": "",
+      "required": false,
+      "max": 32,
+      "pattern": "^[\\x21-\\x7e]*$",
+      "group": "Access"
+    },
+    {
+      "key": "rconPassword",
+      "label": "RCON password",
+      "description": "Remote console password (rcon_password), also needed by external admin tools. Leave empty to have one generated when the server is created (20 characters); managers can read and regenerate it in Settings.",
+      "type": "password",
+      "required": true,
+      "min": 6,
+      "max": 64,
+      "generate": {
+        "length": 20,
+        "charset": "alnum"
+      },
+      "group": "Access"
+    },
+    {
+      "key": "gslt",
+      "label": "Game Server Login Token (GSLT)",
+      "description": "Steam game server login token, 32 hexadecimal characters, created at https://steamcommunity.com/dev/managegameservers for app 4000. Optional but strongly recommended: without it the server may run as an anonymous, unlisted or restricted server.",
+      "type": "password",
+      "default": "",
+      "required": false,
+      "pattern": "^([A-Fa-f0-9]{32})?$",
+      "group": "Access"
+    },
+    {
+      "key": "map",
+      "label": "Starting map",
+      "description": "Map the server starts on (for example gm_construct, gm_flatgrass). The map must exist on the server.",
+      "type": "string",
+      "default": "gm_construct",
+      "required": true,
+      "pattern": "^[A-Za-z0-9_.-]+$",
+      "group": "Game"
+    },
+    {
+      "key": "gamemode",
+      "label": "Gamemode",
+      "description": "Gamemode folder name, for example sandbox, terrortown, darkrp, prop_hunt. Non-default gamemodes must be installed (usually through a Workshop collection).",
+      "type": "string",
+      "default": "sandbox",
+      "required": true,
+      "pattern": "^[A-Za-z0-9_]+$",
+      "group": "Game"
+    },
+    {
+      "key": "maxPlayers",
+      "label": "Max players",
+      "description": "Maximum number of players.",
+      "type": "number",
+      "default": 16,
+      "required": true,
+      "min": 1,
+      "max": 128,
+      "integer": true,
+      "group": "Game"
+    },
+    {
+      "key": "tickrate",
+      "label": "Tick rate",
+      "description": "Server tick rate (-tickrate). 22 saves CPU, 66 is the usual value.",
+      "type": "number",
+      "default": 66,
+      "required": false,
+      "min": 10,
+      "max": 128,
+      "integer": true,
+      "group": "Game"
+    },
+    {
+      "key": "workshopCollection",
+      "label": "Workshop collection ID",
+      "description": "Numeric id of a Steam Workshop collection to load (+host_workshop_collection). Leave empty for none.",
+      "type": "string",
+      "default": "",
+      "required": false,
+      "pattern": "^[0-9]*$",
+      "max": 20,
+      "group": "Workshop"
+    }
+  ],
+  "launch": {
+    "cwd": "",
+    "command": [
+      "./srcds_run",
+      "-game",
+      "garrysmod",
+      "-console",
+      "-strictportbind",
+      "-norestart",
+      "-disableluarefresh",
+      "-port",
+      "{{ports.game}}",
+      "-tickrate",
+      "{{tickrate}}",
+      "-maxplayers",
+      "{{maxPlayers}}",
+      "+gamemode",
+      "{{gamemode}}",
+      "+map",
+      "{{map}}",
+      "+hostname",
+      "{{serverName}}",
+      "+log",
+      "on",
+      {
+        "value": "+host_workshop_collection",
+        "if": "workshopCollection"
+      },
+      {
+        "value": "{{workshopCollection}}",
+        "if": "workshopCollection"
+      },
+      {
+        "value": "+sv_password",
+        "if": "serverPassword"
+      },
+      {
+        "value": "{{serverPassword}}",
+        "if": "serverPassword"
+      },
+      "+rcon_password",
+      "{{rconPassword}}",
+      {
+        "value": "+sv_setsteamaccount",
+        "if": "gslt"
+      },
+      {
+        "value": "{{gslt}}",
+        "if": "gslt"
+      }
+    ],
+    "env": {}
+  },
+  "files": [],
+  "stop": {
+    "type": "stdin",
+    "command": "quit",
+    "timeoutSec": 30
+  },
+  "console": {
+    "stdin": true
+  },
+  "ready": {
+    "logRegex": "Connection to Steam servers successful|gameserver Steam ID"
+  },
+  "players": {
+    "joinRegex": "\"(?<name>.+?)<\\d+><[^>]*><[^>]*>\" entered the game",
+    "leaveRegex": "\"(?<name>.+?)<\\d+><[^>]*><[^>]*>\" disconnected"
+  },
+  "query": {
+    "a2s": {
+      "portId": "game"
+    }
+  },
+  "workshop": null,
+  "webui": [],
+  "scripts": {}
+}

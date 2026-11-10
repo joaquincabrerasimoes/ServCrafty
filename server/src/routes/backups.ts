@@ -17,11 +17,13 @@ export default async function backupRoutes(app: FastifyInstance): Promise<void> 
     return backups.listBackups(server.id);
   });
 
-  app.post<{ Params: { id: string } }>('/servers/:id/backups', async (req, reply) => {
+  app.post<{ Params: { id: string }; Querystring: { includeGame?: string } }>('/servers/:id/backups', async (req, reply) => {
     const user = requireUser(req);
     const { server } = await loadServerFor(user, req.params.id, 'operator');
     const body = parse(z.object({ note: z.string().max(200).nullable().optional() }), req.body ?? {});
-    const b = await backups.createBackup(server, 'manual', user.id, body.note ?? null);
+    // SteamCMD: the game install / Workshop / SteamCMD dirs are only archived with ?includeGame=1.
+    const includeGame = req.query.includeGame === '1' || req.query.includeGame === 'true';
+    const b = await backups.createBackup(server, 'manual', user.id, body.note ?? null, { includeGame });
     await audit(req, 'backup.created', 'backup', b.id, { serverId: server.id });
     reply.code(201);
     return backups.toPublicBackup({ ...b, created_by_name: user.username });

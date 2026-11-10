@@ -15,6 +15,8 @@ export interface UpdateUserBody {
   quotas?: Quotas;
   password?: string;
   resetMfa?: boolean;
+  /** Admin only: allow this user to create game definitions. */
+  canAuthorGames?: boolean;
 }
 
 export const usersApi = {

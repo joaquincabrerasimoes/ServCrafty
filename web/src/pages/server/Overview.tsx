@@ -1,11 +1,16 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import clsx from 'clsx';
-import { WifiOff } from 'lucide-react';
-import type { Stats } from '@/api/types';
-import { useT } from '@/i18n';
+import { Download, WifiOff } from 'lucide-react';
+import { serversApi } from '@/api';
+import type { ServerStatus, Stats } from '@/api/types';
+import { useT, type TKey } from '@/i18n';
 import { canOperate } from '@/lib/access';
 import { serverCaps } from '@/lib/games';
+import { consoleAllowed } from '@/lib/gameDefs';
+import { ingestStats } from '@/ws/live';
+import { Meter } from '@/components/ui';
 import { formatNumber, formatUptime } from '@/lib/format';
 import { sendCommand } from '@/lib/sendCommand';
 import { useLogs, useStats } from '@/lib/useFallbacks';
@@ -119,11 +124,57 @@ function StatsPanel({ stats, history, tickStats }: { stats: Stats | null; histor
         <StatLine label={t('overview.uptime')} value={formatUptime(stats?.uptimeSec)} />
         {stats?.diskMb != null && <StatLine label={t('overview.disk')} value={`${formatNumber(stats.diskMb)} MB`} />}
         {stats?.version && <StatLine label={t('overview.version')} value={stats.version} />}
+        {stats?.map && <StatLine label={t('overview.map')} value={<span className="break-all">{stats.map}</span>} />}
         {stats?.packVersion && (
           <StatLine label={t('overview.packVersion')} value={stats.packName ? `${stats.packName} ${stats.packVersion}` : stats.packVersion} />
         )}
         <StatLine label={t('overview.source')} value={stats?.source ?? '–'} title={t('overview.sourceHint')} />
       </div>
+    </section>
+  );
+}
+
+const PHASES = ['install', 'workshop', 'configure', 'launch'];
+
+/**
+ * SteamCMD servers: game download / update progress while the executor reports a phase. Stats come
+ * from the socket; while the server is installing without progress data the REST stats are polled.
+ */
+export function InstallProgress({ serverId, status, stats, live }: { serverId: string; status: ServerStatus; stats: Stats | null; live: boolean }) {
+  const t = useT();
+  const install = stats?.install ?? null;
+  const installing = status === 'installing';
+  useQuery({
+    queryKey: ['servers', serverId, 'stats', 'install'],
+    queryFn: async () => {
+      const st = await serversApi.stats(serverId);
+      ingestStats(serverId, st);
+      return st;
+    },
+    enabled: installing && (!live || !install),
+    refetchInterval: 3000,
+  });
+  if (!install && !installing) return null;
+  const phase = install?.phase && PHASES.includes(install.phase) ? install.phase : null;
+  const pct = typeof install?.progress === 'number' ? Math.max(0, Math.min(100, Math.round(install.progress))) : null;
+  return (
+    <section className="gui-frame space-y-2" aria-live="polite">
+      <h2 className="gui-legend flex items-center gap-2">
+        <Download className="h-4 w-4" aria-hidden="true" />
+        {t('steam.installTitle')}
+      </h2>
+      <div className="flex items-baseline justify-between gap-3 text-sm">
+        <span>{phase ? t(`steam.phase.${phase}` as TKey) : install?.phase ? install.phase : t('steam.phase.unknown')}</span>
+        {pct !== null && <span className="font-medium tabular-nums">{pct}%</span>}
+      </div>
+      {pct !== null ? (
+        <Meter value={pct} max={100} />
+      ) : (
+        <div className="h-2 w-full overflow-hidden rounded-[2px] bg-raised" role="progressbar" aria-label={t('steam.installTitle')}>
+          <div className="h-full w-1/3 animate-pulse bg-accent" />
+        </div>
+      )}
+      <p className="hint">{t('steam.installHint')}</p>
     </section>
   );
 }
@@ -164,15 +215,17 @@ function PlayersPanel({ stats, avatars }: { stats: Stats | null; avatars: boolea
 
 export default function Overview() {
   const t = useT();
-  const { server, live } = useServerCtx();
+  const { server, live, def } = useServerCtx();
   const stats = useStats(server.id, live);
   const logs = useLogs(server.id, live);
   const op = canOperate(server.access);
   const caps = serverCaps(server);
+  const stdin = !caps.hasSteamConfig || consoleAllowed(def);
 
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(17rem,22rem)_1fr]">
       <div className="flex flex-col gap-4">
+        {caps.hasSteamConfig && <InstallProgress serverId={server.id} status={server.status} stats={stats} live={live.conn === 'open'} />}
         <StatsPanel stats={stats} history={live.history} tickStats={caps.hasTickStats} />
         <PlayersPanel stats={stats} avatars={caps.hasPlayerHeads} />
       </div>
@@ -190,8 +243,8 @@ export default function Overview() {
         <LogView lines={logs} className="h-[22rem] sm:h-[28rem] lg:h-auto lg:min-h-0 lg:flex-1" />
         <div className="mt-2">
           <CommandInput
-            disabled={!op || server.status !== 'running'}
-            placeholder={!op ? t('console.readOnly') : server.status !== 'running' ? t('console.notRunning') : undefined}
+            disabled={!op || !stdin || server.status !== 'running'}
+            placeholder={!stdin ? t('steam.consoleNoStdin') : !op ? t('console.readOnly') : server.status !== 'running' ? t('console.notRunning') : undefined}
             onSend={(cmd) => sendCommand(server.id, cmd)}
           />
         </div>

@@ -10,6 +10,7 @@ import { requireUser } from '../auth/plugin.js';
 import * as cf from '../catalog/curseforge.js';
 import * as mr from '../catalog/modrinth.js';
 import { AppError, badRequest } from '../lib/errors.js';
+import { secretVarKeys } from '../lib/steamPlan.js';
 import { copyDir } from '../lib/fsutil.js';
 import { assertMinecraft, gameOf } from '../lib/games.js';
 import { parseProperties, serializeProperties } from '../lib/properties.js';
@@ -17,6 +18,7 @@ import { intQuery, parse } from '../lib/validation.js';
 import { loadServerFor, listServersFor } from '../services/access.js';
 import { audit } from '../services/audit.js';
 import { serverDir } from '../services/docker.js';
+import { getDefinition } from '../services/gameDefinitions.js';
 import { exportServer, importArchive, importFieldsSchema, type ExportFormat } from '../services/modpack.js';
 import { dismissAttempt, listAttempts } from '../services/joinAttempts.js';
 import { listKinds, playerAction, playerActions, readList, type ListKind, type PlayerAction } from '../services/players.js';
@@ -70,7 +72,7 @@ async function enrichModpack(type: string, mp: ModpackRef | null | undefined): P
   return out;
 }
 
-const RESTART_FIELDS = ['type', 'mcVersion', 'loaderVersion', 'modpack', 'javaArgs', 'memoryMb', 'cpu', 'port', 'env', 'terraria'] as const;
+const RESTART_FIELDS = ['type', 'mcVersion', 'loaderVersion', 'modpack', 'javaArgs', 'memoryMb', 'cpu', 'port', 'env', 'terraria', 'steam'] as const;
 
 export default async function serverRoutes(app: FastifyInstance): Promise<void> {
   app.get('/servers', async (req) => {
@@ -82,6 +84,9 @@ export default async function serverRoutes(app: FastifyInstance): Promise<void> 
   app.post('/servers', async (req, reply) => {
     const user = requireUser(req);
     const body = parse(createServerSchema, req.body) as CreateServerInput;
+    if (gameOf(body.type) !== 'steam' && body.eula !== true) {
+      throw new AppError(400, 'validation_error', 'eula: You must accept the Minecraft EULA');
+    }
     body.modpack = await enrichModpack(body.type, body.modpack);
     const server = await createServer(user, body);
     await audit(req, 'server.created', 'server', server.id, { name: server.name, type: server.type, port: server.port });
@@ -232,6 +237,8 @@ export default async function serverRoutes(app: FastifyInstance): Promise<void> 
       z.object({ name: z.string().trim().min(1).max(64), copyFiles: z.boolean().default(true), port: z.number().int().optional() }),
       req.body,
     );
+    // SteamCMD servers clone their configuration only (the game is downloaded again on first start).
+    if (gameOf(server.type) === 'steam') body.copyFiles = false;
     if (body.copyFiles && runtime.getStatus(server.id) === 'running') {
       if (gameOf(server.type) === 'terraria') await runtime.saveWorld(server.id);
       else {
@@ -239,7 +246,7 @@ export default async function serverRoutes(app: FastifyInstance): Promise<void> 
         await new Promise((r) => setTimeout(r, 1500));
       }
     }
-    const clone = await createServer(user, { ...configOf(server), name: body.name, port: body.port }, async (dir) => {
+    const clone = await createServer(user, { ...configOf(server), name: body.name, port: gameOf(server.type) === 'steam' ? undefined : body.port }, async (dir) => {
       if (body.copyFiles) {
         await copyDir(serverDir(server.id), dir);
         await fsp.rm(path.join(dir, 'logs'), { recursive: true, force: true });
@@ -264,7 +271,13 @@ export default async function serverRoutes(app: FastifyInstance): Promise<void> 
       req.body,
     );
     const cfg: Record<string, unknown> = { ...configOf(server) };
-    if (body.includeProperties) {
+    // Shared templates never carry a SteamCMD server's secret values.
+    if (body.shared && server.steam) {
+      const secret = secretVarKeys(getDefinition(server.steam.gameId));
+      const steam = cfg.steam as { vars: Record<string, unknown> };
+      steam.vars = Object.fromEntries(Object.entries(steam.vars).filter(([k]) => !secret.has(k)));
+    }
+    if (body.includeProperties && gameOf(server.type) === 'minecraft') {
       try {
         const props = parseProperties(await fsp.readFile(path.join(serverDir(server.id), 'server.properties'), 'utf8'));
         for (const k of ['server-port', 'rcon.password', 'rcon.port', 'enable-rcon', 'level-seed', 'server-ip']) delete props[k];

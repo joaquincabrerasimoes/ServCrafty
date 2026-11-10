@@ -1,0 +1,98 @@
+{
+  "schema": 1,
+  "id": "satisfactory",
+  "name": "Satisfactory",
+  "description": "Satisfactory dedicated server (Steam app 1690800, native Linux, anonymous SteamCMD login). After the first start, open Satisfactory, go to Server Manager, add this server with its address and game port, and claim it by choosing a server name and an administrator password; then create or upload a save. There is no Steam Workshop for Satisfactory (mods come from ficsit.app and are not managed here). The server needs about 8 GB of RAM, more for big factories or more than 4 players. The in-game server uses a self-signed certificate that you must accept the first time you connect.",
+  "icon": "https://cdn.cloudflare.steamstatic.com/steam/apps/526870/header.jpg",
+  "steam": {
+    "appId": 1690800,
+    "branch": "public",
+    "betaPassword": null,
+    "platform": "linux",
+    "login": "anonymous"
+  },
+  "resources": {
+    "memoryMb": 8192,
+    "memoryMinMb": 4096,
+    "cpu": 4,
+    "diskMb": 10240
+  },
+  "ports": [
+    {
+      "id": "game",
+      "label": "Game (UDP + TCP API)",
+      "protocol": "both",
+      "containerPort": 7777,
+      "mirror": true,
+      "publish": true,
+      "main": true
+    },
+    {
+      "id": "messaging",
+      "label": "Reliable messaging (TCP)",
+      "protocol": "tcp",
+      "containerPort": 8888,
+      "mirror": true,
+      "publish": true
+    }
+  ],
+  "variables": [
+    {
+      "key": "maxPlayers",
+      "label": "Max players",
+      "description": "Maximum number of simultaneously connected players (GameSession MaxPlayers). The official default is 4; each extra player needs noticeably more RAM and CPU.",
+      "type": "number",
+      "default": 4,
+      "required": false,
+      "min": 1,
+      "max": 127,
+      "integer": true,
+      "group": "Server"
+    },
+    {
+      "key": "disableSeasonalEvents",
+      "label": "Disable seasonal events",
+      "description": "Passes -DisableSeasonalEvents so that events such as FICSMAS are not activated.",
+      "type": "boolean",
+      "default": false,
+      "required": false,
+      "group": "Server"
+    }
+  ],
+  "launch": {
+    "cwd": "",
+    "command": [
+      "./FactoryServer.sh",
+      "-Port={{ports.game}}",
+      "-ReliablePort={{ports.messaging}}",
+      "-unattended",
+      "-ini:Game:[/Script/Engine.GameSession]:MaxPlayers={{maxPlayers}}",
+      {
+        "value": "-DisableSeasonalEvents",
+        "if": "disableSeasonalEvents"
+      }
+    ],
+    "env": {
+      "HOME": "/data/home"
+    }
+  },
+  "files": [],
+  "stop": {
+    "type": "signal",
+    "signal": "SIGINT",
+    "timeoutSec": 90
+  },
+  "console": {
+    "stdin": false
+  },
+  "ready": {
+    "logRegex": "Server startup time elapsed and saving/level loading is done|Game session ID"
+  },
+  "players": null,
+  "query": null,
+  "workshop": null,
+  "webui": [],
+  "scripts": {
+    "preStart": "mkdir -p /data/home"
+  }
+}

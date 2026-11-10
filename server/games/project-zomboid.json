@@ -1,0 +1,261 @@
+{
+  "schema": 1,
+  "id": "project-zomboid",
+  "name": "Project Zomboid",
+  "description": "Project Zomboid dedicated server (Steam app 380870, native Linux with bundled Java, anonymous login). Settings are written to Zomboid/Server/servertest.ini on every start; the data folder is /data/zomboid (linked into the game directory) so worlds and settings are part of the default backups. Workshop: items are listed in the ini (WorkshopItems) and the game downloads them itself at start (Workshop app 108600); the panel converts the id list to the semicolon format the game expects. Mod ids (Mods=) are NOT the same as Workshop item ids: read the mod page and enter the mod id(s) in the Mods variable, and add map names to the Map variable when a mod ships a map. Heap size is controlled by ProjectZomboid64.json, not by this definition: raise it there for large servers. RCON is not published; use the panel console.",
+  "icon": "https://cdn.cloudflare.steamstatic.com/steam/apps/108600/header.jpg",
+  "steam": {
+    "appId": 380870,
+    "branch": "public",
+    "betaPassword": null,
+    "platform": "linux",
+    "login": "anonymous"
+  },
+  "resources": {
+    "memoryMb": 6144,
+    "memoryMinMb": 3072,
+    "cpu": 2,
+    "diskMb": 5120
+  },
+  "ports": [
+    {
+      "id": "game",
+      "label": "Game (UDP)",
+      "protocol": "udp",
+      "containerPort": 16261,
+      "mirror": true,
+      "publish": true,
+      "main": true
+    },
+    {
+      "id": "direct",
+      "label": "Direct connection (UDP, game port + 1)",
+      "protocol": "udp",
+      "containerPort": 16262,
+      "mirror": true,
+      "publish": true,
+      "offset": {
+        "from": "game",
+        "by": 1
+      }
+    },
+    {
+      "id": "steam1",
+      "label": "Steam port 1 (UDP)",
+      "protocol": "udp",
+      "containerPort": 8766,
+      "mirror": true,
+      "publish": true
+    },
+    {
+      "id": "steam2",
+      "label": "Steam port 2 (UDP)",
+      "protocol": "udp",
+      "containerPort": 8767,
+      "mirror": true,
+      "publish": true
+    },
+    {
+      "id": "rcon",
+      "label": "RCON (TCP, not published)",
+      "protocol": "tcp",
+      "containerPort": 27015,
+      "mirror": false,
+      "publish": false
+    }
+  ],
+  "variables": [
+    {
+      "key": "serverName",
+      "label": "Server name",
+      "description": "Public server name shown in the browser (PublicName).",
+      "type": "string",
+      "default": "ServCrafty Zomboid Server",
+      "required": true,
+      "min": 1,
+      "max": 64,
+      "group": "Server"
+    },
+    {
+      "key": "description",
+      "label": "Description",
+      "description": "Public description (PublicDescription). May be empty.",
+      "type": "string",
+      "default": "",
+      "required": false,
+      "max": 300,
+      "group": "Server"
+    },
+    {
+      "key": "serverPassword",
+      "label": "Server password",
+      "description": "Password players need to join (Password). Leave empty for a public server.",
+      "type": "password",
+      "default": "",
+      "required": false,
+      "max": 32,
+      "pattern": "^[\\x21-\\x7e]*$",
+      "group": "Access"
+    },
+    {
+      "key": "adminPassword",
+      "label": "Admin password",
+      "description": "Password of the in-game admin account named admin. Leave empty to have one generated when the server is created (20 characters); managers can read and regenerate it in Settings.",
+      "type": "password",
+      "required": true,
+      "min": 6,
+      "max": 64,
+      "generate": {
+        "length": 20,
+        "charset": "alnum"
+      },
+      "group": "Access"
+    },
+    {
+      "key": "rconPassword",
+      "label": "RCON password",
+      "description": "RCON password (RCONPassword). The RCON port is not published, so this only matters for tools running inside the container. Leave empty to have one generated.",
+      "type": "password",
+      "required": true,
+      "min": 6,
+      "max": 64,
+      "generate": {
+        "length": 20,
+        "charset": "alnum"
+      },
+      "group": "Access"
+    },
+    {
+      "key": "maxPlayers",
+      "label": "Max players",
+      "description": "Maximum simultaneous players (MaxPlayers). Memory use grows with players; 16 or more needs a larger heap.",
+      "type": "number",
+      "default": 16,
+      "required": true,
+      "min": 1,
+      "max": 100,
+      "integer": true,
+      "group": "Game"
+    },
+    {
+      "key": "map",
+      "label": "Map",
+      "description": "Map name(s) (Map). Semicolon separated, Muldraugh, KY last, for example MyMapMod;Muldraugh, KY.",
+      "type": "string",
+      "default": "Muldraugh, KY",
+      "required": true,
+      "pattern": "^[A-Za-z0-9 ,;_.'-]+$",
+      "group": "Game"
+    },
+    {
+      "key": "mods",
+      "label": "Mod ids",
+      "description": "Mod ids to enable (Mods), separated by semicolons, for example ModA;ModB. These are the Mod ID values listed on each Workshop page, not the numeric item ids; the numeric ids go in the Workshop tab.",
+      "type": "string",
+      "default": "",
+      "required": false,
+      "max": 1000,
+      "pattern": "^[A-Za-z0-9 _.;\\\\-]*$",
+      "group": "Mods"
+    },
+    {
+      "key": "pvp",
+      "label": "PVP",
+      "description": "Allow players to damage each other (PVP).",
+      "type": "boolean",
+      "default": true,
+      "required": false,
+      "group": "Game"
+    },
+    {
+      "key": "pauseEmpty",
+      "label": "Pause when empty",
+      "description": "Pause the world while nobody is connected (PauseEmpty).",
+      "type": "boolean",
+      "default": true,
+      "required": false,
+      "group": "Game"
+    },
+    {
+      "key": "public",
+      "label": "Listed publicly",
+      "description": "List the server in the in-game server browser (Public).",
+      "type": "boolean",
+      "default": false,
+      "required": false,
+      "group": "Server"
+    },
+    {
+      "key": "steamVac",
+      "label": "VAC",
+      "description": "Enable Valve Anti-Cheat (SteamVAC).",
+      "type": "boolean",
+      "default": true,
+      "required": false,
+      "group": "Advanced"
+    }
+  ],
+  "launch": {
+    "cwd": "",
+    "command": [
+      "./start-server.sh",
+      "-servername",
+      "servertest",
+      "-adminusername",
+      "admin",
+      "-adminpassword",
+      "{{adminPassword}}",
+      "-cachedir=/data/zomboid",
+      "-port",
+      "{{ports.game}}",
+      "-udpport",
+      "{{ports.direct}}"
+    ],
+    "env": {
+      "ZC_PublicName": "{{serverName}}",
+      "ZC_PublicDescription": "{{description}}",
+      "ZC_Password": "{{serverPassword}}",
+      "ZC_MaxPlayers": "{{maxPlayers}}",
+      "ZC_Map": "{{map}}",
+      "ZC_Mods": "{{mods}}",
+      "ZC_WorkshopItems": "{{workshop.ids}}",
+      "ZC_PVP": "{{pvp}}",
+      "ZC_PauseEmpty": "{{pauseEmpty}}",
+      "ZC_Public": "{{public}}",
+      "ZC_SteamVAC": "{{steamVac}}",
+      "ZC_DefaultPort": "{{ports.game}}",
+      "ZC_UDPPort": "{{ports.direct}}",
+      "ZC_SteamPort1": "{{ports.steam1}}",
+      "ZC_SteamPort2": "{{ports.steam2}}",
+      "ZC_RCONPort": "{{ports.rcon}}",
+      "ZC_RCONPassword": "{{rconPassword}}"
+    }
+  },
+  "files": [],
+  "stop": {
+    "type": "stdin",
+    "command": "quit",
+    "timeoutSec": 90
+  },
+  "console": {
+    "stdin": true
+  },
+  "ready": {
+    "logRegex": "SERVER STARTED"
+  },
+  "players": null,
+  "query": {
+    "a2s": {
+      "portId": "game"
+    }
+  },
+  "workshop": {
+    "appId": 108600,
+    "install": "config-list"
+  },
+  "webui": [],
+  "scripts": {
+    "postInstall": "mkdir -p /data/zomboid/Server; if [ ! -e Zomboid ] || [ -L Zomboid ]; then rm -f Zomboid; ln -s /data/zomboid Zomboid; fi",
+    "preStart": "f=Zomboid/Server/servertest.ini\nmkdir -p Zomboid/Server\n[ -f \"$f\" ] || : > \"$f\"\nZC_WorkshopItems=$(printf %s \"$ZC_WorkshopItems\" | tr , ';')\nexport ZC_WorkshopItems\nfor k in PublicName PublicDescription Password MaxPlayers Map Mods WorkshopItems PVP PauseEmpty Public SteamVAC DefaultPort UDPPort SteamPort1 SteamPort2 RCONPort RCONPassword; do\n  eval \"V=\\\"\\${ZC_$k}\\\"\"; export V\n  if grep -q \"^$k=\" \"$f\"; then\n    awk -v k=\"$k\" 'index($0, k \"=\") == 1 { print k \"=\" ENVIRON[\"V\"]; next } { print }' \"$f\" > \"$f.tmp\" && mv \"$f.tmp\" \"$f\"\n  else\n    printf '%s=%s\\n' \"$k\" \"$V\" >> \"$f\"\n  fi\ndone\ntrue"
+  }
+}

@@ -1,0 +1,376 @@
+{
+  "schema": 1,
+  "id": "killing-floor-2",
+  "name": "Killing Floor 2",
+  "description": "Killing Floor 2 dedicated server (Steam app 232130, anonymous SteamCMD login). Uses the native Linux server binary (KFGameSteamServer.bin.x86_64); Wine is not needed. Settings are written to KFGame/Config/LinuxServer-KFGame.ini, KFWeb.ini and LinuxServer-KFEngine.ini on every start. The WebAdmin (user Admin, password = admin password) is available from the WebAdmin tab of the panel when enabled. Workshop items are listed in LinuxServer-KFEngine.ini as ServerSubscribedWorkshopItems and downloaded by the game itself at start; clients download them from the Steam Workshop on connect. Custom maps additionally need to be added to the map cycle (via WebAdmin or the ini) and some Workshop items need extra manual configuration. The first start downloads about 15-20 GB and can take a long time.",
+  "icon": "https://cdn.cloudflare.steamstatic.com/steam/apps/232090/header.jpg",
+  "steam": {
+    "appId": 232130,
+    "branch": "public",
+    "betaPassword": null,
+    "platform": "linux",
+    "login": "anonymous"
+  },
+  "resources": {
+    "memoryMb": 4096,
+    "memoryMinMb": 2048,
+    "cpu": 2,
+    "diskMb": 20480
+  },
+  "ports": [
+    {
+      "id": "game",
+      "label": "Game (UDP)",
+      "protocol": "udp",
+      "containerPort": 7777,
+      "mirror": true,
+      "publish": true,
+      "main": true
+    },
+    {
+      "id": "query",
+      "label": "Steam query (UDP)",
+      "protocol": "udp",
+      "containerPort": 27015,
+      "mirror": true,
+      "publish": true
+    },
+    {
+      "id": "web",
+      "label": "WebAdmin (TCP, panel proxy only)",
+      "protocol": "tcp",
+      "containerPort": 8080,
+      "mirror": false,
+      "publish": false
+    }
+  ],
+  "variables": [
+    {
+      "key": "serverName",
+      "label": "Server name",
+      "description": "Name shown in the in-game server browser (Engine.GameReplicationInfo ServerName). Plain ASCII is recommended: non-ASCII names require a UTF-16 ini file, which this definition does not write.",
+      "type": "string",
+      "default": "ServCrafty KF2 Server",
+      "required": true,
+      "min": 1,
+      "max": 64,
+      "pattern": "^[\\x20-\\x7e]+$",
+      "group": "Server"
+    },
+    {
+      "key": "shortName",
+      "label": "Short name",
+      "description": "Short server name used in some lists (ShortName). Up to 16 characters.",
+      "type": "string",
+      "default": "ServCrafty",
+      "required": false,
+      "max": 16,
+      "pattern": "^[\\x20-\\x7e]*$",
+      "group": "Server"
+    },
+    {
+      "key": "motd",
+      "label": "Message of the day",
+      "description": "Message shown to players when they join (KFGame.KFGameInfo ServerMOTD). May be empty.",
+      "type": "string",
+      "default": "",
+      "required": false,
+      "max": 300,
+      "pattern": "^[\\x20-\\x7e]*$",
+      "group": "Server"
+    },
+    {
+      "key": "gamePassword",
+      "label": "Game password",
+      "description": "Password players must enter to join. Leave empty for a public server.",
+      "type": "password",
+      "default": "",
+      "required": false,
+      "max": 32,
+      "pattern": "^[\\x21-\\x7e]*$",
+      "group": "Access"
+    },
+    {
+      "key": "adminPassword",
+      "label": "Admin password",
+      "description": "Password of the in-game admin (console login adminlogin) and of the WebAdmin user Admin. Leave empty to have one generated when the server is created (20 characters); managers can read and regenerate it in Settings.",
+      "type": "password",
+      "required": true,
+      "min": 6,
+      "max": 32,
+      "group": "Access",
+      "generate": {
+        "length": 20,
+        "charset": "alnum"
+      }
+    },
+    {
+      "key": "map",
+      "label": "Starting map",
+      "description": "Map the server starts on, for example KF-BioticsLab, KF-Outpost, KF-Farmhouse, KF-BurningParis. Workshop maps use their own file name. The map must exist on the server.",
+      "type": "string",
+      "default": "KF-BioticsLab",
+      "required": true,
+      "pattern": "^[A-Za-z0-9_-]+$",
+      "group": "Game"
+    },
+    {
+      "key": "gameMode",
+      "label": "Game mode",
+      "description": "Game class. Weekly Outbreak needs outbound NTP (UDP 123) to work. Versus needs matching maps and player counts.",
+      "type": "select",
+      "default": "KFGameContent.KFGameInfo_Survival",
+      "required": true,
+      "options": [
+        {
+          "value": "KFGameContent.KFGameInfo_Survival",
+          "label": "Survival"
+        },
+        {
+          "value": "KFGameContent.KFGameInfo_WeeklySurvival",
+          "label": "Weekly Outbreak"
+        },
+        {
+          "value": "KFGameContent.KFGameInfo_Endless",
+          "label": "Endless"
+        },
+        {
+          "value": "KFGameContent.KFGameInfo_VersusSurvival",
+          "label": "Versus Survival"
+        }
+      ],
+      "group": "Game"
+    },
+    {
+      "key": "difficulty",
+      "label": "Difficulty",
+      "description": "Difficulty URL option (Difficulty=0..3).",
+      "type": "select",
+      "default": "0",
+      "required": true,
+      "options": [
+        {
+          "value": "0",
+          "label": "Normal"
+        },
+        {
+          "value": "1",
+          "label": "Hard"
+        },
+        {
+          "value": "2",
+          "label": "Suicidal"
+        },
+        {
+          "value": "3",
+          "label": "Hell on Earth"
+        }
+      ],
+      "group": "Game"
+    },
+    {
+      "key": "gameLength",
+      "label": "Game length",
+      "description": "Number of waves (GameLength URL option): Short 4 waves, Medium 7 waves, Long 10 waves. Ignored by Endless.",
+      "type": "select",
+      "default": "1",
+      "required": true,
+      "options": [
+        {
+          "value": "0",
+          "label": "Short (4 waves)"
+        },
+        {
+          "value": "1",
+          "label": "Medium (7 waves)"
+        },
+        {
+          "value": "2",
+          "label": "Long (10 waves)"
+        }
+      ],
+      "group": "Game"
+    },
+    {
+      "key": "maxPlayers",
+      "label": "Max players",
+      "description": "MaxPlayers URL option. The game itself caps public Survival at 6 players: to allow more, enable 'Allow more than 6 players' below.",
+      "type": "number",
+      "default": 6,
+      "required": true,
+      "min": 1,
+      "max": 32,
+      "integer": true,
+      "group": "Game"
+    },
+    {
+      "key": "extendedSlots",
+      "label": "Allow more than 6 players",
+      "description": "Loads the built-in mutator KFMutator.KFMutator_MaxPlayersV2 so that Max players above 6 is honoured. Some community reports mention instability with it on certain Linux distributions. Do not combine with another Mutator= in 'Extra URL options'; list all mutators there instead.",
+      "type": "boolean",
+      "default": false,
+      "required": false,
+      "group": "Game"
+    },
+    {
+      "key": "extraOptions",
+      "label": "Extra URL options",
+      "description": "Advanced. Extra options appended to the map URL, WITHOUT a leading question mark; separate several with a question mark, for example Mutator=Package.Class?FriendlyFireScale=0.5. Leave empty if unsure. A wrong value can prevent the server from starting.",
+      "type": "string",
+      "default": "",
+      "required": false,
+      "max": 500,
+      "pattern": "^([A-Za-z0-9_.=,:-]+(\\?[A-Za-z0-9_.=,:-]+)*)?$",
+      "group": "Advanced"
+    },
+    {
+      "key": "webAdmin",
+      "label": "Enable WebAdmin",
+      "description": "Enables the built-in web administration (KFWeb.ini). It is not published to the internet: it is only reachable through the panel's WebAdmin tab (user Admin, password = Admin password).",
+      "type": "boolean",
+      "default": true,
+      "required": false,
+      "valueMap": {
+        "true": "true",
+        "false": "false"
+      },
+      "group": "Access"
+    }
+  ],
+  "launch": {
+    "cwd": "Binaries/Win64",
+    "command": [
+      "./KFGameSteamServer.bin.x86_64",
+      {
+        "parts": [
+          "{{map}}",
+          "Game={{gameMode}}",
+          "Difficulty={{difficulty}}",
+          "GameLength={{gameLength}}",
+          "MaxPlayers={{maxPlayers}}",
+          {
+            "value": "Mutator=KFMutator.KFMutator_MaxPlayersV2",
+            "if": "extendedSlots"
+          },
+          {
+            "value": "{{extraOptions}}",
+            "if": "extraOptions"
+          }
+        ],
+        "separator": "?"
+      },
+      "-Port={{ports.game}}",
+      "-QueryPort={{ports.query}}"
+    ],
+    "env": {}
+  },
+  "files": [
+    {
+      "type": "ini",
+      "path": "KFGame/Config/LinuxServer-KFGame.ini",
+      "when": "always",
+      "set": [
+        {
+          "section": "Engine.AccessControl",
+          "key": "AdminPassword",
+          "value": "{{adminPassword}}"
+        },
+        {
+          "section": "Engine.AccessControl",
+          "key": "GamePassword",
+          "value": "{{gamePassword}}"
+        },
+        {
+          "section": "Engine.GameReplicationInfo",
+          "key": "ServerName",
+          "value": "{{serverName}}"
+        },
+        {
+          "section": "Engine.GameReplicationInfo",
+          "key": "ShortName",
+          "value": "{{shortName}}"
+        },
+        {
+          "section": "KFGame.KFGameInfo",
+          "key": "ServerMOTD",
+          "value": "{{motd}}"
+        }
+      ],
+      "list": []
+    },
+    {
+      "type": "ini",
+      "path": "KFGame/Config/KFWeb.ini",
+      "when": "always",
+      "set": [
+        {
+          "section": "IpDrv.WebServer",
+          "key": "bEnabled",
+          "value": "{{webAdmin}}"
+        },
+        {
+          "section": "IpDrv.WebServer",
+          "key": "ListenPort",
+          "value": "{{ports.web}}"
+        }
+      ],
+      "list": []
+    },
+    {
+      "type": "ini",
+      "path": "KFGame/Config/LinuxServer-KFEngine.ini",
+      "when": "always",
+      "set": [
+        {
+          "section": "Engine.GameEngine",
+          "key": "bUsedForTakeover",
+          "value": "FALSE"
+        }
+      ],
+      "list": [
+        {
+          "section": "OnlineSubsystemSteamworks.KFWorkshopSteamworks",
+          "key": "ServerSubscribedWorkshopItems",
+          "valuesFrom": "workshop"
+        }
+      ]
+    }
+  ],
+  "stop": {
+    "type": "signal",
+    "signal": "SIGINT",
+    "timeoutSec": 30
+  },
+  "console": {
+    "stdin": false
+  },
+  "ready": null,
+  "players": null,
+  "query": {
+    "a2s": {
+      "portId": "query"
+    }
+  },
+  "workshop": {
+    "appId": 232090,
+    "install": "config-list"
+  },
+  "webui": [
+    {
+      "id": "webadmin",
+      "label": "WebAdmin",
+      "portId": "web",
+      "path": "/ServerAdmin/",
+      "auth": {
+        "type": "basic",
+        "user": "Admin",
+        "password": "{{adminPassword}}"
+      },
+      "minAccess": "manager",
+      "rewrite": true
+    }
+  ],
+  "scripts": {
+    "preStart": "mkdir -p KFGame/Cache"
+  }
+}

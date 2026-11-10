@@ -9,19 +9,32 @@ import type { ServerType } from './validation.js';
  * selection, RCON) exactly as before; its entries here only describe capabilities.
  */
 
-export const games = ['minecraft', 'terraria'] as const;
+export const games = ['minecraft', 'terraria', 'steam'] as const;
 export type Game = (typeof games)[number];
 
 export const TERRARIA_TYPES = ['TERRARIA', 'TSHOCK', 'TMODLOADER'] as const satisfies readonly ServerType[];
 export type TerrariaType = (typeof TERRARIA_TYPES)[number];
 
+/** The single type of the generic SteamCMD game family (the game itself comes from a game definition). */
+export const STEAM_TYPE = 'STEAMCMD' as const satisfies ServerType;
+
 /** The game a server type belongs to. The only source of truth for `servers.game`. */
 export function gameOf(type: ServerType | string): Game {
+  if (type === STEAM_TYPE) return 'steam';
   return (TERRARIA_TYPES as readonly string[]).includes(type) ? 'terraria' : 'minecraft';
 }
 
 export function isTerrariaType(type: ServerType | string): type is TerrariaType {
   return gameOf(type) === 'terraria';
+}
+
+export function isSteamType(type: ServerType | string): type is typeof STEAM_TYPE {
+  return type === STEAM_TYPE;
+}
+
+/** Human name of a game, for error messages. */
+export function gameLabel(game: Game): string {
+  return game === 'terraria' ? 'Terraria' : game === 'steam' ? 'SteamCMD' : 'Minecraft';
 }
 
 export interface GameCapabilities {
@@ -41,6 +54,11 @@ export interface GameCapabilities {
   hasTerrariaConfig: boolean;
   /** Op/deop/whitelist player actions. */
   hasOpsWhitelist: boolean;
+  /**
+   * `steam` config object (game definition driven). Per-definition features (Workshop, web UIs,
+   * stdin console, players) are reported by the definition (`hasWorkshop`, `hasWebui`, ...).
+   */
+  hasSteamConfig: boolean;
 }
 
 export interface GameInfo {
@@ -60,6 +78,7 @@ export const GAMES: Record<Game, GameInfo> = {
       hasMinecraftConfig: true,
       hasTerrariaConfig: false,
       hasOpsWhitelist: true,
+      hasSteamConfig: false,
     },
   },
   terraria: {
@@ -73,6 +92,22 @@ export const GAMES: Record<Game, GameInfo> = {
       hasMinecraftConfig: false,
       hasTerrariaConfig: true,
       hasOpsWhitelist: false,
+      hasSteamConfig: false,
+    },
+  },
+  steam: {
+    // The real minimum comes from the definition's `resources.memoryMinMb`.
+    memoryMinMb: 256,
+    capabilities: {
+      hasRcon: false,
+      hasMods: false,
+      hasProperties: false,
+      hasModpackExport: false,
+      hasLanAnnounce: false,
+      hasMinecraftConfig: false,
+      hasTerrariaConfig: false,
+      hasOpsWhitelist: false,
+      hasSteamConfig: true,
     },
   },
 };
@@ -89,6 +124,28 @@ export function assertMinecraft(server: { type: ServerType | string }, what = 'T
 /** Throw 400 `unsupported_game` unless the server runs Terraria. */
 export function assertTerraria(server: { type: ServerType | string }, what = 'This feature'): void {
   if (gameOf(server.type) !== 'terraria') throw badRequest(`${what} is only available for Terraria servers`, 'unsupported_game');
+}
+
+/** Throw 400 `unsupported_game` unless the server runs a SteamCMD game. */
+export function assertSteam(server: { type: ServerType | string }, what = 'This feature'): void {
+  if (gameOf(server.type) !== 'steam') throw badRequest(`${what} is only available for SteamCMD servers`, 'unsupported_game');
+}
+
+/** Repository/tag of the generic SteamCMD executor image (SPEC "SteamCMD games"). */
+export const STEAM_IMAGE_NAME = 'servcrafty-steamcmd';
+
+/**
+ * `image:tag` of the SteamCMD executor image. `override` is env `SERVCRAFTY_STEAM_IMAGE` (a full image
+ * reference; used verbatim when well-formed); otherwise `ghcr.io/<owner>/servcrafty-steamcmd:<tag>` where
+ * owner is the owner of the update repository (the same GitHub account publishes the panel image) and tag
+ * is the server's SERVCRAFTY_IMAGE_TAG when set, else the panel version.
+ */
+export function steamImage(opts: { override?: string | null; updateRepo: string; appVersion: string; forcedTag?: string | null }): string {
+  const ov = opts.override?.trim();
+  if (ov && /^[a-z0-9][a-z0-9._/:@-]{0,254}$/i.test(ov) && !ov.includes('..')) return ov;
+  const owner = (opts.updateRepo.split('/')[0] ?? 'servcrafty').toLowerCase();
+  const tag = opts.forcedTag && TAG_RE.test(opts.forcedTag) ? opts.forcedTag : TAG_RE.test(opts.appVersion) ? opts.appVersion : 'latest';
+  return `ghcr.io/${owner}/${STEAM_IMAGE_NAME}:${tag}`;
 }
 
 /** How console commands reach the game process. */

@@ -1,0 +1,181 @@
+{
+  "schema": 1,
+  "id": "counter-strike-1-6",
+  "name": "Counter-Strike 1.6",
+  "description": "Counter-Strike 1.6 (GoldSrc) dedicated server: HLDS, Steam app 90 plus the cstrike mod, native Linux 32-bit, anonymous login. The cstrike files are not part of a plain app_update 90, so the installer step also runs SteamCMD with app_set_config 90 mod cstrike when the cstrike folder is missing (this step is unverified and may need a few retries; use Update/verify game files to repeat it). Port 27015 carries the game (UDP) and RCON (TCP) and is mirrored. Metamod/AMX Mod X are not installed.",
+  "icon": "https://cdn.cloudflare.steamstatic.com/steam/apps/10/header.jpg",
+  "steam": {
+    "appId": 90,
+    "branch": "public",
+    "betaPassword": null,
+    "platform": "linux",
+    "login": "anonymous"
+  },
+  "resources": {
+    "memoryMb": 1024,
+    "memoryMinMb": 512,
+    "cpu": 1,
+    "diskMb": 3072
+  },
+  "ports": [
+    {
+      "id": "game",
+      "label": "Game, query and RCON (UDP + TCP)",
+      "protocol": "both",
+      "containerPort": 27015,
+      "mirror": true,
+      "publish": true,
+      "main": true
+    }
+  ],
+  "variables": [
+    {
+      "key": "serverName",
+      "label": "Server name",
+      "description": "Name shown in the server browser (hostname convar).",
+      "type": "string",
+      "default": "ServCrafty CS 1.6 Server",
+      "required": true,
+      "min": 1,
+      "max": 64,
+      "group": "Server"
+    },
+    {
+      "key": "serverPassword",
+      "label": "Server password",
+      "description": "Password players need to join (sv_password). Leave empty for a public server.",
+      "type": "password",
+      "default": "",
+      "required": false,
+      "max": 32,
+      "pattern": "^[\\x21-\\x7e]*$",
+      "group": "Access"
+    },
+    {
+      "key": "rconPassword",
+      "label": "RCON password",
+      "description": "Remote console password (rcon_password), also needed by external admin tools. Leave empty to have one generated when the server is created (20 characters); managers can read and regenerate it in Settings.",
+      "type": "password",
+      "required": true,
+      "min": 6,
+      "max": 64,
+      "generate": {
+        "length": 20,
+        "charset": "alnum"
+      },
+      "group": "Access"
+    },
+    {
+      "key": "map",
+      "label": "Starting map",
+      "description": "Map the server starts on (for example de_dust2, de_inferno, cs_office, as_oilrig). The map must exist on the server.",
+      "type": "string",
+      "default": "de_dust2",
+      "required": true,
+      "pattern": "^[A-Za-z0-9_.-]+$",
+      "group": "Game"
+    },
+    {
+      "key": "maxPlayers",
+      "label": "Max players",
+      "description": "Maximum number of players.",
+      "type": "number",
+      "default": 16,
+      "required": true,
+      "min": 1,
+      "max": 32,
+      "integer": true,
+      "group": "Game"
+    },
+    {
+      "key": "secure",
+      "label": "VAC secured",
+      "description": "Start with Valve Anti-Cheat enabled (-secure). Disable for servers that run plugins VAC would flag.",
+      "type": "boolean",
+      "default": true,
+      "required": false,
+      "valueMap": {
+        "true": "-secure",
+        "false": "-insecure"
+      },
+      "group": "Advanced"
+    },
+    {
+      "key": "pingboost",
+      "label": "Ping boost",
+      "description": "-pingboost level 0 to 3 (Linux only). 2 is the usual value; 0 disables it.",
+      "type": "number",
+      "default": 2,
+      "required": false,
+      "min": 0,
+      "max": 3,
+      "integer": true,
+      "group": "Advanced"
+    }
+  ],
+  "launch": {
+    "cwd": "",
+    "command": [
+      "./hlds_run",
+      "-game",
+      "cstrike",
+      "-console",
+      "-strictportbind",
+      "-norestart",
+      "-pingboost",
+      "{{pingboost}}",
+      "{{secure}}",
+      "+ip",
+      "0.0.0.0",
+      "+port",
+      "{{ports.game}}",
+      "+maxplayers",
+      "{{maxPlayers}}",
+      "+map",
+      "{{map}}",
+      "+sv_lan",
+      "0",
+      "+hostname",
+      "{{serverName}}",
+      "+log",
+      "on",
+      {
+        "value": "+sv_password",
+        "if": "serverPassword"
+      },
+      {
+        "value": "{{serverPassword}}",
+        "if": "serverPassword"
+      },
+      "+rcon_password",
+      "{{rconPassword}}"
+    ],
+    "env": {}
+  },
+  "files": [],
+  "stop": {
+    "type": "stdin",
+    "command": "quit",
+    "timeoutSec": 30
+  },
+  "console": {
+    "stdin": true
+  },
+  "ready": {
+    "logRegex": "Connection to Steam servers successful"
+  },
+  "players": {
+    "joinRegex": "\"(?<name>.+?)<\\d+><[^>]*><[^>]*>\" entered the game",
+    "leaveRegex": "\"(?<name>.+?)<\\d+><[^>]*><[^>]*>\" disconnected"
+  },
+  "query": {
+    "a2s": {
+      "portId": "game"
+    }
+  },
+  "workshop": null,
+  "webui": [],
+  "scripts": {
+    "postInstall": "if [ ! -d cstrike ] || [ ! -f cstrike/liblist.gam ]; then for i in 1 2 3; do /opt/steamcmd/steamcmd.sh +force_install_dir /data/game +login anonymous +app_set_config 90 mod cstrike +app_update 90 validate +quit; [ -f cstrike/liblist.gam ] && break; done; fi; mkdir -p cstrike; touch cstrike/listip.cfg cstrike/banned.cfg; true"
+  }
+}

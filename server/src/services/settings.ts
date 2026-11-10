@@ -12,6 +12,7 @@ export const SettingKeys = {
   globalLimits: 'global_limits',
   lanNetworks: 'lan_networks',
   publicServersHost: 'public_servers_host',
+  steamApiKey: 'steam_api_key',
 } as const;
 
 const cache = new Map<string, unknown>();
@@ -69,6 +70,12 @@ export async function getPortPoolSpec(): Promise<string> {
 export async function getCurseforgeKey(): Promise<string | undefined> {
   const v = await getSetting<string>(SettingKeys.curseforgeKey);
   return v || config().curseforgeApiKey || undefined;
+}
+
+/** Steam Web API key (Workshop search). Never logged; write-only in the API. */
+export async function getSteamApiKey(): Promise<string | undefined> {
+  const v = await getSetting<string>(SettingKeys.steamApiKey);
+  return v || process.env.STEAM_API_KEY || undefined;
 }
 
 export async function getDefaultJavaArgs(): Promise<string> {

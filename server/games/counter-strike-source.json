@@ -1,0 +1,165 @@
+{
+  "schema": 1,
+  "id": "counter-strike-source",
+  "name": "Counter-Strike: Source",
+  "description": "Counter-Strike: Source dedicated server (Steam app 232330, native Linux 32-bit srcds, anonymous login). Port 27015 carries the game (UDP) and RCON (TCP) and is mirrored so the Steam browser sees the right port. Commands typed in the panel console go to the server and stop uses the quit command. Server content under cfg/ and addons/ lives in the game directory, which the default backups exclude. A Game Server Login Token (GSLT) is recommended. Workshop and SourceTV are not handled.",
+  "icon": "https://cdn.cloudflare.steamstatic.com/steam/apps/240/header.jpg",
+  "steam": {
+    "appId": 232330,
+    "branch": "public",
+    "betaPassword": null,
+    "platform": "linux",
+    "login": "anonymous"
+  },
+  "resources": {
+    "memoryMb": 1024,
+    "memoryMinMb": 512,
+    "cpu": 1,
+    "diskMb": 4096
+  },
+  "ports": [
+    {
+      "id": "game",
+      "label": "Game, query and RCON (UDP + TCP)",
+      "protocol": "both",
+      "containerPort": 27015,
+      "mirror": true,
+      "publish": true,
+      "main": true
+    }
+  ],
+  "variables": [
+    {
+      "key": "serverName",
+      "label": "Server name",
+      "description": "Name shown in the server browser (hostname).",
+      "type": "string",
+      "default": "ServCrafty CS:S Server",
+      "required": true,
+      "min": 1,
+      "max": 64,
+      "group": "Server"
+    },
+    {
+      "key": "serverPassword",
+      "label": "Server password",
+      "description": "Password players need to join. Leave empty for a public server.",
+      "type": "password",
+      "default": "",
+      "required": false,
+      "max": 32,
+      "pattern": "^[\\x21-\\x7e]*$",
+      "group": "Access"
+    },
+    {
+      "key": "rconPassword",
+      "label": "RCON password",
+      "description": "Remote console password (rcon_password). Leave empty to have one generated when the server is created (20 characters); managers can read and regenerate it in Settings.",
+      "type": "password",
+      "required": true,
+      "min": 6,
+      "max": 64,
+      "generate": {
+        "length": 20,
+        "charset": "alnum"
+      },
+      "group": "Access"
+    },
+    {
+      "key": "gslt",
+      "label": "Game Server Login Token (GSLT)",
+      "description": "Steam game server login token (32 hex characters) created at https://steamcommunity.com/dev/managegameservers for app 240. Optional but recommended: without it the server may be restricted or unlisted.",
+      "type": "password",
+      "default": "",
+      "required": false,
+      "pattern": "^([A-Fa-f0-9]{32})?$",
+      "group": "Access"
+    },
+    {
+      "key": "map",
+      "label": "Starting map",
+      "description": "Map the server starts on (for example de_dust2, de_inferno, cs_office). The map must exist on the server.",
+      "type": "string",
+      "default": "de_dust2",
+      "required": true,
+      "pattern": "^[A-Za-z0-9_.-]+$",
+      "group": "Game"
+    },
+    {
+      "key": "maxPlayers",
+      "label": "Max players",
+      "description": "Maximum number of players.",
+      "type": "number",
+      "default": 16,
+      "required": true,
+      "min": 1,
+      "max": 64,
+      "integer": true,
+      "group": "Game"
+    }
+  ],
+  "launch": {
+    "cwd": "",
+    "command": [
+      "./srcds_run",
+      "-game",
+      "cstrike",
+      "-console",
+      "-strictportbind",
+      "-norestart",
+      "-port",
+      "{{ports.game}}",
+      "-maxplayers",
+      "{{maxPlayers}}",
+      "+map",
+      "{{map}}",
+      "+hostname",
+      "{{serverName}}",
+      "+log",
+      "on",
+      {
+        "value": "+sv_password",
+        "if": "serverPassword"
+      },
+      {
+        "value": "{{serverPassword}}",
+        "if": "serverPassword"
+      },
+      "+rcon_password",
+      "{{rconPassword}}",
+      {
+        "value": "+sv_setsteamaccount",
+        "if": "gslt"
+      },
+      {
+        "value": "{{gslt}}",
+        "if": "gslt"
+      }
+    ],
+    "env": {}
+  },
+  "files": [],
+  "stop": {
+    "type": "stdin",
+    "command": "quit",
+    "timeoutSec": 30
+  },
+  "console": {
+    "stdin": true
+  },
+  "ready": {
+    "logRegex": "Connection to Steam servers successful|gameserver Steam ID"
+  },
+  "players": {
+    "joinRegex": "\"(?<name>.+?)<\\d+><[^>]*><[^>]*>\" entered the game",
+    "leaveRegex": "\"(?<name>.+?)<\\d+><[^>]*><[^>]*>\" disconnected"
+  },
+  "query": {
+    "a2s": {
+      "portId": "game"
+    }
+  },
+  "workshop": null,
+  "webui": [],
+  "scripts": {}
+}

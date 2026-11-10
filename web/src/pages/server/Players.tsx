@@ -169,11 +169,17 @@ export default function Players() {
   const op = canOperate(server.access);
   const act = usePlayerAction(server.id);
   const online = stats?.players?.list ?? [];
-  const mcLists = serverCaps(server).hasOpsWhitelist;
+  const caps = serverCaps(server);
+  const mcLists = caps.hasOpsWhitelist;
+  // SteamCMD games: online players are read-only (from A2S or the log), no kick/ban.
+  const moderate = op && caps.hasPlayerModeration;
 
   return (
     <div className="grid gap-4 lg:grid-cols-2">
-      <Section title={t('players.online', { n: stats?.players?.online ?? 0, max: stats?.players?.max ?? 0 })}>
+      <Section
+        title={t('players.online', { n: stats?.players?.online ?? 0, max: stats?.players?.max ?? 0 })}
+        description={caps.hasPlayerModeration ? undefined : t('steam.playersReadOnly')}
+      >
         {online.length === 0 ? (
           <EmptyState title={t('overview.noPlayers')} body={server.status !== 'running' ? t('console.notRunning') : undefined} />
         ) : (
@@ -181,7 +187,7 @@ export default function Players() {
             {online.map((p) => (
               <li key={p.name} className="flex flex-wrap items-center justify-between gap-2 py-2">
                 <span className="font-mono text-sm">{p.name}</span>
-                {op && (
+                {moderate && (
                   <div className="flex flex-wrap gap-1">
                     {mcLists && (
                       <>
@@ -207,7 +213,7 @@ export default function Players() {
         )}
       </Section>
       {mcLists && <JoinAttempts serverId={server.id} op={op} />}
-      <Lists serverId={server.id} op={op} banOnly={!mcLists} />
+      {caps.hasPlayerModeration && <Lists serverId={server.id} op={op} banOnly={!mcLists} />}
     </div>
   );
 }

@@ -36,6 +36,7 @@ export const serverTypes = [
   'TERRARIA',
   'TSHOCK',
   'TMODLOADER',
+  'STEAMCMD',
 ] as const;
 export type ServerType = (typeof serverTypes)[number];
 export const serverTypeSchema = z.enum(serverTypes);

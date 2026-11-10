@@ -1,0 +1,257 @@
+{
+  "schema": 1,
+  "id": "quake-live",
+  "name": "Quake Live",
+  "description": "Quake Live dedicated server (Steam app 349090, native Linux x64, anonymous login). UDP 27960 is the game and Steam query port (mirrored); the remote console uses ZeroMQ on TCP 28888 and is protected by the generated RCON password. Settings are passed as +set launch arguments. Commands typed in the panel console go to the server and stop uses quit. Limits: the map pool, mapcycle and access lists (access.txt) are not managed; edit baseq/ files with the Files tab. Quake Live has no Steam Workshop.",
+  "icon": "https://cdn.cloudflare.steamstatic.com/steam/apps/282440/header.jpg",
+  "steam": {
+    "appId": 349090,
+    "branch": "public",
+    "betaPassword": null,
+    "platform": "linux",
+    "login": "anonymous"
+  },
+  "resources": {
+    "memoryMb": 1024,
+    "memoryMinMb": 512,
+    "cpu": 1,
+    "diskMb": 2048
+  },
+  "ports": [
+    {
+      "id": "game",
+      "label": "Game and query (UDP)",
+      "protocol": "udp",
+      "containerPort": 27960,
+      "mirror": true,
+      "publish": true,
+      "main": true
+    },
+    {
+      "id": "rcon",
+      "label": "ZeroMQ RCON (TCP)",
+      "protocol": "tcp",
+      "containerPort": 28888,
+      "mirror": false,
+      "publish": true
+    }
+  ],
+  "variables": [
+    {
+      "key": "serverName",
+      "label": "Server name",
+      "description": "Name shown in the server browser (hostname).",
+      "type": "string",
+      "default": "ServCrafty Quake Live Server",
+      "required": true,
+      "min": 1,
+      "max": 64,
+      "group": "Server"
+    },
+    {
+      "key": "serverPassword",
+      "label": "Server password",
+      "description": "Password players need to join. Leave empty for a public server.",
+      "type": "password",
+      "default": "",
+      "required": false,
+      "max": 32,
+      "pattern": "^[\\x21-\\x7e]*$",
+      "group": "Access"
+    },
+    {
+      "key": "rconPassword",
+      "label": "RCON password",
+      "description": "Remote console password (rcon_password). Leave empty to have one generated when the server is created (20 characters); managers can read and regenerate it in Settings.",
+      "type": "password",
+      "required": true,
+      "min": 6,
+      "max": 64,
+      "generate": {
+        "length": 20,
+        "charset": "alnum"
+      },
+      "group": "Access"
+    },
+    {
+      "key": "map",
+      "label": "Starting map",
+      "description": "Map the server starts on (for example campgrounds, toxicity, aerowalk, cure, bloodrun, thunderstruck). The map must exist on the server.",
+      "type": "string",
+      "default": "campgrounds",
+      "required": true,
+      "pattern": "^[A-Za-z0-9_.-]+$",
+      "group": "Game"
+    },
+    {
+      "key": "factory",
+      "label": "Game type (factory)",
+      "description": "Factory (game type) used with the starting map.",
+      "type": "select",
+      "default": "ffa",
+      "required": true,
+      "options": [
+        {
+          "value": "ffa",
+          "label": "Free for All"
+        },
+        {
+          "value": "duel",
+          "label": "Duel"
+        },
+        {
+          "value": "tdm",
+          "label": "Team Deathmatch"
+        },
+        {
+          "value": "ctf",
+          "label": "Capture the Flag"
+        },
+        {
+          "value": "ca",
+          "label": "Clan Arena"
+        },
+        {
+          "value": "ft",
+          "label": "Freeze Tag"
+        },
+        {
+          "value": "dom",
+          "label": "Domination"
+        },
+        {
+          "value": "ad",
+          "label": "Attack and Defend"
+        },
+        {
+          "value": "har",
+          "label": "Harvester"
+        },
+        {
+          "value": "rr",
+          "label": "Red Rover"
+        },
+        {
+          "value": "race",
+          "label": "Race"
+        }
+      ],
+      "group": "Game"
+    },
+    {
+      "key": "maxClients",
+      "label": "Max players",
+      "description": "sv_maxClients, maximum simultaneous players.",
+      "type": "number",
+      "default": 16,
+      "required": true,
+      "min": 1,
+      "max": 64,
+      "integer": true,
+      "group": "Game"
+    },
+    {
+      "key": "fps",
+      "label": "Server frame rate",
+      "description": "sv_fps, server frames per second (40 is the Quake Live default; 20 to 125).",
+      "type": "number",
+      "default": 40,
+      "required": false,
+      "min": 20,
+      "max": 125,
+      "integer": true,
+      "group": "Advanced"
+    },
+    {
+      "key": "serverType",
+      "label": "Server type",
+      "description": "sv_serverType: 2 = Internet (listed through Steam), 1 = LAN.",
+      "type": "select",
+      "default": "2",
+      "required": true,
+      "options": [
+        {
+          "value": "2",
+          "label": "Internet"
+        },
+        {
+          "value": "1",
+          "label": "LAN"
+        }
+      ],
+      "group": "Advanced"
+    }
+  ],
+  "launch": {
+    "cwd": "",
+    "command": [
+      "./qzeroded.x64",
+      "+set",
+      "net_port",
+      "{{ports.game}}",
+      "+set",
+      "sv_hostname",
+      "{{serverName}}",
+      "+set",
+      "sv_serverType",
+      "{{serverType}}",
+      "+set",
+      "sv_maxClients",
+      "{{maxClients}}",
+      "+set",
+      "sv_fps",
+      "{{fps}}",
+      "+set",
+      "zmq_rcon_enable",
+      "1",
+      "+set",
+      "zmq_rcon_port",
+      "{{ports.rcon}}",
+      "+set",
+      "zmq_rcon_password",
+      "{{rconPassword}}",
+      "+set",
+      "zmq_stats_enable",
+      "0",
+      {
+        "value": "+set",
+        "if": "serverPassword"
+      },
+      {
+        "value": "g_password",
+        "if": "serverPassword"
+      },
+      {
+        "value": "{{serverPassword}}",
+        "if": "serverPassword"
+      },
+      "+map",
+      "{{map}}",
+      "{{factory}}"
+    ],
+    "env": {
+      "LD_LIBRARY_PATH": "./linux64"
+    }
+  },
+  "files": [],
+  "stop": {
+    "type": "stdin",
+    "command": "quit",
+    "timeoutSec": 30
+  },
+  "console": {
+    "stdin": true
+  },
+  "ready": {
+    "logRegex": "zmq stats and rcon passwords updated"
+  },
+  "players": null,
+  "query": {
+    "a2s": {
+      "portId": "game"
+    }
+  },
+  "workshop": null,
+  "webui": [],
+  "scripts": {}
+}

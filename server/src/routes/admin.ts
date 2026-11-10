@@ -21,6 +21,7 @@ import {
   getPublicServersHost,
   normalizeHost,
   getPublicUrl,
+  getSteamApiKey,
   setSetting,
   SettingKeys,
 } from '../services/settings.js';
@@ -32,6 +33,7 @@ async function settingsPayload() {
     hostUsage: await hostUsage(),
     portPool: await getPortPoolSpec(),
     curseforgeKeySet: !!(await getCurseforgeKey()),
+    steamKeySet: !!(await getSteamApiKey()),
     defaultJavaArgs: await getDefaultJavaArgs(),
     publicUrl: await getPublicUrl(),
     publicServersHost: await getPublicServersHost(),
@@ -57,6 +59,11 @@ export default async function adminRoutes(app: FastifyInstance): Promise<void> {
         .object({
           portPool: z.string().min(1).max(2000),
           curseforgeKey: z.string().max(500).nullable(),
+          steamApiKey: z
+            .string()
+            .trim()
+            .regex(/^([0-9A-Fa-f]{32})?$/, 'a Steam Web API key is 32 hexadecimal characters')
+            .nullable(),
           defaultJavaArgs: z.string().max(4096),
           publicUrl: z.string().url().or(z.literal('')),
           lanNetworks: z.string().max(1000),
@@ -75,9 +82,14 @@ export default async function adminRoutes(app: FastifyInstance): Promise<void> {
     if (body.portPool !== undefined) {
       const ports = parsePortPool(body.portPool);
       if (!ports.length) throw badRequest('Port pool cannot be empty', 'invalid_port_pool');
-      const outside = await query<{ port: number; name: string }>('SELECT port, name FROM servers WHERE NOT (port = ANY($1::int[]))', [
-        ports,
-      ]);
+      const outside = await query<{ port: number; name: string }>(
+        `SELECT p.port, p.name FROM (
+           SELECT port, name FROM servers
+           UNION ALL
+           SELECT (e.value)::int AS port, s.name FROM servers s, jsonb_each_text(coalesce(s.extra_ports, '{}'::jsonb)) e
+         ) p WHERE NOT (p.port = ANY($1::int[]))`,
+        [ports],
+      );
       if (outside.length) {
         throw badRequest(
           `Ports in use would fall outside the pool: ${outside.map((o) => `${o.port} (${o.name})`).join(', ')}`,
@@ -91,6 +103,11 @@ export default async function adminRoutes(app: FastifyInstance): Promise<void> {
       if (body.curseforgeKey) await setSetting(SettingKeys.curseforgeKey, body.curseforgeKey.trim(), true);
       else await deleteSetting(SettingKeys.curseforgeKey);
       changed.push('curseforgeKey');
+    }
+    if (body.steamApiKey !== undefined) {
+      if (body.steamApiKey) await setSetting(SettingKeys.steamApiKey, body.steamApiKey.toUpperCase(), true);
+      else await deleteSetting(SettingKeys.steamApiKey);
+      changed.push('steamApiKey');
     }
     if (body.defaultJavaArgs !== undefined) {
       await setSetting(SettingKeys.defaultJavaArgs, body.defaultJavaArgs);
@@ -133,7 +150,11 @@ export default async function adminRoutes(app: FastifyInstance): Promise<void> {
   app.get('/admin/ports', async (req) => {
     requireAdmin(req);
     const pool = parsePortPool(await getPortPoolSpec());
-    const used = await query<{ port: number; id: string; name: string }>('SELECT port, id, name FROM servers');
+    const used = await query<{ port: number; id: string; name: string }>(
+      `SELECT port, id, name FROM servers
+       UNION ALL
+       SELECT (e.value)::int AS port, s.id, s.name FROM servers s, jsonb_each_text(coalesce(s.extra_ports, '{}'::jsonb)) e`,
+    );
     const byPort = new Map(used.map((u) => [u.port, u]));
     const rows = pool.map((port) => ({ port, serverId: byPort.get(port)?.id ?? null, serverName: byPort.get(port)?.name ?? null }));
     // Ports assigned outside the current pool (should not happen, but show them).

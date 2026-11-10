@@ -8,7 +8,8 @@ import type { Server, ServerStatus } from '@/api/types';
 import { useT } from '@/i18n';
 import { useServers, qk } from '@/lib/queries';
 import { canOperate } from '@/lib/access';
-import { serverGame, variantLabel } from '@/lib/games';
+import { variantLabel } from '@/lib/games';
+import { GameBadge } from '@/components/GameBits';
 import { formatMb, formatNumber } from '@/lib/format';
 import { quotaRows } from '@/lib/quota';
 import { Badge, Button, EmptyState, ErrorState, LinkButton, Loading, Meter, PageHeader } from '@/components/ui';
@@ -60,7 +61,7 @@ function ServerRow({ server }: { server: Server }) {
           {server.access !== 'owner' && server.access !== 'admin' && <Badge>{t(`access.${server.access}`)}</Badge>}
         </div>
         <div className="mt-0.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted">
-          <Badge tone={serverGame(server) === 'minecraft' ? 'neutral' : 'accent'}>{t(`game.${serverGame(server)}`)}</Badge>
+          <GameBadge server={server} />
           <span>{variantLabel(server, t, false)}</span>
           {server.modpack?.name && <span className="truncate">{server.modpack.name}</span>}
           <span className="font-mono text-xs">:{server.port}</span>

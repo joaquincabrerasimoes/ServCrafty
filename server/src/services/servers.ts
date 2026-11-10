@@ -5,16 +5,30 @@ import { z } from 'zod';
 import { config } from '../config.js';
 import { query, queryOne, tx } from '../db/pool.js';
 import { randomPassword } from '../lib/crypto.js';
-import { badRequest, conflict } from '../lib/errors.js';
-import { gameOf, GAMES, isTerrariaType, type Game } from '../lib/games.js';
+import { badRequest, notFound } from '../lib/errors.js';
+import { mainPort, type GameDefinition } from '../lib/gameDefinition.js';
+import { gameLabel, gameOf, GAMES, isSteamType, isTerrariaType, type Game } from '../lib/games.js';
 import { minecraftConfigSchema, normalizeMinecraftConfig } from '../lib/minecraftConfig.js';
-import { parsePortPool } from '../lib/ports.js';
+import {
+  mergeSteamConfig,
+  normalizeSteamConfig,
+  portGroups,
+  publishedPorts,
+  steamInputSchema,
+  steamPatchSchema,
+  invalidSteamConfig,
+  generatedVarKeys,
+  type SteamConfig,
+  type SteamInput,
+} from '../lib/steamPlan.js';
 import { mergeTerrariaConfig, normalizeTerrariaConfig, type TerrariaConfig } from '../lib/terrariaConfig.js';
 import { serverTypeSchema, type ServerType } from '../lib/validation.js';
-import { serverDir } from './docker.js';
+import { serverDir, steamPlanFile } from './docker.js';
+import { getDefinition, requireDefinition } from './gameDefinitions.js';
 import { refreshLanAnnouncer } from './lanAnnouncer.js';
+import { allocatePortGroups, allocatePorts } from './portAlloc.js';
+import { ensureSteamPorts } from './steamPorts.js';
 import * as runtime from './runtime.js';
-import { getPortPoolSpec } from './settings.js';
 import type { ModpackRef, ServerRow, UserRow } from './types.js';
 import { assertHostCap } from './globalLimits.js';
 import { assertQuota, getUser } from './users.js';
@@ -56,13 +70,19 @@ export const serverConfigSchema = z.object({
    * service so errors carry the `invalid_terraria_config` code.
    */
   terraria: z.record(z.unknown()).nullable().optional(),
+  /**
+   * SteamCMD configuration `{gameId, vars, updateOnStart?, workshop?}` (type STEAMCMD only). Validated
+   * against the game definition in the service so errors carry `invalid_steam_config`.
+   */
+  steam: z.record(z.unknown()).nullable().optional(),
 });
 export type ServerConfig = z.infer<typeof serverConfigSchema>;
 
 export const createServerSchema = serverConfigSchema.extend({
   name: z.string().trim().min(1).max(64),
   port: z.number().int().min(1).max(65535).optional(),
-  eula: z.literal(true, { errorMap: () => ({ message: 'You must accept the Minecraft EULA' }) }),
+  /** Required (true) for Minecraft and Terraria servers; SteamCMD servers do not need it. */
+  eula: z.literal(true, { errorMap: () => ({ message: 'You must accept the Minecraft EULA' }) }).optional(),
   ownerId: z.string().uuid().optional(),
 });
 export type CreateServerInput = z.infer<typeof createServerSchema>;
@@ -85,6 +105,8 @@ export const updateServerSchema = z
     type: serverTypeSchema,
     /** Merged over the current Terraria config (null fields are removed; null resets to defaults). */
     terraria: z.record(z.unknown()).nullable(),
+    /** SteamCMD: `{vars?, updateOnStart?}` merged over the current config (a var set to null returns to its default). */
+    steam: z.record(z.unknown()),
   })
   .partial();
 export type UpdateServerInput = z.infer<typeof updateServerSchema>;
@@ -98,50 +120,62 @@ interface GameFields {
   lanAnnounce?: boolean | null;
   minecraft?: unknown;
   terraria?: unknown;
+  steam?: unknown;
   memoryMb?: number;
 }
 
 /**
- * Reject fields that belong to the other game (400 `unsupported_game`) and enforce the game's
- * memory minimum. Pure; exported for tests.
+ * Reject fields that belong to another game (400 `unsupported_game`) and enforce the game's
+ * memory minimum. Pure; exported for tests. `memoryMinMb` overrides the game default (SteamCMD
+ * servers use their definition's minimum).
  */
-export function assertGameFields(type: ServerType, f: GameFields): void {
+export function assertGameFields(type: ServerType, f: GameFields, memoryMinMb?: number): void {
   const game = gameOf(type);
-  const min = GAMES[game].memoryMinMb;
+  const min = memoryMinMb ?? GAMES[game].memoryMinMb;
   if (f.memoryMb !== undefined && f.memoryMb < min) throw badRequest(`memoryMb must be at least ${min}`, 'validation_error');
   const reject = (field: string) => {
-    throw badRequest(`"${field}" is not supported for ${game === 'terraria' ? 'Terraria' : 'Minecraft'} servers`, 'unsupported_game');
+    throw badRequest(`"${field}" is not supported for ${gameLabel(game)} servers`, 'unsupported_game');
   };
+  const present = (v: unknown) => v !== undefined && v !== null;
   if (game === 'minecraft') {
-    if (f.terraria !== undefined && f.terraria !== null) reject('terraria');
+    if (present(f.terraria)) reject('terraria');
+    if (present(f.steam)) reject('steam');
     return;
   }
-  if (f.minecraft !== undefined && f.minecraft !== null) reject('minecraft');
-  if (f.modpack !== undefined && f.modpack !== null) reject('modpack');
+  if (game === 'terraria' && present(f.steam)) reject('steam');
+  if (game === 'steam' && present(f.terraria)) reject('terraria');
+  if (present(f.minecraft)) reject('minecraft');
+  if (present(f.modpack)) reject('modpack');
   if (f.lanAnnounce) reject('lanAnnounce');
   if (f.javaArgs !== undefined && f.javaArgs !== null && f.javaArgs !== '') reject('javaArgs');
   if (f.loaderVersion !== undefined && f.loaderVersion !== null && f.loaderVersion !== '') reject('loaderVersion');
   if (f.mcVersion !== undefined && f.mcVersion !== null && f.mcVersion.toUpperCase() !== 'LATEST') reject('mcVersion');
 }
 
-const PORT_LOCK = 727_002;
-
 async function pickPort(client: pg.PoolClient, wanted: number | undefined, excludeServerId?: string): Promise<number> {
-  await client.query('SELECT pg_advisory_xact_lock($1)', [PORT_LOCK]);
-  const pool = parsePortPool(await getPortPoolSpec());
-  const used = new Set(
-    (
-      await client.query<{ port: number }>('SELECT port FROM servers WHERE id::text <> $1', [excludeServerId ?? ''])
-    ).rows.map((r) => r.port),
-  );
-  if (wanted !== undefined) {
-    if (!pool.includes(wanted)) throw badRequest(`Port ${wanted} is not in the port pool`, 'port_not_in_pool');
-    if (used.has(wanted)) throw conflict(`Port ${wanted} is already in use`, 'port_in_use');
-    return wanted;
-  }
-  const free = pool.find((p) => !used.has(p));
-  if (free === undefined) throw conflict('No free ports left in the pool', 'port_pool_exhausted');
-  return free;
+  const [p] = await allocatePorts(client, { count: 1, wanted, excludeServerId });
+  return p!;
+}
+
+/** Resolve and validate the `steam` input of a new server against its definition. */
+function steamForCreate(input: { steam?: Record<string, unknown> | null }): { def: GameDefinition; cfg: SteamConfig } {
+  if (!input.steam) throw invalidSteamConfig([{ path: 'steam', message: 'is required for SteamCMD servers' }]);
+  const shape = steamInputSchema.safeParse(input.steam);
+  if (!shape.success) throw invalidSteamConfig(shape.error.issues.map((i) => ({ path: ['steam', ...i.path].join('.'), message: i.message })));
+  const def = requireDefinition(shape.data.gameId);
+  return { def, cfg: normalizeSteamConfig(def, input.steam as SteamInput) };
+}
+
+/**
+ * Host ports for a SteamCMD server: main (wanted or first free) + one per other published port.
+ * Returns the main port and `{portId: hostPort}` for the rest.
+ */
+async function allocateSteamPorts(client: pg.PoolClient, def: GameDefinition): Promise<{ port: number; extra: Record<string, number> }> {
+  const main = mainPort(def);
+  const got = await allocatePortGroups(client, { groups: portGroups(def), exhaustedCode: 'no_free_ports' });
+  const extra: Record<string, number> = {};
+  for (const p of publishedPorts(def)) if (p !== main) extra[p.id] = got[p.id]!;
+  return { port: got[main.id]!, extra };
 }
 
 /**
@@ -158,8 +192,12 @@ export async function createServer(
     if (actor.role !== 'admin') throw badRequest('Only admins can create servers for other users', 'forbidden_owner');
     owner = await getUser(input.ownerId);
   }
-  assertGameFields(input.type, input);
   const game: Game = gameOf(input.type);
+  const steam = game === 'steam' ? steamForCreate(input) : null;
+  if (steam && input.port !== undefined) {
+    throw badRequest('SteamCMD servers get their ports from the pool; "port" cannot be chosen', 'port_not_supported');
+  }
+  assertGameFields(input.type, input, steam?.def.resources.memoryMinMb);
   const terraria: TerrariaConfig | null = isTerrariaType(input.type) ? normalizeTerrariaConfig(input.type, input.terraria ?? {}) : null;
   if ((input.type === 'CURSEFORGE' || input.type === 'MODRINTH') && !input.modpack) {
     throw badRequest('A modpack is required for this server type', 'modpack_required');
@@ -172,16 +210,20 @@ export async function createServer(
   const server = await tx(async (client) => {
     await assertQuota(owner, { memoryMb: input.memoryMb, cpu: input.cpu, diskMb: input.diskMb ?? null }, undefined, client);
     await assertHostCap({ memoryMb: input.memoryMb, cpu: input.cpu, diskMb: input.diskMb ?? null }, { client });
-    const port = await pickPort(client, input.port);
+    let port: number;
+    let extraPorts: Record<string, number> = {};
+    if (steam) ({ port, extra: extraPorts } = await allocateSteamPorts(client, steam.def));
+    else port = await pickPort(client, input.port);
     const r = await client.query<ServerRow>(
       `INSERT INTO servers (owner_id, name, type, mc_version, loader_version, modpack, java_args, memory_mb, cpu,
-                            disk_mb, port, env, auto_restart, rcon_password, minecraft, lan_announce, game, terraria)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING *`,
+                            disk_mb, port, env, auto_restart, rcon_password, minecraft, lan_announce, game, terraria,
+                            steam, extra_ports)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) RETURNING *`,
       [
         owner.id,
         input.name,
         input.type,
-        input.mcVersion || 'LATEST',
+        game === 'steam' ? 'LATEST' : input.mcVersion || 'LATEST',
         input.loaderVersion ?? null,
         input.modpack ? JSON.stringify(input.modpack) : null,
         input.javaArgs ?? null,
@@ -196,6 +238,8 @@ export async function createServer(
         game === 'minecraft' ? lanAnnounce : false,
         game,
         terraria ? JSON.stringify(terraria) : null,
+        steam ? JSON.stringify(steam.cfg) : null,
+        JSON.stringify(extraPorts),
       ],
     );
     return r.rows[0]!;
@@ -218,7 +262,21 @@ export async function updateServer(actor: UserRow, server: ServerRow, patch: Upd
   const nextType = patch.type ?? server.type;
   const game = gameOf(server.type);
   if (gameOf(nextType) !== game) throw badRequest('A server cannot be switched to another game', 'game_change_unsupported');
-  assertGameFields(nextType, patch);
+  let steam: SteamConfig | null = null;
+  let steamDef: GameDefinition | null = null;
+  if (game === 'steam') {
+    if (!server.steam) throw badRequest('This server has no SteamCMD configuration', 'invalid_steam_config');
+    steamDef = requireDefinition(server.steam.gameId);
+    if (patch.steam !== undefined) {
+      const sp = steamPatchSchema.safeParse(patch.steam);
+      if (!sp.success) throw invalidSteamConfig(sp.error.issues.map((i) => ({ path: ['steam', ...i.path].join('.'), message: i.message })));
+      steam = mergeSteamConfig(steamDef, server.steam, sp.data);
+    } else steam = server.steam;
+  }
+  assertGameFields(nextType, { ...patch, steam: game === 'steam' ? undefined : patch.steam }, steamDef?.resources.memoryMinMb);
+  if (game === 'steam' && patch.port !== undefined && patch.port !== server.port) {
+    throw badRequest('SteamCMD servers get their ports from the pool; "port" cannot be changed', 'port_not_supported');
+  }
   let terraria: TerrariaConfig | null = null;
   if (isTerrariaType(nextType)) {
     terraria =
@@ -240,7 +298,17 @@ export async function updateServer(actor: UserRow, server: ServerRow, patch: Upd
         { client, excludeServerId: server.id, current: { memoryMb: server.memory_mb, cpu: server.cpu, diskMb: server.disk_mb } },
       );
     }
-    const port = patch.port !== undefined && patch.port !== server.port ? await pickPort(client, patch.port, server.id) : server.port;
+    let port = server.port;
+    if (patch.port !== undefined && patch.port !== server.port) {
+      // A SteamCMD server's own extra ports stay reserved for it.
+      const [p] = await allocatePorts(client, {
+        count: 1,
+        wanted: patch.port,
+        excludeServerId: server.id,
+        reserved: Object.values(server.extra_ports ?? {}),
+      });
+      port = p!;
+    }
     const type = patch.type ?? server.type;
     const modpack: ModpackRef | null = patch.modpack !== undefined ? patch.modpack : server.modpack;
     if ((type === 'CURSEFORGE' || type === 'MODRINTH') && !modpack) {
@@ -253,12 +321,13 @@ export async function updateServer(actor: UserRow, server: ServerRow, patch: Upd
     if (patch.autoStart !== undefined) await client.query('UPDATE servers SET auto_start=$2 WHERE id=$1', [server.id, patch.autoStart]);
     const r = await client.query<ServerRow>(
       `UPDATE servers SET name=$2, type=$3, mc_version=$4, loader_version=$5, modpack=$6, java_args=$7, memory_mb=$8,
-         cpu=$9, disk_mb=$10, port=$11, env=$12, auto_restart=$13, lan_announce=$14, game=$15, terraria=$16 WHERE id=$1 RETURNING *`,
+         cpu=$9, disk_mb=$10, port=$11, env=$12, auto_restart=$13, lan_announce=$14, game=$15, terraria=$16, steam=$17
+       WHERE id=$1 RETURNING *`,
       [
         server.id,
         patch.name ?? server.name,
         type,
-        patch.mcVersion ?? server.mc_version,
+        game === 'steam' ? 'LATEST' : (patch.mcVersion ?? server.mc_version),
         patch.loaderVersion !== undefined ? patch.loaderVersion : server.loader_version,
         modpack ? JSON.stringify(modpack) : null,
         patch.javaArgs !== undefined ? patch.javaArgs : server.java_args,
@@ -271,12 +340,29 @@ export async function updateServer(actor: UserRow, server: ServerRow, patch: Upd
         game === 'minecraft' ? lanAnnounce : false,
         game,
         terraria ? JSON.stringify(terraria) : null,
+        steam ? JSON.stringify(steam) : null,
       ],
     );
     return r.rows[0]!;
   });
   refreshLanAnnouncer();
-  return updated;
+  return game === 'steam' ? ensureSteamPorts(updated, { running: runtime.isRunning(updated.id) }) : updated;
+}
+
+/**
+ * Atomically change a SteamCMD server's config (Workshop list, validateNext...). `fn` receives the
+ * current config and returns the new one; runs under a row lock.
+ */
+export async function updateSteamConfig(serverId: string, fn: (cur: SteamConfig) => SteamConfig): Promise<ServerRow> {
+  return tx(async (client) => {
+    const cur = await client.query<ServerRow>('SELECT * FROM servers WHERE id = $1 FOR UPDATE', [serverId]);
+    const row = cur.rows[0];
+    if (!row) throw notFound('Server not found', 'server_not_found');
+    if (!isSteamType(row.type) || !row.steam) throw badRequest('Not a SteamCMD server', 'unsupported_game');
+    const next = fn({ ...row.steam, workshop: row.steam.workshop ?? [] });
+    const r = await client.query<ServerRow>('UPDATE servers SET steam = $2 WHERE id = $1 RETURNING *', [serverId, JSON.stringify(next)]);
+    return r.rows[0]!;
+  });
 }
 
 export async function deleteServer(server: ServerRow): Promise<void> {
@@ -284,7 +370,12 @@ export async function deleteServer(server: ServerRow): Promise<void> {
   await query('DELETE FROM servers WHERE id = $1', [server.id]);
   await fsp.rm(serverDir(server.id), { recursive: true, force: true }).catch(() => undefined);
   await fsp.rm(path.join(config().backupsDir, server.id), { recursive: true, force: true }).catch(() => undefined);
+  await fsp.rm(steamPlanFile(server.id), { force: true }).catch(() => undefined);
   refreshLanAnnouncer();
+}
+
+function withoutKeys<T>(o: Record<string, T>, keys: Set<string>): Record<string, T> {
+  return Object.fromEntries(Object.entries(o ?? {}).filter(([k]) => !keys.has(k)));
 }
 
 export function configOf(server: ServerRow): ServerConfig {
@@ -302,6 +393,17 @@ export function configOf(server: ServerRow): ServerConfig {
     lanAnnounce: server.lan_announce,
     minecraft: server.minecraft ?? null,
     ...(server.terraria ? { terraria: { ...server.terraria } } : {}),
+    ...(server.steam
+      ? {
+          steam: {
+            gameId: server.steam.gameId,
+            // Generated secrets are never copied: a clone or template instantiation generates fresh ones.
+            vars: withoutKeys(server.steam.vars, generatedVarKeys(getDefinition(server.steam.gameId))),
+            updateOnStart: server.steam.updateOnStart,
+            workshop: (server.steam.workshop ?? []).map((w) => ({ ...w })),
+          },
+        }
+      : {}),
   };
 }
 

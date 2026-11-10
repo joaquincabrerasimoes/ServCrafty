@@ -16,6 +16,7 @@ import type {
   Share,
   ShareLevel,
   Stats,
+  SteamVars,
   Template,
   TerrariaConfig,
   TerrariaWorld,
@@ -23,8 +24,10 @@ import type {
 } from './types';
 
 /** PATCH body. `terraria` is merged into the stored config; a null field clears that optional value. */
-export type UpdateServerBody = Omit<Partial<Server>, 'terraria'> & {
+export type UpdateServerBody = Omit<Partial<Server>, 'terraria' | 'steam'> & {
   terraria?: { [K in keyof TerrariaConfig]?: TerrariaConfig[K] | null };
+  /** SteamCMD servers: `vars` is merged into the stored values (send only what changed). */
+  steam?: { vars?: SteamVars; updateOnStart?: boolean };
 } & Record<string, unknown>;
 
 /** The API keeps the schedule payload as an object ({command, keep, ...}); the UI edits just the command text. */
@@ -181,6 +184,12 @@ export const serversApi = {
       onProgress,
     });
   },
+
+  // SteamCMD
+  /** Update / verify the game files: restarts a running server, or applies on the next start. */
+  steamUpdate: (id: string) => api.post<void>(`${s(id)}/steam/update`),
+  /** Replaces a generated variable (definition `generate`) with a new random value; applies on the next start. */
+  steamRegenerate: (id: string, key: string) => api.post<{ value: string }>(`${s(id)}/steam/regenerate`, { key }),
 
   // Clone / templates / export / import
   clone: (id: string, name: string) => api.post<Server>(`${s(id)}/clone`, { name }),

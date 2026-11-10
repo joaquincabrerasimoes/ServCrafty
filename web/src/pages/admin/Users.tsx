@@ -18,6 +18,7 @@ type Draft = {
   role: Role;
   disabled: boolean;
   resetMfa: boolean;
+  canAuthorGames: boolean;
   quotas: Record<keyof Quotas, string>;
 };
 
@@ -33,6 +34,7 @@ function toDraft(u?: User): Draft {
     role: u?.role ?? 'user',
     disabled: u?.disabled ?? false,
     resetMfa: false,
+    canAuthorGames: u?.canAuthorGames ?? false,
     quotas: { maxServers: q2s(u?.maxServers), maxRamMb: q2s(u?.maxRamMb), maxCpu: q2s(u?.maxCpu), maxDiskMb: q2s(u?.maxDiskMb) },
   };
 }
@@ -60,6 +62,7 @@ export default function Users() {
         const body: UpdateUserBody = { role: draft.role, disabled: draft.disabled, quotas };
         if (draft.password) body.password = draft.password;
         if (draft.resetMfa) body.resetMfa = true;
+        if (draft.role === 'user') body.canAuthorGames = draft.canAuthorGames;
         await usersApi.update(draft.id, body);
       } else {
         await usersApi.create({ username: draft.username.trim(), password: draft.password, email: draft.email.trim() || undefined, role: draft.role, quotas });
@@ -122,6 +125,7 @@ export default function Users() {
                       {u.username}
                       {u.totpEnabled && <ShieldCheck className="h-3.5 w-3.5 text-ok" aria-label="2FA" />}
                       {u.disabled && <Badge tone="danger">{t('common.disabled')}</Badge>}
+                      {u.role !== 'admin' && u.canAuthorGames && <Badge>{t('users.gameAuthor')}</Badge>}
                     </div>
                     {u.email && <div className="text-xs text-muted">{u.email}</div>}
                   </td>
@@ -208,6 +212,17 @@ export default function Users() {
                 ))}
               </div>
             </fieldset>
+            {draft.id && (
+              <div>
+                <Toggle
+                  checked={draft.role === 'admin' || draft.canAuthorGames}
+                  disabled={draft.role === 'admin'}
+                  onChange={(v) => setDraft({ ...draft, canAuthorGames: v })}
+                  label={t('users.canAuthorGames')}
+                />
+                <p className="hint">{draft.role === 'admin' ? t('users.canAuthorGamesAdmin') : t('users.canAuthorGamesHint')}</p>
+              </div>
+            )}
             {draft.id && draft.id !== me?.id && <Toggle checked={draft.disabled} onChange={(v) => setDraft({ ...draft, disabled: v })} label={t('users.disabled')} />}
             {draft.id && (
               <div>

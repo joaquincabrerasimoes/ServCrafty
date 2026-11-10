@@ -1,0 +1,165 @@
+{
+  "schema": 1,
+  "id": "team-fortress-2",
+  "name": "Team Fortress 2",
+  "description": "Team Fortress 2 dedicated server (Steam app 232250, native Linux, anonymous login). Port 27015 carries the game (UDP) and RCON (TCP) and is mirrored. A Game Server Login Token (GSLT) is recommended. Uses the 64-bit launcher srcds_run_64 (the current TF2 server); if your install only has the 32-bit srcds_run, duplicate this definition and change the first launch argument. SourceTV and Workshop maps are not handled.",
+  "icon": "https://cdn.cloudflare.steamstatic.com/steam/apps/440/header.jpg",
+  "steam": {
+    "appId": 232250,
+    "branch": "public",
+    "betaPassword": null,
+    "platform": "linux",
+    "login": "anonymous"
+  },
+  "resources": {
+    "memoryMb": 2048,
+    "memoryMinMb": 1024,
+    "cpu": 2,
+    "diskMb": 20480
+  },
+  "ports": [
+    {
+      "id": "game",
+      "label": "Game, query and RCON (UDP + TCP)",
+      "protocol": "both",
+      "containerPort": 27015,
+      "mirror": true,
+      "publish": true,
+      "main": true
+    }
+  ],
+  "variables": [
+    {
+      "key": "serverName",
+      "label": "Server name",
+      "description": "Name shown in the server browser (hostname convar).",
+      "type": "string",
+      "default": "ServCrafty TF2 Server",
+      "required": true,
+      "min": 1,
+      "max": 64,
+      "group": "Server"
+    },
+    {
+      "key": "serverPassword",
+      "label": "Server password",
+      "description": "Password players need to join (sv_password). Leave empty for a public server.",
+      "type": "password",
+      "default": "",
+      "required": false,
+      "max": 32,
+      "pattern": "^[\\x21-\\x7e]*$",
+      "group": "Access"
+    },
+    {
+      "key": "rconPassword",
+      "label": "RCON password",
+      "description": "Remote console password (rcon_password), also needed by external admin tools. Leave empty to have one generated when the server is created (20 characters); managers can read and regenerate it in Settings.",
+      "type": "password",
+      "required": true,
+      "min": 6,
+      "max": 64,
+      "generate": {
+        "length": 20,
+        "charset": "alnum"
+      },
+      "group": "Access"
+    },
+    {
+      "key": "gslt",
+      "label": "Game Server Login Token (GSLT)",
+      "description": "Steam game server login token, 32 hexadecimal characters, created at https://steamcommunity.com/dev/managegameservers for app 440. Optional but strongly recommended: without it the server may run as an anonymous, unlisted or restricted server.",
+      "type": "password",
+      "default": "",
+      "required": false,
+      "pattern": "^([A-Fa-f0-9]{32})?$",
+      "group": "Access"
+    },
+    {
+      "key": "map",
+      "label": "Starting map",
+      "description": "Map the server starts on (for example ctf_2fort, cp_badlands, pl_upward, koth_harvest_final). The map must exist on the server.",
+      "type": "string",
+      "default": "ctf_2fort",
+      "required": true,
+      "pattern": "^[A-Za-z0-9_.-]+$",
+      "group": "Game"
+    },
+    {
+      "key": "maxPlayers",
+      "label": "Max players",
+      "description": "Maximum number of players.",
+      "type": "number",
+      "default": 24,
+      "required": true,
+      "min": 1,
+      "max": 100,
+      "integer": true,
+      "group": "Game"
+    }
+  ],
+  "launch": {
+    "cwd": "",
+    "command": [
+      "./srcds_run_64",
+      "-game",
+      "tf",
+      "-console",
+      "-strictportbind",
+      "-norestart",
+      "-port",
+      "{{ports.game}}",
+      "-maxplayers",
+      "{{maxPlayers}}",
+      "+map",
+      "{{map}}",
+      "+hostname",
+      "{{serverName}}",
+      "+log",
+      "on",
+      {
+        "value": "+sv_password",
+        "if": "serverPassword"
+      },
+      {
+        "value": "{{serverPassword}}",
+        "if": "serverPassword"
+      },
+      "+rcon_password",
+      "{{rconPassword}}",
+      {
+        "value": "+sv_setsteamaccount",
+        "if": "gslt"
+      },
+      {
+        "value": "{{gslt}}",
+        "if": "gslt"
+      }
+    ],
+    "env": {}
+  },
+  "files": [],
+  "stop": {
+    "type": "stdin",
+    "command": "quit",
+    "timeoutSec": 30
+  },
+  "console": {
+    "stdin": true
+  },
+  "ready": {
+    "logRegex": "Connection to Steam servers successful|gameserver Steam ID"
+  },
+  "players": {
+    "joinRegex": "\"(?<name>.+?)<\\d+><[^>]*><[^>]*>\" entered the game",
+    "leaveRegex": "\"(?<name>.+?)<\\d+><[^>]*><[^>]*>\" disconnected"
+  },
+  "query": {
+    "a2s": {
+      "portId": "game"
+    }
+  },
+  "workshop": null,
+  "webui": [],
+  "scripts": {}
+}

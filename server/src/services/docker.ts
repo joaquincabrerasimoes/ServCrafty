@@ -2,11 +2,14 @@ import Docker from 'dockerode';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { PassThrough, type Readable } from 'node:stream';
-import { config } from '../config.js';
-import { unavailable } from '../lib/errors.js';
-import { terrariaImage, terrariaVariant, TERRARIA_VARIANTS, type TerrariaType } from '../lib/games.js';
+import { APP_VERSION, config } from '../config.js';
+import { badRequest, unavailable } from '../lib/errors.js';
+import { isSteamType, steamImage, terrariaImage, terrariaVariant, TERRARIA_VARIANTS, type TerrariaType } from '../lib/games.js';
 import { minecraftEnv } from '../lib/minecraftConfig.js';
+import { steamContainerSpec } from '../lib/steamContainer.js';
+import { buildPlan, type ResolvedPort, type SteamPlan } from '../lib/steamPlan.js';
 import { terrariaContainerSpec } from '../lib/terrariaContainer.js';
+import { requireDefinition } from './gameDefinitions.js';
 import type { ServerRow } from './types.js';
 import { getDefaultJavaArgs } from './settings.js';
 
@@ -63,6 +66,11 @@ export const serverDir = (serverId: string) => path.join(config().serversDir, se
 /** Server data dir as seen by the docker daemon (bind mount source). */
 export const hostServerDir = (serverId: string) => `${config().hostDataDir}/servers/${serverId}`;
 
+/** Plan file of a SteamCMD server, as seen by ServCrafty (outside the server dir: it is not a user file). */
+export const steamPlanFile = (serverId: string) => path.join(config().dataDir, 'steam-plans', `${serverId}.json`);
+/** The same file as seen by the docker daemon (bind mount source). */
+export const hostSteamPlanFile = (serverId: string) => `${config().hostDataDir}/steam-plans/${serverId}.json`;
+
 function versionTuple(v: string): number[] | null {
   const m = /^(\d+)\.(\d+)(?:\.(\d+))?/.exec(v);
   return m ? [Number(m[1]), Number(m[2]), Number(m[3] ?? 0)] : null;
@@ -80,6 +88,14 @@ export function javaImageTag(mcVersion: string): string {
 }
 
 export function imageFor(server: ServerRow): string {
+  if (isSteamType(server.type)) {
+    return steamImage({
+      override: process.env.SERVCRAFTY_STEAM_IMAGE,
+      updateRepo: config().updateRepo,
+      appVersion: APP_VERSION,
+      forcedTag: server.env?.[IMAGE_TAG_ENV],
+    });
+  }
   const tv = terrariaVariant(server.type);
   if (tv) return terrariaImage(tv.type, server.env?.[IMAGE_TAG_ENV]);
   if (server.type === 'BEDROCK') return `${BEDROCK_IMAGE}:latest`;
@@ -260,12 +276,64 @@ async function createTerrariaContainer(server: ServerRow, type: TerrariaType, on
   );
 }
 
+/** Write a plan file atomically, readable by its owner only (it contains secret values). */
+export async function writeSteamPlan(serverId: string, plan: SteamPlan): Promise<void> {
+  const file = steamPlanFile(serverId);
+  await fsp.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
+  const tmp = `${file}.${process.pid}.tmp`;
+  await fsp.writeFile(tmp, JSON.stringify(plan, null, 2) + '\n', { mode: 0o600 });
+  await fsp.chmod(tmp, 0o600).catch(() => undefined);
+  await fsp.rename(tmp, file);
+}
+
+/** Resolve the plan of a SteamCMD server (definition + config + allocated ports). */
+export function steamPlanFor(server: ServerRow): { plan: SteamPlan; ports: ResolvedPort[] } {
+  if (!server.steam) throw badRequest('This server has no SteamCMD configuration', 'invalid_steam_config');
+  const def = requireDefinition(server.steam.gameId);
+  return buildPlan(def, {
+    serverId: server.id,
+    serverName: server.name,
+    steam: server.steam,
+    mainHostPort: server.port,
+    extraPorts: server.extra_ports ?? {},
+  });
+}
+
+async function createSteamContainer(server: ServerRow, onProgress: (line: string) => void): Promise<Docker.Container> {
+  const { plan, ports } = steamPlanFor(server);
+  const image = imageFor(server);
+  await ensureImage(image, onProgress, 'linux/amd64');
+  await ensureNetwork();
+  await removeContainerIfExists(containerName(server.id));
+  if (server.container_id) await removeContainerIfExists(server.container_id);
+  const root = serverDir(server.id);
+  await fsp.mkdir(root, { recursive: true });
+  if (server.steam?.workshopRefresh) {
+    onProgress('[servcrafty] Workshop refresh requested: removing downloaded Workshop content');
+    await fsp.rm(path.join(root, 'workshop'), { recursive: true, force: true });
+  }
+  await writeSteamPlan(server.id, plan);
+  return docker().createContainer(
+    steamContainerSpec(
+      { memoryMb: server.memory_mb, cpu: server.cpu, image, ports, stdin: plan.console.stdin },
+      {
+        name: containerName(server.id),
+        hostDir: hostServerDir(server.id),
+        hostPlanFile: hostSteamPlanFile(server.id),
+        network: config().dockerNetwork,
+        labels: { [LABEL_SERVER]: server.id, 'servcrafty.managed': 'true' },
+      },
+    ),
+  );
+}
+
 /** (Re)create the game container for a server with its current configuration. */
 export async function createServerContainer(
   server: ServerRow,
   cfKey: string | undefined,
   onProgress: (line: string) => void,
 ): Promise<Docker.Container> {
+  if (isSteamType(server.type)) return createSteamContainer(server, onProgress);
   const tv = terrariaVariant(server.type);
   if (tv) return createTerrariaContainer(server, tv.type, onProgress);
   const image = imageFor(server);
@@ -308,6 +376,14 @@ export async function createServerContainer(
       LogConfig: { Type: 'json-file', Config: { 'max-size': '20m', 'max-file': '3' } },
     },
   });
+}
+
+/** IP address of a container on the ServCrafty network (null when not attached/running). */
+export async function containerIp(containerId: string): Promise<string | null> {
+  const info = await docker().getContainer(containerId).inspect();
+  if (!info.State.Running) return null;
+  const net = info.NetworkSettings.Networks?.[config().dockerNetwork];
+  return net?.IPAddress || null;
 }
 
 /** Address to dial RCON on for a running container. */

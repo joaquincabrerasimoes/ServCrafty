@@ -3,7 +3,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { badRequest, conflict, notFound } from '../lib/errors.js';
 import { readJson, writeJsonAtomic } from '../lib/fsutil.js';
-import { terrariaVariant, type TerrariaVariant } from '../lib/games.js';
+import { isSteamType, terrariaVariant, type TerrariaVariant } from '../lib/games.js';
 import { parseBanlist, removeFromBanlist, validateTerrariaPlayerName, type BanEntry } from '../lib/terrariaFiles.js';
 import { fetchJson } from '../lib/http.js';
 import { parseProperties } from '../lib/properties.js';
@@ -189,6 +189,7 @@ export async function playerAction(
   name: string,
   reason?: string,
 ): Promise<{ applied: 'live' | 'file'; output: string }> {
+  if (isSteamType(server.type)) throw badRequest('Player actions are not available for SteamCMD games; use the console', 'unsupported');
   const tv = terrariaVariant(server.type);
   if (tv) return terrariaPlayerAction(server, tv, action, name, sanitizeReason(reason));
   validatePlayerName(server, name);
@@ -202,6 +203,7 @@ export async function playerAction(
 }
 
 export async function readList(server: ServerRow, kind: ListKind): Promise<unknown[]> {
+  if (isSteamType(server.type)) return [];
   const tv = terrariaVariant(server.type);
   if (tv) {
     if (kind !== 'banned') return [];

@@ -1,0 +1,284 @@
+{
+  "schema": 1,
+  "id": "rust",
+  "name": "Rust",
+  "description": "Rust dedicated server (Steam app 258550, native Linux, anonymous login). UDP 28015 is the game port and is also advertised to Steam; the query port (UDP 28017), the Rust+ companion app port (TCP 28082) and the WebRCON port (TCP 28016) are published too. The server identity is fixed to \"rust\" and its data folder is linked to /data/rust-server so saves and settings are part of the default backups. Commands typed in the panel console go to the server. There is no Steam Workshop for server content: Oxide/uMod and plugins are installed manually (upload them with the Files tab) and are not managed here. The first start downloads about 9 GB and generating a large map needs a lot of RAM.",
+  "icon": "https://cdn.cloudflare.steamstatic.com/steam/apps/252490/header.jpg",
+  "steam": {
+    "appId": 258550,
+    "branch": "public",
+    "betaPassword": null,
+    "platform": "linux",
+    "login": "anonymous"
+  },
+  "resources": {
+    "memoryMb": 10240,
+    "memoryMinMb": 6144,
+    "cpu": 4,
+    "diskMb": 10240
+  },
+  "ports": [
+    {
+      "id": "game",
+      "label": "Game (UDP)",
+      "protocol": "udp",
+      "containerPort": 28015,
+      "mirror": true,
+      "publish": true,
+      "main": true
+    },
+    {
+      "id": "query",
+      "label": "Steam query (UDP)",
+      "protocol": "udp",
+      "containerPort": 28017,
+      "mirror": true,
+      "publish": true
+    },
+    {
+      "id": "rcon",
+      "label": "WebRCON (TCP)",
+      "protocol": "tcp",
+      "containerPort": 28016,
+      "mirror": false,
+      "publish": true
+    },
+    {
+      "id": "app",
+      "label": "Rust+ companion app (TCP)",
+      "protocol": "tcp",
+      "containerPort": 28082,
+      "mirror": true,
+      "publish": true
+    }
+  ],
+  "variables": [
+    {
+      "key": "serverName",
+      "label": "Server name",
+      "description": "Name shown in the server browser (server.hostname).",
+      "type": "string",
+      "default": "ServCrafty Rust Server",
+      "required": true,
+      "min": 1,
+      "max": 64,
+      "group": "Server"
+    },
+    {
+      "key": "description",
+      "label": "Description",
+      "description": "Description shown in the server browser (server.description). May be empty.",
+      "type": "string",
+      "default": "",
+      "required": false,
+      "max": 300,
+      "group": "Server"
+    },
+    {
+      "key": "serverUrl",
+      "label": "Website URL",
+      "description": "Website link shown in the browser (server.url), starting with http:// or https://. May be empty.",
+      "type": "string",
+      "default": "",
+      "required": false,
+      "max": 200,
+      "pattern": "^(https?://[\\x21-\\x7e]+)?$",
+      "group": "Server"
+    },
+    {
+      "key": "headerImage",
+      "label": "Header image URL",
+      "description": "Banner image (server.headerimage), 500x256 px, http:// or https://. May be empty.",
+      "type": "string",
+      "default": "",
+      "required": false,
+      "max": 200,
+      "pattern": "^(https?://[\\x21-\\x7e]+)?$",
+      "group": "Server"
+    },
+    {
+      "key": "rconPassword",
+      "label": "RCON password",
+      "description": "WebRCON password (rcon.password), needed by tools such as RustAdmin. Leave empty to have one generated when the server is created (20 characters); managers can read and regenerate it in Settings.",
+      "type": "password",
+      "required": true,
+      "min": 6,
+      "max": 64,
+      "generate": {
+        "length": 20,
+        "charset": "alnum"
+      },
+      "group": "Access"
+    },
+    {
+      "key": "level",
+      "label": "Map",
+      "description": "Map type (server.level). Procedural Map uses the seed and world size below.",
+      "type": "select",
+      "default": "Procedural Map",
+      "required": true,
+      "options": [
+        {
+          "value": "Procedural Map",
+          "label": "Procedural Map"
+        },
+        {
+          "value": "Barren",
+          "label": "Barren"
+        },
+        {
+          "value": "HapisIsland",
+          "label": "Hapis Island"
+        },
+        {
+          "value": "CraggyIsland",
+          "label": "Craggy Island"
+        },
+        {
+          "value": "SavasIsland",
+          "label": "Savas Island"
+        }
+      ],
+      "group": "World"
+    },
+    {
+      "key": "worldSize",
+      "label": "World size",
+      "description": "Procedural map size in metres (server.worldsize), 1000 to 6000. 3000 is the official default; larger worlds need much more RAM.",
+      "type": "number",
+      "default": 3000,
+      "required": true,
+      "min": 1000,
+      "max": 6000,
+      "integer": true,
+      "group": "World"
+    },
+    {
+      "key": "seed",
+      "label": "World seed",
+      "description": "Procedural map seed (server.seed), a number from 1 to 2147483647. Leave empty for a random seed (the server picks and stores one on first start).",
+      "type": "string",
+      "default": "",
+      "required": false,
+      "pattern": "^[0-9]{0,10}$",
+      "group": "World"
+    },
+    {
+      "key": "maxPlayers",
+      "label": "Max players",
+      "description": "Maximum simultaneous players (server.maxplayers).",
+      "type": "number",
+      "default": 50,
+      "required": true,
+      "min": 1,
+      "max": 500,
+      "integer": true,
+      "group": "Server"
+    },
+    {
+      "key": "saveInterval",
+      "label": "Save interval",
+      "description": "Seconds between automatic saves (server.saveinterval).",
+      "type": "number",
+      "default": 300,
+      "required": false,
+      "min": 60,
+      "max": 3600,
+      "integer": true,
+      "group": "Server"
+    }
+  ],
+  "launch": {
+    "cwd": "",
+    "command": [
+      "./RustDedicated",
+      "-batchmode",
+      "-nographics",
+      "+server.port",
+      "{{ports.game}}",
+      "+server.queryport",
+      "{{ports.query}}",
+      "+rcon.port",
+      "{{ports.rcon}}",
+      "+rcon.web",
+      "1",
+      "+rcon.password",
+      "{{rconPassword}}",
+      "+app.port",
+      "{{ports.app}}",
+      "+server.identity",
+      "rust",
+      "+server.hostname",
+      "{{serverName}}",
+      "+server.level",
+      "{{level}}",
+      "+server.worldsize",
+      "{{worldSize}}",
+      {
+        "value": "+server.seed",
+        "if": "seed"
+      },
+      {
+        "value": "{{seed}}",
+        "if": "seed"
+      },
+      "+server.maxplayers",
+      "{{maxPlayers}}",
+      "+server.saveinterval",
+      "{{saveInterval}}",
+      {
+        "value": "+server.description",
+        "if": "description"
+      },
+      {
+        "value": "{{description}}",
+        "if": "description"
+      },
+      {
+        "value": "+server.url",
+        "if": "serverUrl"
+      },
+      {
+        "value": "{{serverUrl}}",
+        "if": "serverUrl"
+      },
+      {
+        "value": "+server.headerimage",
+        "if": "headerImage"
+      },
+      {
+        "value": "{{headerImage}}",
+        "if": "headerImage"
+      }
+    ],
+    "env": {
+      "LD_LIBRARY_PATH": "./RustDedicated_Data/Plugins/x86_64:."
+    }
+  },
+  "files": [],
+  "stop": {
+    "type": "stdin",
+    "command": "quit",
+    "timeoutSec": 120
+  },
+  "console": {
+    "stdin": true
+  },
+  "ready": {
+    "logRegex": "Server startup complete"
+  },
+  "players": {
+    "joinRegex": "\\d+\\.\\d+\\.\\d+\\.\\d+:\\d+/\\d+/(?<name>.+?) joined \\[",
+    "leaveRegex": "\\d+\\.\\d+\\.\\d+\\.\\d+:\\d+/\\d+/(?<name>.+?) disconnecting: "
+  },
+  "query": {
+    "a2s": {
+      "portId": "query"
+    }
+  },
+  "workshop": null,
+  "webui": [],
+  "scripts": {
+    "postInstall": "mkdir -p /data/rust-server; if [ ! -e server ] || [ -L server ]; then rm -f server; ln -s /data/rust-server server; fi"
+  }
+}

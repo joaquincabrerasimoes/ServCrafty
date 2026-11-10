@@ -5,12 +5,27 @@ import type { FastifyBaseLogger } from 'fastify';
 import { query, queryOne } from '../db/pool.js';
 import { badRequest, conflict, errorMessage, notFound, unavailable } from '../lib/errors.js';
 import { dirSize } from '../lib/fsutil.js';
-import { gameOf, terrariaVariant, type Game } from '../lib/games.js';
+import { queryA2s, type A2sInfo, type A2sPlayer } from '../lib/a2s.js';
+import { gameOf, isSteamType, terrariaVariant, type Game } from '../lib/games.js';
+import type { GameDefinition } from '../lib/gameDefinition.js';
+import {
+  cleanSteamLine,
+  INSTALL_PHASES,
+  matchPlayer,
+  MAX_MATCH_LEN,
+  parseSteamLine,
+  replaySteamLog,
+  steamMatchers,
+  type SteamMatchers,
+  type SteamPhase,
+} from '../lib/steamLog.js';
+import { fillGeneratedVars, resolvePorts } from '../lib/steamPlan.js';
 import { parseRejectedJoin, parseUuidLine } from '../lib/joinAttempts.js';
 import { detectMcVersion } from '../lib/mcVersion.js';
 import { parseProperties } from '../lib/properties.js';
 import { cleanTerrariaLine, parseTerrariaLine } from '../lib/terrariaLog.js';
 import {
+  containerIp,
   containerName,
   createServerContainer,
   demuxBuffer,
@@ -21,6 +36,8 @@ import {
   serverDir,
 } from './docker.js';
 import { bus } from './events.js';
+import { getDefinition } from './gameDefinitions.js';
+import { ensureSteamPorts } from './steamPorts.js';
 import { recordAttempt } from './joinAttempts.js';
 import { RconClient, stripFormatting } from './rcon.js';
 import { getCurseforgeKey } from './settings.js';
@@ -36,6 +53,24 @@ interface DockerSample {
   cpuPercent: number;
   at: number;
 }
+
+/** Runtime state of a SteamCMD server (install progress, matchers, A2S cache). */
+interface SteamRuntime {
+  phase: SteamPhase | null;
+  progress: number | null;
+  error: string | null;
+  matchers: SteamMatchers;
+  /** No ready regex: running 20 s after phase=launch. */
+  readyTimer: NodeJS.Timeout | null;
+  a2sPort: number | null;
+  a2sIp: string | null;
+  a2sBusy: boolean;
+  a2sAt: number;
+  a2sInfo: A2sInfo | null;
+  a2sPlayers: A2sPlayer[] | null;
+}
+
+const STEAM_READY_FALLBACK_MS = 20_000;
 
 interface RuntimeState {
   id: string;
@@ -69,6 +104,8 @@ interface RuntimeState {
   watchers: number;
   lastRconPoll: number;
   opLock: Promise<unknown>;
+  /** SteamCMD servers only. */
+  steam: SteamRuntime | null;
 }
 
 const states = new Map<string, RuntimeState>();
@@ -108,6 +145,7 @@ function state(id: string): RuntimeState {
       watchers: 0,
       lastRconPoll: 0,
       opLock: Promise.resolve(),
+      steam: null,
     };
     states.set(id, s);
   }
@@ -153,10 +191,21 @@ export function getStatus(id: string): ServerStatus {
 
 /** True when the server's container output is a raw TTY stream (no docker frame headers). */
 function ttyFor(server: ServerRow): boolean {
+  if (isSteamType(server.type)) return !!steamDef(server)?.console.stdin;
   return server.type === 'BEDROCK' || !!terrariaVariant(server.type)?.tty;
 }
 
+function steamDef(server: ServerRow): GameDefinition | null {
+  return getDefinition(server.steam?.gameId);
+}
+
+/** Games whose output redraws progress lines with a bare carriage return. */
+function splitsCarriageReturns(game: Game): boolean {
+  return game === 'terraria' || game === 'steam';
+}
+
 function cleanLine(game: Game, rawLine: string): string {
+  if (game === 'steam') return cleanSteamLine(rawLine);
   // eslint-disable-next-line no-control-regex
   if (game !== 'terraria') return rawLine.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').replace(/\r$/, '');
   return cleanTerrariaLine(rawLine);
@@ -177,8 +226,8 @@ export function systemLog(id: string, line: string): void {
 }
 
 function feed(s: RuntimeState, chunk: string): void {
-  // Terraria redraws progress lines with a bare carriage return.
-  const data = s.partial + (s.game === 'terraria' ? chunk.replace(/\r(?!\n)/g, '\n') : chunk);
+  // Terraria and SteamCMD redraw progress lines with a bare carriage return.
+  const data = s.partial + (splitsCarriageReturns(s.game) ? chunk.replace(/\r(?!\n)/g, '\n') : chunk);
   const lines = data.split('\n');
   s.partial = lines.pop() ?? '';
   for (const l of lines) pushLine(s, l);
@@ -211,8 +260,92 @@ function analyzeTerrariaLine(s: RuntimeState, line: string): void {
   }
 }
 
+function clearReadyTimer(st: SteamRuntime | null): void {
+  if (st?.readyTimer) clearTimeout(st.readyTimer);
+  if (st) st.readyTimer = null;
+}
+
+/** Executor markers drive the status: installing -> starting (launch) -> running (ready regex / 20 s). */
+function analyzeSteamLine(s: RuntimeState, line: string): void {
+  const st = s.steam;
+  if (!st) return;
+  const e = parseSteamLine(line);
+  if (e?.kind === 'phase') {
+    st.phase = e.phase;
+    st.progress = null;
+    if ((INSTALL_PHASES as readonly string[]).includes(e.phase)) {
+      clearReadyTimer(st);
+      if (s.status === 'starting' || s.status === 'installing' || s.status === 'running') void setStatus(s.id, 'installing');
+      return;
+    }
+    // phase=launch
+    st.error = null;
+    if (s.status === 'installing' || s.status === 'starting') void setStatus(s.id, 'starting');
+    clearReadyTimer(st);
+    if (!st.matchers.ready) {
+      st.readyTimer = setTimeout(() => {
+        st.readyTimer = null;
+        if (s.status === 'starting') void setStatus(s.id, 'running');
+      }, STEAM_READY_FALLBACK_MS);
+      st.readyTimer.unref();
+    }
+    return;
+  }
+  if (e?.kind === 'progress') {
+    st.progress = e.progress;
+    return;
+  }
+  if (e?.kind === 'error') {
+    st.error = e.message;
+    return;
+  }
+  if (st.phase !== 'launch' && st.phase !== null) return;
+  if ((s.status === 'starting' || s.status === 'installing') && st.matchers.ready?.test(line.slice(0, MAX_MATCH_LEN))) {
+    clearReadyTimer(st);
+    void setStatus(s.id, 'running');
+  }
+  const joined = matchPlayer(st.matchers.join, line);
+  if (joined) {
+    if (s.players.size < 1000) s.players.add(joined);
+    bus.emit('notify', s.id, 'player.join', { player: joined });
+    return;
+  }
+  const left = matchPlayer(st.matchers.leave, line);
+  if (left) {
+    s.players.delete(left);
+    bus.emit('notify', s.id, 'player.leave', { player: left });
+  }
+}
+
+function newSteamRuntime(server: ServerRow): SteamRuntime {
+  const def = steamDef(server);
+  let a2sPort: number | null = null;
+  if (def?.query?.a2s) {
+    try {
+      const ports = resolvePorts(def, server.port, server.extra_ports ?? {});
+      a2sPort = ports.find((p) => p.id === def.query?.a2s?.portId)?.containerPort ?? null;
+    } catch {
+      a2sPort = null;
+    }
+  }
+  return {
+    phase: null,
+    progress: null,
+    error: null,
+    matchers: steamMatchers(def),
+    readyTimer: null,
+    a2sPort,
+    a2sIp: null,
+    a2sBusy: false,
+    a2sAt: 0,
+    a2sInfo: null,
+    a2sPlayers: null,
+  };
+}
+
 function analyzeLine(s: RuntimeState, line: string): void {
   if (s.game === 'terraria') return analyzeTerrariaLine(s, line);
+  if (s.game === 'steam') return analyzeSteamLine(s, line);
   if (s.status === 'starting' && /^\[(init|mc-image-helper)\]/.test(line)) void setStatus(s.id, 'installing');
   if (s.status === 'installing' && /Starting minecraft server|Loading libraries|Starting net\.minecraft|Environment:/i.test(line))
     void setStatus(s.id, 'starting');
@@ -286,7 +419,7 @@ export async function getLogs(server: ServerRow, tail: number): Promise<string[]
     })) as unknown as Buffer;
     const game = gameOf(server.type);
     const text = demuxBuffer(Buffer.isBuffer(buf) ? buf : Buffer.from(String(buf)));
-    return (game === 'terraria' ? text.replace(/\r(?!\n)/g, '\n') : text)
+    return (splitsCarriageReturns(game) ? text.replace(/\r(?!\n)/g, '\n') : text)
       .split('\n')
       .map((l) => cleanLine(game, l))
       .filter(Boolean)
@@ -382,8 +515,8 @@ export async function sendCommand(serverId: string, command: string): Promise<st
   }
   const cmd = command.replace(/^\//, '').trim();
   if (!cmd) throw badRequest('Empty command');
-  if (gameOf(server.type) === 'terraria') {
-    await terrariaConsole(server, s, cmd);
+  if (gameOf(server.type) === 'terraria' || gameOf(server.type) === 'steam') {
+    await consoleWrite(server, s, cmd);
     pushLine(s, `> ${cmd}`);
     return '';
   }
@@ -406,7 +539,7 @@ export async function sendCommand(serverId: string, command: string): Promise<st
 }
 
 // ---------------------------------------------------------------------------
-// Terraria console (attached stdin or `inject`)
+// Console for Terraria / SteamCMD games (attached stdin, or tModLoader's `inject`)
 // ---------------------------------------------------------------------------
 
 /** Attach to the container's stdin and keep the stream for console commands. */
@@ -426,17 +559,24 @@ async function attachStdin(s: RuntimeState, containerId: string): Promise<NodeJS
   return stream;
 }
 
+/** How console lines reach a non-RCON server: attached stdin, `inject` (tModLoader) or not at all. */
+function consoleKindOf(server: ServerRow): 'stdin' | 'inject' | null {
+  if (isSteamType(server.type)) return steamDef(server)?.console.stdin ? 'stdin' : null;
+  return terrariaVariant(server.type)?.console ?? null;
+}
+
 /**
- * Send one console line to a Terraria server. Control characters are refused so a command can
- * never smuggle a second line (stdin) or confuse `inject`.
+ * Send one console line to a Terraria or SteamCMD server. Control characters are refused so a
+ * command can never smuggle a second line (stdin) or confuse `inject`.
  */
-async function terrariaConsole(server: ServerRow, s: RuntimeState, cmd: string): Promise<void> {
+async function consoleWrite(server: ServerRow, s: RuntimeState, cmd: string): Promise<void> {
   // eslint-disable-next-line no-control-regex
   if (/[\u0000-\u001f\u007f]/.test(cmd)) throw badRequest('Commands must be a single line', 'invalid_command');
-  const v = terrariaVariant(server.type);
-  if (!v || !server.container_id) throw conflict('Server is not running', 'not_running');
+  const kind = consoleKindOf(server);
+  if (!kind) throw badRequest('This game has no console input', 'console_unsupported');
+  if (!server.container_id) throw conflict('Server is not running', 'not_running');
   try {
-    if (v.console === 'inject') {
+    if (kind === 'inject') {
       await execIn(server.container_id, ['inject', cmd]);
       return;
     }
@@ -453,7 +593,7 @@ async function quietTerrariaCommand(server: ServerRow, cmd: string): Promise<boo
   const s = state(server.id);
   if (s.status !== 'running' || !server.container_id) return false;
   try {
-    await terrariaConsole(server, s, cmd);
+    await consoleWrite(server, s, cmd);
     return true;
   } catch {
     return false;
@@ -499,6 +639,8 @@ export async function tryRcon(serverId: string, cmd: string): Promise<string | n
   if (s.status !== 'running') return null;
   const server = await loadServer(serverId);
   if (server.type === 'BEDROCK') return null;
+  // SteamCMD games have no RCON and no generic broadcast command.
+  if (gameOf(server.type) === 'steam') return null;
   // Terraria has no RCON: run the command on the console (used for `say` warnings).
   if (gameOf(server.type) === 'terraria') return (await quietTerrariaCommand(server, cmd)) ? '' : null;
   return quietRcon(server, cmd);
@@ -609,11 +751,95 @@ function terrariaStats(server: ServerRow, s: RuntimeState): Stats {
   };
 }
 
+const A2S_INTERVAL_MS = 5000;
+const A2S_FRESH_MS = 20_000;
+
+/** Refresh the A2S cache in the background (stats never wait on the network). */
+function pollA2s(server: ServerRow, st: SteamRuntime): void {
+  if (st.a2sBusy || st.a2sPort === null || !server.container_id) return;
+  if (Date.now() - st.a2sAt < A2S_INTERVAL_MS) return;
+  st.a2sBusy = true;
+  const containerId = server.container_id;
+  void (async () => {
+    try {
+      st.a2sIp ??= await containerIp(containerId);
+      if (!st.a2sIp) return;
+      const r = await queryA2s(st.a2sIp, st.a2sPort!, { timeoutMs: 1500 });
+      if (r.info) {
+        st.a2sInfo = r.info;
+        st.a2sPlayers = r.players;
+        st.a2sAt = Date.now();
+      } else {
+        // Keep the old sample until it goes stale; retry later (the IP may have changed).
+        st.a2sIp = null;
+        st.a2sAt = Date.now() - A2S_INTERVAL_MS / 2;
+      }
+    } catch {
+      st.a2sIp = null;
+    } finally {
+      st.a2sBusy = false;
+    }
+  })();
+}
+
+/** Max players of a SteamCMD server when A2S does not tell: a `maxPlayers`-like variable. */
+function steamMaxPlayersVar(server: ServerRow): number {
+  for (const [k, v] of Object.entries(server.steam?.vars ?? {})) {
+    if (/^max_?players$/i.test(k)) {
+      const n = Number(v);
+      if (Number.isFinite(n) && n > 0) return Math.trunc(n);
+    }
+  }
+  return 0;
+}
+
+function steamStats(server: ServerRow, s: RuntimeState): Stats {
+  const st = s.steam ?? (s.steam = newSteamRuntime(server));
+  const running = s.status === 'running';
+  const alive = ['running', 'starting', 'installing', 'stopping'].includes(s.status);
+  const dockerFresh = alive && s.docker && Date.now() - s.docker.at < 10_000 ? s.docker : null;
+  if (running) pollA2s(server, st);
+  const a2s = running && st.a2sInfo && Date.now() - st.a2sAt < A2S_FRESH_MS ? st.a2sInfo : null;
+  let players: Stats['players'];
+  if (a2s) {
+    const names = (st.a2sPlayers ?? []).map((p) => p.name).filter(Boolean);
+    players = { online: Math.max(0, a2s.players - a2s.bots), max: a2s.maxPlayers, list: names.map((name) => ({ name })) };
+  } else {
+    players = {
+      online: running ? s.players.size : 0,
+      max: steamMaxPlayersVar(server),
+      list: running ? [...s.players].map((name) => ({ name })) : [],
+    };
+  }
+  return {
+    status: s.status,
+    uptimeSec: alive && s.startedAt ? Math.floor((Date.now() - s.startedAt) / 1000) : 0,
+    memory: { usedMb: dockerFresh?.memUsedMb ?? 0, limitMb: dockerFresh?.memLimitMb || server.memory_mb },
+    cpuPercent: dockerFresh?.cpuPercent ?? 0,
+    tps: null,
+    mspt: { avg: null, p95: null },
+    players,
+    motd: a2s?.name ?? null,
+    map: a2s?.map || null,
+    version: a2s?.version ?? null,
+    packName: null,
+    packVersion: null,
+    source: a2s ? 'a2s' : 'docker',
+    diskMb: s.diskMb,
+    install: s.status === 'installing' ? { phase: st.phase ?? 'install', progress: st.progress } : null,
+    agent: null,
+  };
+}
+
 export async function getStats(server: ServerRow): Promise<Stats> {
   const s = state(server.id);
   if (gameOf(server.type) === 'terraria') {
     await refreshDisk(server, s).catch(() => undefined);
     return terrariaStats(server, s);
+  }
+  if (gameOf(server.type) === 'steam') {
+    await refreshDisk(server, s).catch(() => undefined);
+    return steamStats(server, s);
   }
   const running = s.status === 'running';
   if (running && server.type !== 'BEDROCK' && Date.now() - s.lastRconPoll > 4000) {
@@ -696,13 +922,28 @@ function resetRuntime(s: RuntimeState): void {
   s.tps = null;
   s.mspt = { avg: null, p95: null };
   s.tickMode = null;
+  clearReadyTimer(s.steam);
+  s.steam = null;
 }
 
 export function start(serverId: string): Promise<void> {
   return withLock(serverId, async () => {
-    const server = await loadServer(serverId);
+    let server = await loadServer(serverId);
     const s = state(serverId);
     if (['running', 'starting', 'installing'].includes(s.status)) throw conflict('Server is already running', 'already_running');
+    // A definition may have gained published ports since the server was created.
+    if (isSteamType(server.type)) server = await ensureSteamPorts(server, { running: false, log: (l) => systemLog(serverId, l) });
+    // Generated secrets a definition gained after the server was created are filled in (and stored) once.
+    const sdef = isSteamType(server.type) && server.steam ? steamDef(server) : null;
+    const filled = sdef && server.steam ? fillGeneratedVars(sdef, server.steam.vars ?? {}) : null;
+    if (filled && server.steam) {
+      server =
+        (await queryOne<ServerRow>('UPDATE servers SET steam = $2 WHERE id = $1 RETURNING *', [
+          serverId,
+          JSON.stringify({ ...server.steam, vars: filled }),
+        ])) ?? server;
+      systemLog(serverId, '[servcrafty] generated values for new secret settings (see Settings)');
+    }
     await fsp.mkdir(serverDir(serverId), { recursive: true });
     s.game = gameOf(server.type);
     s.expectedStop = false;
@@ -719,9 +960,20 @@ export function start(serverId: string): Promise<void> {
       await container.start();
       s.startedAt = Date.now();
       resetRuntime(s);
-      await attachLogs(s, container.id, ttyFor(server));
+      const steam = isSteamType(server.type);
+      if (steam) {
+        s.steam = newSteamRuntime(server);
+        // One-shot flags are consumed by this start (the plan already carries them).
+        await query(
+          `UPDATE servers SET steam = steam || '{"validateNext": false, "workshopRefresh": false}'::jsonb WHERE id = $1 AND steam IS NOT NULL`,
+          [serverId],
+        );
+      }
+      // For SteamCMD the TTY follows the container just created (the definition may change later).
+      const tty = steam ? !!(await container.inspect()).Config.Tty : ttyFor(server);
+      await attachLogs(s, container.id, tty);
       attachStats(s, container.id, server.cpu);
-      if (terrariaVariant(server.type)?.console === 'stdin') {
+      if (consoleKindOf(server) === 'stdin') {
         await attachStdin(s, container.id).catch((err: unknown) =>
           systemLog(serverId, `[servcrafty] could not attach to the console: ${errorMessage(err)}`),
         );
@@ -755,6 +1007,8 @@ async function stopContainer(server: ServerRow, s: RuntimeState, kill: boolean):
   }
   await setStatus(server.id, 'stopping');
   const tv = terrariaVariant(server.type);
+  const sd = isSteamType(server.type) ? steamDef(server) : null;
+  if (sd && !kill) await steamGracefulStop(server, s, c, sd);
   if (tv && !kill) {
     // Terraria: `exit` saves the world and quits; give it time before docker stop/kill.
     if (await sendStopCommand(server, s, tv.stopCommand)) {
@@ -770,7 +1024,7 @@ async function stopContainer(server: ServerRow, s: RuntimeState, kill: boolean):
   }
   try {
     if (kill) await c.kill();
-    else await c.stop({ t: tv ? 15 : 90 }); // itzg forwards SIGTERM to a graceful "stop"
+    else await c.stop({ t: tv || sd ? 15 : 90 }); // itzg forwards SIGTERM to a graceful "stop"
   } catch (err) {
     if ((err as { statusCode?: number }).statusCode !== 304) throw err; // 304 = already stopped
   }
@@ -779,9 +1033,36 @@ async function stopContainer(server: ServerRow, s: RuntimeState, kill: boolean):
   if (await setStatus(server.id, 'stopped')) bus.emit('notify', server.id, 'server.stopped', { reason: kill ? 'kill' : 'stop' });
 }
 
+/**
+ * SteamCMD stop per the definition: a console command (stdin) or a signal (delivered to the executor,
+ * which forwards it to the game), then wait up to `timeoutSec` before docker stop.
+ */
+async function steamGracefulStop(server: ServerRow, s: RuntimeState, c: ReturnType<ReturnType<typeof docker>['getContainer']>, def: GameDefinition): Promise<void> {
+  let sent = false;
+  if (def.stop.type === 'stdin' && def.stop.command) sent = await sendStopCommand(server, s, def.stop.command);
+  else {
+    try {
+      await c.kill({ signal: def.stop.signal });
+      systemLog(server.id, `[servcrafty] sent ${def.stop.signal}`);
+      sent = true;
+    } catch (err) {
+      systemLog(server.id, `[servcrafty] could not send ${def.stop.signal}: ${errorMessage(err)}`);
+    }
+  }
+  if (!sent) return;
+  const stopped = await Promise.race([
+    c.wait({ condition: 'not-running' }).then(
+      () => true,
+      () => false,
+    ),
+    new Promise<boolean>((r) => setTimeout(() => r(false), def.stop.timeoutSec * 1000).unref()),
+  ]);
+  if (!stopped) systemLog(server.id, `[servcrafty] server did not exit within ${def.stop.timeoutSec}s; stopping the container`);
+}
+
 async function sendStopCommand(server: ServerRow, s: RuntimeState, cmd: string): Promise<boolean> {
   try {
-    await terrariaConsole(server, s, cmd);
+    await consoleWrite(server, s, cmd);
     pushLine(s, `> ${cmd}`);
     return true;
   } catch (err) {
@@ -854,13 +1135,17 @@ async function onContainerDie(serverId: string, containerId: string | undefined,
     s.partial = '';
   }
   const expected = s.expectedStop || exitCode === 0 || exitCode === 143;
+  const steamErr = s.steam?.error ?? null;
   resetRuntime(s);
+  if (steamErr && !expected) s.steam = { ...newSteamRuntime(server), error: steamErr };
   if (expected) {
     s.expectedStop = false;
     if (await setStatus(serverId, 'stopped')) bus.emit('notify', serverId, 'server.stopped', { exitCode });
     return;
   }
   const phase = s.status === 'installing' || s.status === 'starting' ? s.status : 'running';
+  const steamError = s.steam?.error ?? null;
+  if (steamError) systemLog(serverId, `[servcrafty] the game container reported: ${steamError}`);
   systemLog(
     serverId,
     `[servcrafty] server exited unexpectedly (code ${exitCode}${oom ? ', out of memory - raise the memory limit' : ''}${phase !== 'running' ? `, during ${phase}` : ''})`,
@@ -961,8 +1246,18 @@ export async function initRuntime(logger: FastifyBaseLogger): Promise<void> {
         // Prefill the backlog without re-analyzing old lines, then follow new output only.
         s.logs = [];
         s.logs = await getLogs(server, 500);
-        await attachLogs(s, info.Id, ttyFor(server), Math.floor(Date.now() / 1000));
+        await attachLogs(s, info.Id, isSteamType(server.type) ? !!info.Config.Tty : ttyFor(server), Math.floor(Date.now() / 1000));
         attachStats(s, info.Id, server.cpu);
+        let steamStatus: ServerStatus | null = null;
+        if (isSteamType(server.type)) {
+          const st = (s.steam = newSteamRuntime(server));
+          const r = replaySteamLog(s.logs, st.matchers);
+          st.phase = r.phase;
+          st.progress = r.progress;
+          for (const p of r.players) s.players.add(p);
+          if (r.phase && (INSTALL_PHASES as readonly string[]).includes(r.phase)) steamStatus = 'installing';
+          else if (r.phase === 'launch') steamStatus = r.ready || !st.matchers.ready ? 'running' : 'starting';
+        }
         if (gameOf(server.type) === 'terraria') {
           // Players online before the restart are unknown; rebuild them from the recent log.
           for (const line of s.logs) {
@@ -972,14 +1267,14 @@ export async function initRuntime(logger: FastifyBaseLogger): Promise<void> {
             else if (e?.kind === 'version') s.version ??= e.version;
           }
         }
-        if (terrariaVariant(server.type)?.console === 'stdin') {
+        if (isSteamType(server.type) ? !!info.Config.OpenStdin : terrariaVariant(server.type)?.console === 'stdin') {
           await attachStdin(s, info.Id).catch((err: unknown) =>
             logger.warn({ err: errorMessage(err), serverId: server.id }, 'could not re-attach to the console'),
           );
         }
         // Assume running if it has been up for a while; log analysis will confirm otherwise.
         s.status = 'starting';
-        await setStatus(server.id, Date.now() - s.startedAt > 60_000 ? 'running' : 'starting');
+        await setStatus(server.id, steamStatus ?? (Date.now() - s.startedAt > 60_000 ? 'running' : 'starting'));
       } else if (server.status !== 'stopped' && server.status !== 'crashed') {
         await setStatus(server.id, 'stopped');
       }
@@ -1058,5 +1353,6 @@ export async function shutdownRuntime(): Promise<void> {
     s.statsStream?.destroy();
     s.stdin?.end();
     s.rcon?.close();
+    clearReadyTimer(s.steam);
   }
 }

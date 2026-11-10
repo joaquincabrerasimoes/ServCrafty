@@ -5,6 +5,7 @@ import { MainLayout } from './layouts/MainLayout';
 import { ConfirmHost, Toaster } from './components/feedback';
 import { Loading } from './components/ui';
 import { PwaPrompt } from './components/PwaPrompt';
+import { canAuthorGames } from './lib/gameDefs';
 import LoginPage from './pages/Login';
 
 const Dashboard = lazy(() => import('./pages/Dashboard'));
@@ -26,6 +27,8 @@ const Webhooks = lazy(() => import('./pages/server/Webhooks'));
 const Sharing = lazy(() => import('./pages/server/Sharing'));
 const Transfer = lazy(() => import('./pages/server/Transfer'));
 const ServerSettings = lazy(() => import('./pages/server/Settings'));
+const Workshop = lazy(() => import('./pages/server/Workshop'));
+const WebUi = lazy(() => import('./pages/server/WebUi'));
 
 const AdminUsers = lazy(() => import('./pages/admin/Users'));
 const AdminSettings = lazy(() => import('./pages/admin/Settings'));
@@ -33,6 +36,8 @@ const AdminPorts = lazy(() => import('./pages/admin/Ports'));
 const AdminAudit = lazy(() => import('./pages/admin/Audit'));
 const AdminSystem = lazy(() => import('./pages/admin/System'));
 const AdminUpdate = lazy(() => import('./pages/admin/Update'));
+const AdminGames = lazy(() => import('./pages/admin/Games'));
+const AdminGameEditor = lazy(() => import('./pages/admin/GameEditor'));
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const status = useAuth((s) => s.status);
@@ -45,6 +50,13 @@ function RequireAuth({ children }: { children: ReactNode }) {
 function RequireAdmin({ children }: { children: ReactNode }) {
   const role = useAuth((s) => s.user?.role);
   if (role !== 'admin') return <Navigate to="/" replace />;
+  return <>{children}</>;
+}
+
+/** Admins and users allowed to author game definitions. */
+function RequireGameAuthor({ children }: { children: ReactNode }) {
+  const user = useAuth((s) => s.user);
+  if (!canAuthorGames(user)) return <Navigate to="/" replace />;
   return <>{children}</>;
 }
 
@@ -75,6 +87,8 @@ export function App() {
               <Route path="files" element={<Files />} />
               <Route path="properties" element={<Properties />} />
               <Route path="mods" element={<Mods />} />
+              <Route path="workshop" element={<Workshop />} />
+              <Route path="webui/:uiId" element={<WebUi />} />
               <Route path="backups" element={<Backups />} />
               <Route path="schedules" element={<Schedules />} />
               <Route path="webhooks" element={<Webhooks />} />
@@ -84,6 +98,22 @@ export function App() {
             </Route>
             <Route path="templates" element={<Templates />} />
             <Route path="account" element={<Account />} />
+            <Route
+              path="admin/games"
+              element={
+                <RequireGameAuthor>
+                  <AdminGames />
+                </RequireGameAuthor>
+              }
+            />
+            <Route
+              path="admin/games/:id"
+              element={
+                <RequireGameAuthor>
+                  <AdminGameEditor />
+                </RequireGameAuthor>
+              }
+            />
             <Route
               path="admin/*"
               element={

@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { Download, Eraser, Search, WrapText } from 'lucide-react';
 import { useT } from '@/i18n';
 import { canOperate } from '@/lib/access';
+import { serverCaps } from '@/lib/games';
+import { consoleAllowed } from '@/lib/gameDefs';
 import { sendCommand } from '@/lib/sendCommand';
 import { useLogs } from '@/lib/useFallbacks';
 import { clearLogs } from '@/ws/live';
@@ -11,7 +13,8 @@ import { useServerCtx } from './ServerLayout';
 
 export default function Console() {
   const t = useT();
-  const { server, live } = useServerCtx();
+  const { server, live, def } = useServerCtx();
+  const stdin = !serverCaps(server).hasSteamConfig || consoleAllowed(def);
   const logs = useLogs(server.id, live, 500);
   const [filter, setFilter] = useState('');
   const [wrap, setWrap] = useState(true);
@@ -44,9 +47,10 @@ export default function Console() {
         </IconButton>
       </div>
       <LogView lines={logs} filter={filter} wrap={wrap} className="min-h-0 flex-1" />
+      {!stdin && <p className="text-xs text-muted">{t('steam.consoleNoStdinHint')}</p>}
       <CommandInput
-        disabled={!op || server.status !== 'running'}
-        placeholder={!op ? t('console.readOnly') : server.status !== 'running' ? t('console.notRunning') : undefined}
+        disabled={!op || !stdin || server.status !== 'running'}
+        placeholder={!stdin ? t('steam.consoleNoStdin') : !op ? t('console.readOnly') : server.status !== 'running' ? t('console.notRunning') : undefined}
         onSend={(cmd) => sendCommand(server.id, cmd)}
       />
     </div>

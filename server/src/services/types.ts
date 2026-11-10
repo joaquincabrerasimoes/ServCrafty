@@ -2,6 +2,9 @@ import type { ServerType } from '../lib/validation.js';
 import type { MinecraftConfig } from '../lib/minecraftConfig.js';
 import { gameOf, type Game } from '../lib/games.js';
 import type { TerrariaConfig } from '../lib/terrariaConfig.js';
+import { publicSteamConfig, type SteamConfig } from '../lib/steamPlan.js';
+import { mainPort } from '../lib/gameDefinition.js';
+import { getDefinition, getEntry } from './gameDefinitions.js';
 
 export type Role = 'admin' | 'user';
 export type ShareLevel = 'viewer' | 'operator' | 'manager';
@@ -23,6 +26,8 @@ export interface UserRow {
   max_disk_mb: number | null;
   totp_secret_enc: string | null;
   totp_enabled: boolean;
+  /** May create/edit game definitions (admins always can). */
+  can_author_games: boolean;
   created_at: Date;
 }
 
@@ -43,6 +48,7 @@ export interface PublicUser {
   disabled: boolean;
   quotas: Quotas;
   totpEnabled: boolean;
+  canAuthorGames: boolean;
   createdAt: string;
 }
 
@@ -62,6 +68,7 @@ export function toPublicUser(u: UserRow): PublicUser {
       maxDiskMb: u.max_disk_mb,
     },
     totpEnabled: u.totp_enabled,
+    canAuthorGames: u.can_author_games === true,
     createdAt: u.created_at.toISOString(),
   };
 }
@@ -101,6 +108,10 @@ export interface ServerRow {
   minecraft: MinecraftConfig | null;
   /** Terraria configuration (see lib/terrariaConfig.ts); null for Minecraft servers. */
   terraria: TerrariaConfig | null;
+  /** SteamCMD configuration (see lib/steamPlan.ts); null for other games. */
+  steam: SteamConfig | null;
+  /** Host ports of the published non-main definition ports, by port id (SteamCMD only; `{}` otherwise). */
+  extra_ports: Record<string, number> | null;
   container_id: string | null;
   status: ServerStatus;
   auto_restart: boolean;
@@ -131,12 +142,68 @@ export interface PublicServer {
   env: Record<string, string>;
   minecraft: MinecraftConfig | null;
   terraria: TerrariaConfig | null;
+  /** SteamCMD config; secret (password) variables are blanked below manager access. */
+  steam: Omit<SteamConfig, 'workshopRefresh'> | null;
+  extraPorts: Record<string, number>;
+  /** What the server's game definition offers (SteamCMD only; null for other games or a missing definition). */
+  steamGame: SteamGameInfo | null;
   status: ServerStatus;
   autoRestart: boolean;
   autoStart: boolean;
   lanAnnounce: boolean;
   createdAt: string;
   access: Access;
+}
+
+export interface SteamGameInfo {
+  id: string;
+  name: string;
+  icon: string | null;
+  builtin: boolean;
+  hasWorkshop: boolean;
+  hasWebui: boolean;
+  hasConsole: boolean;
+  hasPlayers: boolean;
+  /** Ports with their host port (null = not published, only reachable by the panel). */
+  ports: { id: string; label: string; protocol: 'udp' | 'tcp' | 'both'; hostPort: number | null; main: boolean; offset: { from: string; by: number } | null }[];
+  /** Web UIs the viewer may open; `url` is the iframe/open-in-new-tab URL (it redirects into the proxy session). */
+  webui: { id: string; label: string; minAccess: ShareLevel; url: string }[];
+}
+
+const ACCESS_RANK: Record<Access, number> = { viewer: 1, operator: 2, manager: 3, owner: 4, admin: 4 };
+
+function steamGameInfo(s: ServerRow, access: Access): SteamGameInfo | null {
+  if (!s.steam) return null;
+  const entry = getEntry(s.steam.gameId);
+  if (!entry) return null;
+  const d = entry.definition;
+  const main = mainPort(d);
+  return {
+    id: d.id,
+    name: d.name,
+    icon: d.icon,
+    builtin: entry.builtin,
+    hasWorkshop: !!d.workshop,
+    hasWebui: d.webui.length > 0,
+    hasConsole: d.console.stdin,
+    hasPlayers: !!(d.players || d.query?.a2s),
+    ports: d.ports.map((p) => ({
+      id: p.id,
+      label: p.label,
+      protocol: p.protocol,
+      hostPort: p === main ? s.port : p.publish ? (s.extra_ports?.[p.id] ?? null) : null,
+      main: p === main,
+      offset: p.offset ?? null,
+    })),
+    webui: d.webui
+      .filter((w) => ACCESS_RANK[access] >= ACCESS_RANK[w.minAccess])
+      .map((w) => ({ id: w.id, label: w.label, minAccess: w.minAccess, url: `/api/servers/${s.id}/webui/${w.id}${w.path}` })),
+  };
+}
+
+/** Manager, owner and admin see secret values (passwords) of a server's config. */
+export function canSeeSecrets(access: Access): boolean {
+  return access === 'manager' || access === 'owner' || access === 'admin';
 }
 
 export function toPublicServer(s: ServerRow, access: Access, ownerName: string | null = null): PublicServer {
@@ -158,6 +225,9 @@ export function toPublicServer(s: ServerRow, access: Access, ownerName: string |
     env: s.env ?? {},
     minecraft: s.minecraft ?? null,
     terraria: s.terraria ?? null,
+    steam: s.steam ? publicSteamConfig(s.steam, getDefinition(s.steam.gameId), canSeeSecrets(access)) : null,
+    extraPorts: { ...(s.extra_ports ?? {}) },
+    steamGame: steamGameInfo(s, access),
     status: s.status,
     autoRestart: s.auto_restart,
     autoStart: s.auto_start,
@@ -176,12 +246,16 @@ export interface Stats {
   mspt: { avg: number | null; p95: number | null };
   players: { online: number; max: number; list: { name: string }[] };
   motd: string | null;
+  /** Current map (SteamCMD games queried over A2S). */
+  map?: string | null;
+  /** SteamCMD install/update progress while `status === 'installing'`. */
+  install?: { phase: string; progress: number | null } | null;
   /** Minecraft version (never a mod or pack version). */
   version: string | null;
   /** Modpack name / version label, for modpack servers. */
   packName?: string | null;
   packVersion?: string | null;
-  source: 'agent' | 'rcon' | 'docker';
+  source: 'agent' | 'rcon' | 'docker' | 'a2s';
   diskMb: number;
   agent?: null;
 }

@@ -5,3 +5,4 @@ export * from './servers';
 export * from './admin';
 export * from './catalog';
 export * from './update';
+export * from './games';

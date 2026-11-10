@@ -1,0 +1,258 @@
+{
+  "schema": 1,
+  "id": "counter-strike-global-offensive",
+  "name": "Counter-Strike: Global Offensive",
+  "description": "Counter-Strike: Global Offensive legacy dedicated server (Steam app 740, native Linux 32-bit srcds, anonymous login). CS:GO has been replaced by Counter-Strike 2, so this server targets the legacy game and its availability on SteamCMD may change. Port 27015 carries the game (UDP) and RCON (TCP) and is mirrored. A Game Server Login Token (GSLT) is strongly recommended. Workshop maps are not handled here.",
+  "icon": "https://cdn.cloudflare.steamstatic.com/steam/apps/730/header.jpg",
+  "steam": {
+    "appId": 740,
+    "branch": "public",
+    "betaPassword": null,
+    "platform": "linux",
+    "login": "anonymous"
+  },
+  "resources": {
+    "memoryMb": 2048,
+    "memoryMinMb": 1024,
+    "cpu": 2,
+    "diskMb": 30720
+  },
+  "ports": [
+    {
+      "id": "game",
+      "label": "Game, query and RCON (UDP + TCP)",
+      "protocol": "both",
+      "containerPort": 27015,
+      "mirror": true,
+      "publish": true,
+      "main": true
+    }
+  ],
+  "variables": [
+    {
+      "key": "serverName",
+      "label": "Server name",
+      "description": "Name shown in the server browser (hostname convar).",
+      "type": "string",
+      "default": "ServCrafty CS:GO Server",
+      "required": true,
+      "min": 1,
+      "max": 64,
+      "group": "Server"
+    },
+    {
+      "key": "serverPassword",
+      "label": "Server password",
+      "description": "Password players need to join (sv_password). Leave empty for a public server.",
+      "type": "password",
+      "default": "",
+      "required": false,
+      "max": 32,
+      "pattern": "^[\\x21-\\x7e]*$",
+      "group": "Access"
+    },
+    {
+      "key": "rconPassword",
+      "label": "RCON password",
+      "description": "Remote console password (rcon_password), also needed by external admin tools. Leave empty to have one generated when the server is created (20 characters); managers can read and regenerate it in Settings.",
+      "type": "password",
+      "required": true,
+      "min": 6,
+      "max": 64,
+      "generate": {
+        "length": 20,
+        "charset": "alnum"
+      },
+      "group": "Access"
+    },
+    {
+      "key": "gslt",
+      "label": "Game Server Login Token (GSLT)",
+      "description": "Steam game server login token, 32 hexadecimal characters, created at https://steamcommunity.com/dev/managegameservers for app 730. Optional but strongly recommended: without it the server may run as an anonymous, unlisted or restricted server.",
+      "type": "password",
+      "default": "",
+      "required": false,
+      "pattern": "^([A-Fa-f0-9]{32})?$",
+      "group": "Access"
+    },
+    {
+      "key": "map",
+      "label": "Starting map",
+      "description": "Map the server starts on (for example de_dust2, de_mirage, de_inferno). The map must exist on the server.",
+      "type": "string",
+      "default": "de_dust2",
+      "required": true,
+      "pattern": "^[A-Za-z0-9_.-]+$",
+      "group": "Game"
+    },
+    {
+      "key": "gameType",
+      "label": "Game type",
+      "description": "game_type: 0 = Classic, 1 = Gun Game. Classic 0 = Casual, 1 = Competitive, 2 = Wingman; Gun Game 0 = Arms Race, 1 = Demolition, 2 = Deathmatch.",
+      "type": "select",
+      "default": "0",
+      "required": true,
+      "options": [
+        {
+          "value": "0",
+          "label": "Classic"
+        },
+        {
+          "value": "1",
+          "label": "Gun Game"
+        }
+      ],
+      "group": "Game"
+    },
+    {
+      "key": "gameMode",
+      "label": "Game mode",
+      "description": "game_mode (0, 1 or 2); the meaning depends on Game type.",
+      "type": "select",
+      "default": "1",
+      "required": true,
+      "options": [
+        {
+          "value": "0",
+          "label": "0 (Casual / Arms Race)"
+        },
+        {
+          "value": "1",
+          "label": "1 (Competitive / Demolition)"
+        },
+        {
+          "value": "2",
+          "label": "2 (Wingman / Deathmatch)"
+        }
+      ],
+      "group": "Game"
+    },
+    {
+      "key": "mapGroup",
+      "label": "Map group",
+      "description": "mapgroup used for map cycling, for example mg_active (Active Duty), mg_reserves, mg_hostage, mg_dz_blacksite.",
+      "type": "string",
+      "default": "mg_active",
+      "required": true,
+      "pattern": "^[A-Za-z0-9_]+$",
+      "group": "Game"
+    },
+    {
+      "key": "maxPlayers",
+      "label": "Max players",
+      "description": "Maximum number of players (-maxplayers_override).",
+      "type": "number",
+      "default": 16,
+      "required": true,
+      "min": 1,
+      "max": 64,
+      "integer": true,
+      "group": "Game"
+    },
+    {
+      "key": "tickrate",
+      "label": "Tick rate",
+      "description": "Server tick rate. 64 is the Valve default, 128 is used by community servers.",
+      "type": "select",
+      "default": "64",
+      "required": true,
+      "options": [
+        {
+          "value": "64",
+          "label": "64"
+        },
+        {
+          "value": "128",
+          "label": "128"
+        }
+      ],
+      "group": "Game"
+    },
+    {
+      "key": "insecure",
+      "label": "Disable VAC (insecure)",
+      "description": "Start with -insecure so Valve Anti-Cheat is off. Insecure servers are not shown to VAC-protected clients by default.",
+      "type": "boolean",
+      "default": false,
+      "required": false,
+      "group": "Advanced"
+    }
+  ],
+  "launch": {
+    "cwd": "",
+    "command": [
+      "./srcds_run",
+      "-game",
+      "csgo",
+      "-console",
+      "-usercon",
+      "-strictportbind",
+      "-norestart",
+      "-port",
+      "{{ports.game}}",
+      "-tickrate",
+      "{{tickrate}}",
+      "-maxplayers_override",
+      "{{maxPlayers}}",
+      {
+        "value": "-insecure",
+        "if": "insecure"
+      },
+      "+game_type",
+      "{{gameType}}",
+      "+game_mode",
+      "{{gameMode}}",
+      "+mapgroup",
+      "{{mapGroup}}",
+      "+map",
+      "{{map}}",
+      "+hostname",
+      "{{serverName}}",
+      "+log",
+      "on",
+      {
+        "value": "+sv_password",
+        "if": "serverPassword"
+      },
+      {
+        "value": "{{serverPassword}}",
+        "if": "serverPassword"
+      },
+      "+rcon_password",
+      "{{rconPassword}}",
+      {
+        "value": "+sv_setsteamaccount",
+        "if": "gslt"
+      },
+      {
+        "value": "{{gslt}}",
+        "if": "gslt"
+      }
+    ],
+    "env": {}
+  },
+  "files": [],
+  "stop": {
+    "type": "stdin",
+    "command": "quit",
+    "timeoutSec": 30
+  },
+  "console": {
+    "stdin": true
+  },
+  "ready": {
+    "logRegex": "Connection to Steam servers successful|gameserver Steam ID"
+  },
+  "players": {
+    "joinRegex": "\"(?<name>.+?)<\\d+><[^>]*><[^>]*>\" entered the game",
+    "leaveRegex": "\"(?<name>.+?)<\\d+><[^>]*><[^>]*>\" disconnected"
+  },
+  "query": {
+    "a2s": {
+      "portId": "game"
+    }
+  },
+  "workshop": null,
+  "webui": [],
+  "scripts": {}
+}

@@ -1,0 +1,166 @@
+{
+  "schema": 1,
+  "id": "astroneer",
+  "name": "Astroneer",
+  "description": "Astroneer dedicated server (Steam app 728470, Windows-only, anonymous login) run under Wine + Xvfb. Wine support is EXPERIMENTAL and unverified: nothing here has been run under the panel. The server needs the public IP players use (PublicIP) and the Steam id of its owner, which is made administrator. Port 8777 (UDP and TCP) is the only port and is mirrored; open it in your firewall and forward it to the host port shown by the panel. Players must disable network encryption in their game: add [SystemSettings] and net.AllowEncryption=False to %LocalAppData%\\Astro\\Saved\\Config\\WindowsNoEditor\\Engine.ini, otherwise they cannot connect. Saves live in Astro/Saved, linked to /data/astro-saved so they are part of the default backups. The server console is not usable from the panel and stop sends SIGINT to the Wine process; use Stop only after a recent autosave.",
+  "icon": "https://cdn.cloudflare.steamstatic.com/steam/apps/361420/header.jpg",
+  "steam": {
+    "appId": 728470,
+    "branch": "public",
+    "betaPassword": null,
+    "platform": "windows",
+    "login": "anonymous"
+  },
+  "resources": {
+    "memoryMb": 3072,
+    "memoryMinMb": 1536,
+    "cpu": 2,
+    "diskMb": 5120
+  },
+  "ports": [
+    {
+      "id": "game",
+      "label": "Game (UDP + TCP)",
+      "protocol": "both",
+      "containerPort": 8777,
+      "mirror": true,
+      "publish": true,
+      "main": true
+    }
+  ],
+  "variables": [
+    {
+      "key": "publicIp",
+      "label": "Public IP",
+      "description": "The public IPv4 address players use to reach the server (PublicIP), used to register the server. Required: the server fails to start without it.",
+      "type": "string",
+      "required": true,
+      "pattern": "^((25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])$",
+      "group": "Server"
+    },
+    {
+      "key": "serverName",
+      "label": "Server name",
+      "description": "Name shown in the server list (ServerName).",
+      "type": "string",
+      "default": "ServCrafty Astroneer Server",
+      "required": true,
+      "min": 1,
+      "max": 64,
+      "group": "Server"
+    },
+    {
+      "key": "ownerName",
+      "label": "Owner Steam name",
+      "description": "Steam name of the server owner (OwnerName). The owner becomes administrator.",
+      "type": "string",
+      "required": true,
+      "min": 1,
+      "max": 64,
+      "pattern": "^[^\"()\\\\]+$",
+      "group": "Access"
+    },
+    {
+      "key": "ownerGuid",
+      "label": "Owner SteamID64",
+      "description": "SteamID64 of the owner (OwnerGuid), 17 digits, as shown at https://steamid.io. Required.",
+      "type": "string",
+      "required": true,
+      "pattern": "^[0-9]{17}$",
+      "group": "Access"
+    },
+    {
+      "key": "serverPassword",
+      "label": "Server password",
+      "description": "Password players need to join (ServerPassword). Leave empty for no password.",
+      "type": "password",
+      "default": "",
+      "required": false,
+      "max": 32,
+      "pattern": "^[\\x21-\\x7e]*$",
+      "group": "Access"
+    }
+  ],
+  "launch": {
+    "cwd": "",
+    "command": [
+      "./Astro/Binaries/Win64/AstroServer-Win64-Shipping.exe",
+      "-log"
+    ],
+    "env": {}
+  },
+  "files": [
+    {
+      "type": "ini",
+      "path": "Astro/Saved/Config/WindowsServer/Engine.ini",
+      "when": "always",
+      "set": [
+        {
+          "section": "URL",
+          "key": "Port",
+          "value": "{{ports.game}}"
+        },
+        {
+          "section": "SystemSettings",
+          "key": "net.AllowEncryption",
+          "value": "False"
+        }
+      ],
+      "list": []
+    },
+    {
+      "type": "ini",
+      "path": "Astro/Saved/Config/WindowsServer/AstroServerSettings.ini",
+      "when": "always",
+      "set": [
+        {
+          "section": "/Script/Astro.AstroServerSettings",
+          "key": "PublicIP",
+          "value": "{{publicIp}}"
+        },
+        {
+          "section": "/Script/Astro.AstroServerSettings",
+          "key": "ServerName",
+          "value": "{{serverName}}"
+        },
+        {
+          "section": "/Script/Astro.AstroServerSettings",
+          "key": "ServerPassword",
+          "value": "{{serverPassword}}"
+        },
+        {
+          "section": "/Script/Astro.AstroServerSettings",
+          "key": "OwnerName",
+          "value": "{{ownerName}}"
+        },
+        {
+          "section": "/Script/Astro.AstroServerSettings",
+          "key": "OwnerGuid",
+          "value": "{{ownerGuid}}"
+        },
+        {
+          "section": "/Script/Astro.AstroServerSettings",
+          "key": "PlayerProperties",
+          "value": "(PlayerFirstJoinName=\"{{ownerName}}\",PlayerCategory=Admin,PlayerGuid=\"{{ownerGuid}}\",PlayerRecentJoinName=\"\")"
+        }
+      ],
+      "list": []
+    }
+  ],
+  "stop": {
+    "type": "signal",
+    "signal": "SIGINT",
+    "timeoutSec": 60
+  },
+  "console": {
+    "stdin": false
+  },
+  "ready": null,
+  "players": null,
+  "query": null,
+  "workshop": null,
+  "webui": [],
+  "scripts": {
+    "postInstall": "mkdir -p /data/astro-saved Astro; if [ ! -e Astro/Saved ] || [ -L Astro/Saved ]; then rm -f Astro/Saved; ln -s /data/astro-saved Astro/Saved; fi"
+  }
+}

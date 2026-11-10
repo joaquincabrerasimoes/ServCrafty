@@ -20,6 +20,9 @@ const clientMsg = z.discriminatedUnion('type', [
   z.object({ type: z.literal('ping') }),
 ]);
 
+/** Largest client message on /ws (the previous server-wide limit). */
+export const WS_PANEL_MAX_BYTES = 64 * 1024;
+
 interface Sub {
   logs: boolean;
   stats: boolean;
@@ -89,6 +92,12 @@ export default async function wsRoutes(app: FastifyInstance): Promise<void> {
     }, 30_000);
 
     socket.on('message', (raw) => {
+      // The shared WebSocket server allows 1 MiB (web UI proxy); panel messages stay small.
+      const size = Array.isArray(raw) ? raw.reduce((n, b) => n + b.length, 0) : raw instanceof ArrayBuffer ? raw.byteLength : raw.length;
+      if (size > WS_PANEL_MAX_BYTES) {
+        socket.close(1009, 'message too big');
+        return;
+      }
       void (async () => {
         let msg: z.infer<typeof clientMsg>;
         try {
