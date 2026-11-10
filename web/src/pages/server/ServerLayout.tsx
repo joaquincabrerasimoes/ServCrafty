@@ -40,12 +40,12 @@ export default function ServerLayout() {
   const { data: server, isLoading, error, refetch } = useServer(id);
   const live = useLiveServer(server ? id : undefined);
   const { pathname } = useLocation();
+  const publicHost = usePublicServersHost();
 
   if (isLoading) return <Loading />;
   if (error || !server) return <ErrorState error={error ?? new Error(t('server.notFound'))} onRetry={() => void refetch()} />;
 
   const status = live.status ?? server.status;
-  const publicHost = usePublicServersHost();
   const address = `${publicHost || location.hostname}:${server.port}`;
   const caps = serverCaps(server);
   const hidden = TABS.filter((tab) => tab.show && !tab.show(caps)).map((tab) => tab.path);
