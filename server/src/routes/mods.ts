@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { requireUser } from '../auth/plugin.js';
+import { assertMinecraft } from '../lib/games.js';
 import { parse } from '../lib/validation.js';
 import { loadServerFor } from '../services/access.js';
 import { audit } from '../services/audit.js';
@@ -17,12 +18,14 @@ export default async function modRoutes(app: FastifyInstance): Promise<void> {
   app.get<{ Params: { id: string } }>('/servers/:id/mods', async (req) => {
     const user = requireUser(req);
     const { server } = await loadServerFor(user, req.params.id, 'viewer');
+    assertMinecraft(server, 'Mods and plugins');
     return mods.listMods(server);
   });
 
   app.post<{ Params: { id: string } }>('/servers/:id/mods/install', async (req) => {
     const user = requireUser(req);
     const { server } = await loadServerFor(user, req.params.id, 'manager');
+    assertMinecraft(server, 'Mods and plugins');
     const body = parse(
       z.object({
         source: z.enum(['curseforge', 'modrinth', 'hangar']),
@@ -44,6 +47,7 @@ export default async function modRoutes(app: FastifyInstance): Promise<void> {
   app.patch<{ Params: { id: string; file: string } }>('/servers/:id/mods/:file', async (req) => {
     const user = requireUser(req);
     const { server } = await loadServerFor(user, req.params.id, 'manager');
+    assertMinecraft(server, 'Mods and plugins');
     const body = parse(z.object({ enabled: z.boolean() }), req.body);
     const file = await mods.toggleMod(server, req.params.file, body.enabled);
     await audit(req, 'server.mod_toggled', 'server', server.id, { file, enabled: body.enabled });
@@ -53,6 +57,7 @@ export default async function modRoutes(app: FastifyInstance): Promise<void> {
   app.delete<{ Params: { id: string; file: string } }>('/servers/:id/mods/:file', async (req) => {
     const user = requireUser(req);
     const { server } = await loadServerFor(user, req.params.id, 'manager');
+    assertMinecraft(server, 'Mods and plugins');
     await mods.deleteMod(server, req.params.file);
     await audit(req, 'server.mod_removed', 'server', server.id, { file: req.params.file });
     return { ok: true };
@@ -61,6 +66,7 @@ export default async function modRoutes(app: FastifyInstance): Promise<void> {
   app.get<{ Params: { id: string } }>('/servers/:id/mods/updates', async (req) => {
     const user = requireUser(req);
     const { server } = await loadServerFor(user, req.params.id, 'viewer');
+    assertMinecraft(server, 'Mods and plugins');
     return mods.checkUpdates(server, await detected(server));
   });
 }

@@ -21,19 +21,25 @@ export function MemoryField({
   onChange,
   maxMb,
   quotaError,
+  minMb = MEMORY_SLIDER_MIN_MB,
+  hint,
 }: {
   valueMb: number;
   onChange: (mb: number) => void;
   /** Highest value that may be typed. */
   maxMb: number;
   quotaError?: string | null;
+  /** Lowest value (slider start and typed minimum). */
+  minMb?: number;
+  /** Replaces the default (Minecraft) sizing hint. */
+  hint?: string;
 }) {
   const t = useT();
   const id = useId();
   const [draft, setDraft] = useState<string | null>(null);
-  const sliderMax = Math.max(MEMORY_SLIDER_MIN_MB, Math.min(MEMORY_SLIDER_MAX_MB, maxMb));
+  const sliderMax = Math.max(minMb, Math.min(MEMORY_SLIDER_MAX_MB, maxMb));
   const typedMaxGb = maxMb / 1024;
-  const minGb = MEMORY_SLIDER_MIN_MB / 1024;
+  const minGb = minMb / 1024;
 
   const parsed = draft === null ? null : Number(draft.replace(',', '.'));
   const draftError =
@@ -53,7 +59,7 @@ export function MemoryField({
     const gb = Number(draft.replace(',', '.'));
     if (Number.isFinite(gb) && draft.trim() !== '') {
       const mb = Math.round((gb * 1024) / MEMORY_STEP_MB) * MEMORY_STEP_MB;
-      onChange(Math.min(Math.max(mb, MEMORY_SLIDER_MIN_MB), Math.max(MEMORY_SLIDER_MIN_MB, Math.floor(maxMb / MEMORY_STEP_MB) * MEMORY_STEP_MB)));
+      onChange(Math.min(Math.max(mb, minMb), Math.max(minMb, Math.floor(maxMb / MEMORY_STEP_MB) * MEMORY_STEP_MB)));
     }
     setDraft(null);
   };
@@ -66,7 +72,7 @@ export function MemoryField({
       <div className="flex items-center gap-3">
         <input
           type="range"
-          min={MEMORY_SLIDER_MIN_MB}
+          min={minMb}
           max={sliderMax}
           step={MEMORY_STEP_MB}
           value={Math.min(valueMb, sliderMax)}
@@ -106,7 +112,7 @@ export function MemoryField({
         </div>
       </div>
       <span id={`${id}-msg`} className={clsx('mt-1 block text-xs', error ? 'text-danger' : 'text-muted')} role={error ? 'alert' : undefined}>
-        {error ?? `${t('wizard.memoryHint')} ${maxMb > MEMORY_SLIDER_MAX_MB ? t('wizard.memoryTypeMore', { max: formatMb(maxMb) }) : ''}`}
+        {error ?? `${hint ?? t('wizard.memoryHint')} ${maxMb > MEMORY_SLIDER_MAX_MB ? t('wizard.memoryTypeMore', { max: formatMb(maxMb) }) : ''}`}
       </span>
     </div>
   );

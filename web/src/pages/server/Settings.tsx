@@ -1,15 +1,19 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { Plus, Save, Trash2, X } from 'lucide-react';
 import { serversApi } from '@/api';
 import { useT } from '@/i18n';
 import { isFull } from '@/lib/access';
+import { serverCaps } from '@/lib/games';
 import { qk } from '@/lib/queries';
 import { toast } from '@/stores/toast';
 import { confirm } from '@/components/feedback';
 import { Button, Field, IconButton, Section, Toggle } from '@/components/ui';
 import { LanAnnounceField } from '../create/LanAnnounceField';
+import { TerrariaConfigFields } from '../create/TerrariaConfigStep';
+import { toTerrariaPatch, trFromConfig, validateTr, type TrForm } from '../create/terrariaForm';
+import { TerrariaWorlds, useTerrariaWorlds } from './TerrariaWorlds';
 import { useServerCtx } from './ServerLayout';
 
 export default function ServerSettings() {
@@ -32,21 +36,44 @@ export default function ServerSettings() {
   const [env, setEnv] = useState<Array<[string, string]>>(Object.entries(server.env ?? {}));
   const [saving, setSaving] = useState(false);
   const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm({ ...form, [k]: v });
+  const caps = serverCaps(server);
+  const [tr, setTr] = useState<TrForm>(() => trFromConfig(server.terraria));
+  const setTrField = <K extends keyof TrForm>(k: K, v: TrForm[K]) => setTr((f) => ({ ...f, [k]: v }));
+  const worlds = useTerrariaWorlds(server.id, caps.hasTerrariaConfig);
+  // World creation values only matter until the world file exists.
+  const worldLocked = !!worlds.data?.length || !!server.terraria?.worldFile;
+  const trErrors = useMemo(() => {
+    if (!caps.hasTerrariaConfig) return {};
+    const e = validateTr(tr, server.type, t);
+    if (worldLocked) {
+      delete e.worldName;
+      delete e.seed;
+    }
+    return e;
+  }, [caps.hasTerrariaConfig, tr, server.type, t, worldLocked]);
+  const memoryInvalid = !Number.isFinite(form.memoryMb) || form.memoryMb < caps.minMemoryMb;
+  const invalid = Object.keys(trErrors).length > 0 || (caps.hasTerrariaConfig && memoryInvalid);
 
   const save = async () => {
+    if (invalid) return;
     setSaving(true);
     try {
       await serversApi.update(server.id, {
         name: form.name.trim(),
-        mcVersion: form.mcVersion.trim(),
-        loaderVersion: form.loaderVersion.trim() || null,
+        ...(caps.hasJava
+          ? {
+              mcVersion: form.mcVersion.trim(),
+              loaderVersion: form.loaderVersion.trim() || null,
+            }
+          : {}),
         memoryMb: Number(form.memoryMb),
         cpu: Number(form.cpu),
         diskMb: form.diskMb === '' ? null : Number(form.diskMb),
         port: Number(form.port),
-        javaArgs: form.javaArgs.trim() || null,
+        ...(caps.hasJava ? { javaArgs: form.javaArgs.trim() || null } : {}),
         autoRestart: form.autoRestart,
-        ...(server.type === 'BEDROCK' ? {} : { lanAnnounce: form.lanAnnounce }),
+        ...(caps.hasJava && server.type !== 'BEDROCK' ? { lanAnnounce: form.lanAnnounce } : {}),
+        ...(caps.hasTerrariaConfig ? { terraria: toTerrariaPatch(tr, server.type, worldLocked) } : {}),
         env: Object.fromEntries(env.filter(([k]) => k.trim()).map(([k, v]) => [k.trim(), v])),
       });
       await qc.invalidateQueries({ queryKey: qk.server(server.id) });
@@ -85,14 +112,29 @@ export default function ServerSettings() {
           <Field label={t('server.name')} className="sm:col-span-2">
             <input className="input" value={form.name} onChange={(e) => set('name', e.target.value)} />
           </Field>
-          <Field label={t('server.mcVersion')} hint={t('settings.versionHint')}>
-            <input className="input font-mono" value={form.mcVersion} onChange={(e) => set('mcVersion', e.target.value)} />
-          </Field>
-          <Field label={t('server.loaderVersion')}>
-            <input className="input font-mono" value={form.loaderVersion} onChange={(e) => set('loaderVersion', e.target.value)} />
-          </Field>
-          <Field label={t('server.memory') + ' (MB)'}>
-            <input className="input" type="number" min={512} step={256} value={form.memoryMb} onChange={(e) => set('memoryMb', Number(e.target.value))} />
+          {caps.hasJava && (
+            <>
+              <Field label={t('server.mcVersion')} hint={t('settings.versionHint')}>
+                <input className="input font-mono" value={form.mcVersion} onChange={(e) => set('mcVersion', e.target.value)} />
+              </Field>
+              <Field label={t('server.loaderVersion')}>
+                <input className="input font-mono" value={form.loaderVersion} onChange={(e) => set('loaderVersion', e.target.value)} />
+              </Field>
+            </>
+          )}
+          <Field
+            label={t('server.memory') + ' (MB)'}
+            error={caps.hasTerrariaConfig && memoryInvalid ? t('settings.memoryMin', { min: caps.minMemoryMb }) : null}
+          >
+            <input
+              className="input"
+              type="number"
+              min={512}
+              step={256}
+              value={form.memoryMb}
+              aria-invalid={caps.hasTerrariaConfig && memoryInvalid}
+              onChange={(e) => set('memoryMb', Number(e.target.value))}
+            />
           </Field>
           <Field label={t('server.cpu')}>
             <input className="input" type="number" min={0.5} step={0.5} value={form.cpu} onChange={(e) => set('cpu', Number(e.target.value))} />
@@ -103,19 +145,43 @@ export default function ServerSettings() {
           <Field label={t('server.port')}>
             <input className="input" type="number" min={1} max={65535} value={form.port} onChange={(e) => set('port', Number(e.target.value))} />
           </Field>
-          <Field label={t('server.javaArgs')} className="sm:col-span-2" hint={t('settings.javaArgsHint')}>
-            <input className="input font-mono text-[13px]" value={form.javaArgs} onChange={(e) => set('javaArgs', e.target.value)} placeholder="-XX:+UseG1GC" />
-          </Field>
+          {caps.hasJava && (
+            <Field label={t('server.javaArgs')} className="sm:col-span-2" hint={t('settings.javaArgsHint')}>
+              <input className="input font-mono text-[13px]" value={form.javaArgs} onChange={(e) => set('javaArgs', e.target.value)} placeholder="-XX:+UseG1GC" />
+            </Field>
+          )}
           <div className="sm:col-span-2">
             <Toggle checked={form.autoRestart} onChange={(v) => set('autoRestart', v)} label={t('server.autoRestart')} />
           </div>
-          <div className="sm:col-span-2">
-            <LanAnnounceField checked={form.lanAnnounce} onChange={(v) => set('lanAnnounce', v)} bedrock={server.type === 'BEDROCK'} />
-          </div>
+          {caps.hasJava && (
+            <div className="sm:col-span-2">
+              <LanAnnounceField checked={form.lanAnnounce} onChange={(v) => set('lanAnnounce', v)} bedrock={server.type === 'BEDROCK'} />
+            </div>
+          )}
         </div>
       </Section>
 
-      <Section title={t('settings.env')} description={t('settings.envBody')}>
+      {caps.hasTerrariaConfig && (
+        <section aria-labelledby="tr-settings" className="space-y-3">
+          <div>
+            <h2 id="tr-settings" className="text-base font-semibold">
+              {t('tr.settingsTitle')}
+            </h2>
+            <p className="mt-0.5 text-sm text-muted">{t('tr.settingsBody')}</p>
+          </div>
+          <TerrariaConfigFields
+            form={tr}
+            set={setTrField}
+            errors={trErrors}
+            type={server.type}
+            worldLocked={worldLocked}
+            worldLockedHint={t('tr.worldExists')}
+          />
+          <TerrariaWorlds server={server} worlds={worlds} />
+        </section>
+      )}
+
+      <Section title={t('settings.env')} description={caps.hasTerrariaConfig ? t('settings.envBodyTr') : t('settings.envBody')}>
         <div className="space-y-2">
           {env.map(([k, v], i) => (
             <div key={i} className="flex gap-2">
@@ -133,7 +199,7 @@ export default function ServerSettings() {
       </Section>
 
       <div className="flex justify-end">
-        <Button variant="primary" loading={saving} onClick={() => void save()} icon={<Save className="h-4 w-4" />}>
+        <Button variant="primary" loading={saving} disabled={invalid} onClick={() => void save()} icon={<Save className="h-4 w-4" />}>
           {t('common.saveChanges')}
         </Button>
       </div>

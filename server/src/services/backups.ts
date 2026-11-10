@@ -5,6 +5,7 @@ import * as tar from 'tar';
 import { config } from '../config.js';
 import { query, queryOne } from '../db/pool.js';
 import { conflict, errorMessage, notFound } from '../lib/errors.js';
+import { gameOf } from '../lib/games.js';
 import { serverDir } from './docker.js';
 import { bus } from './events.js';
 import * as runtime from './runtime.js';
@@ -78,7 +79,10 @@ export async function createBackup(
   try {
     await fsp.mkdir(dir, { recursive: true });
     await fsp.mkdir(serverDir(server.id), { recursive: true });
-    if (runtime.getStatus(server.id) === 'running') {
+    if (gameOf(server.type) === 'terraria') {
+      // No RCON save-off/on: ask Terraria to write the world (`save`) before archiving.
+      await runtime.saveWorld(server.id);
+    } else if (runtime.getStatus(server.id) === 'running') {
       paused = (await runtime.tryRcon(server.id, 'save-off')) !== null;
       if (paused) {
         await runtime.tryRcon(server.id, 'save-all flush');

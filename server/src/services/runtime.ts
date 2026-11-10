@@ -5,9 +5,11 @@ import type { FastifyBaseLogger } from 'fastify';
 import { query, queryOne } from '../db/pool.js';
 import { badRequest, conflict, errorMessage, notFound, unavailable } from '../lib/errors.js';
 import { dirSize } from '../lib/fsutil.js';
+import { gameOf, terrariaVariant, type Game } from '../lib/games.js';
 import { parseRejectedJoin, parseUuidLine } from '../lib/joinAttempts.js';
 import { detectMcVersion } from '../lib/mcVersion.js';
 import { parseProperties } from '../lib/properties.js';
+import { cleanTerrariaLine, parseTerrariaLine } from '../lib/terrariaLog.js';
 import {
   containerName,
   createServerContainer,
@@ -37,12 +39,16 @@ interface DockerSample {
 
 interface RuntimeState {
   id: string;
+  /** Game of the server (decides how lines are cleaned/analysed). */
+  game: Game;
   status: ServerStatus;
   startedAt: number | null;
   logs: string[];
   partial: string;
   logStream: Readable | null;
   statsStream: Readable | null;
+  /** Attached stdin of a Terraria/TShock container (console commands are written to it). */
+  stdin: NodeJS.ReadWriteStream | null;
   docker: DockerSample | null;
   rcon: RconClient | null;
   rconFailedAt: number;
@@ -75,12 +81,14 @@ function state(id: string): RuntimeState {
   if (!s) {
     s = {
       id,
+      game: 'minecraft',
       status: 'stopped',
       startedAt: null,
       logs: [],
       partial: '',
       logStream: null,
       statsStream: null,
+      stdin: null,
       docker: null,
       rcon: null,
       rconFailedAt: 0,
@@ -143,9 +151,19 @@ export function getStatus(id: string): ServerStatus {
 // Logs
 // ---------------------------------------------------------------------------
 
-function pushLine(s: RuntimeState, rawLine: string): void {
+/** True when the server's container output is a raw TTY stream (no docker frame headers). */
+function ttyFor(server: ServerRow): boolean {
+  return server.type === 'BEDROCK' || !!terrariaVariant(server.type)?.tty;
+}
+
+function cleanLine(game: Game, rawLine: string): string {
   // eslint-disable-next-line no-control-regex
-  const line = rawLine.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').replace(/\r$/, '');
+  if (game !== 'terraria') return rawLine.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').replace(/\r$/, '');
+  return cleanTerrariaLine(rawLine);
+}
+
+function pushLine(s: RuntimeState, rawLine: string): void {
+  const line = cleanLine(s.game, rawLine);
   if (!line) return;
   s.logs.push(line);
   if (s.logs.length > LOG_BUFFER) s.logs.splice(0, s.logs.length - LOG_BUFFER);
@@ -159,7 +177,8 @@ export function systemLog(id: string, line: string): void {
 }
 
 function feed(s: RuntimeState, chunk: string): void {
-  const data = s.partial + chunk;
+  // Terraria redraws progress lines with a bare carriage return.
+  const data = s.partial + (s.game === 'terraria' ? chunk.replace(/\r(?!\n)/g, '\n') : chunk);
   const lines = data.split('\n');
   s.partial = lines.pop() ?? '';
   for (const l of lines) pushLine(s, l);
@@ -171,7 +190,29 @@ const RE_LEFT = /: (\.?[A-Za-z0-9_]{1,16}) left the game/;
 const RE_BEDROCK_JOIN = /Player connected: ([^,]+),/;
 const RE_BEDROCK_LEFT = /Player disconnected: ([^,]+),/;
 
+function analyzeTerrariaLine(s: RuntimeState, line: string): void {
+  const e = parseTerrariaLine(line);
+  if (!e) return;
+  switch (e.kind) {
+    case 'ready':
+      if (s.status === 'starting' || s.status === 'installing') void setStatus(s.id, 'running');
+      return;
+    case 'version':
+      s.version ??= e.version;
+      return;
+    case 'join':
+      if (s.players.size < 1000) s.players.add(e.player);
+      bus.emit('notify', s.id, 'player.join', { player: e.player });
+      return;
+    case 'leave':
+      s.players.delete(e.player);
+      bus.emit('notify', s.id, 'player.leave', { player: e.player });
+      return;
+  }
+}
+
 function analyzeLine(s: RuntimeState, line: string): void {
+  if (s.game === 'terraria') return analyzeTerrariaLine(s, line);
   if (s.status === 'starting' && /^\[(init|mc-image-helper)\]/.test(line)) void setStatus(s.id, 'installing');
   if (s.status === 'installing' && /Starting minecraft server|Loading libraries|Starting net\.minecraft|Environment:/i.test(line))
     void setStatus(s.id, 'starting');
@@ -242,10 +283,11 @@ export async function getLogs(server: ServerRow, tail: number): Promise<string[]
       stderr: true,
       tail,
     })) as unknown as Buffer;
-    return demuxBuffer(Buffer.isBuffer(buf) ? buf : Buffer.from(String(buf)))
+    const game = gameOf(server.type);
+    const text = demuxBuffer(Buffer.isBuffer(buf) ? buf : Buffer.from(String(buf)));
+    return (game === 'terraria' ? text.replace(/\r(?!\n)/g, '\n') : text)
       .split('\n')
-      // eslint-disable-next-line no-control-regex
-      .map((l) => l.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').replace(/\r$/, ''))
+      .map((l) => cleanLine(game, l))
       .filter(Boolean)
       .slice(-tail);
   } catch {
@@ -339,6 +381,11 @@ export async function sendCommand(serverId: string, command: string): Promise<st
   }
   const cmd = command.replace(/^\//, '').trim();
   if (!cmd) throw badRequest('Empty command');
+  if (gameOf(server.type) === 'terraria') {
+    await terrariaConsole(server, s, cmd);
+    pushLine(s, `> ${cmd}`);
+    return '';
+  }
   if (server.type === 'BEDROCK') {
     await execIn(server.container_id, ['send-command', ...cmd.split(/\s+/)]);
     pushLine(s, `> ${cmd}`);
@@ -355,6 +402,79 @@ export async function sendCommand(serverId: string, command: string): Promise<st
     s.rcon = null;
     throw unavailable(`RCON error: ${errorMessage(err)}`, 'rcon_error');
   }
+}
+
+// ---------------------------------------------------------------------------
+// Terraria console (attached stdin or `inject`)
+// ---------------------------------------------------------------------------
+
+/** Attach to the container's stdin and keep the stream for console commands. */
+async function attachStdin(s: RuntimeState, containerId: string): Promise<NodeJS.ReadWriteStream> {
+  s.stdin?.end();
+  s.stdin = null;
+  const stream = await docker()
+    .getContainer(containerId)
+    .attach({ stream: true, stdin: true, stdout: false, stderr: false, hijack: true });
+  s.stdin = stream;
+  const drop = () => {
+    if (s.stdin === stream) s.stdin = null;
+  };
+  stream.on('error', drop);
+  stream.on('end', drop);
+  stream.on('close', drop);
+  return stream;
+}
+
+/**
+ * Send one console line to a Terraria server. Control characters are refused so a command can
+ * never smuggle a second line (stdin) or confuse `inject`.
+ */
+async function terrariaConsole(server: ServerRow, s: RuntimeState, cmd: string): Promise<void> {
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u001f\u007f]/.test(cmd)) throw badRequest('Commands must be a single line', 'invalid_command');
+  const v = terrariaVariant(server.type);
+  if (!v || !server.container_id) throw conflict('Server is not running', 'not_running');
+  try {
+    if (v.console === 'inject') {
+      await execIn(server.container_id, ['inject', cmd]);
+      return;
+    }
+    const stdin = s.stdin ?? (await attachStdin(s, server.container_id));
+    await new Promise<void>((resolve, reject) => stdin.write(`${cmd}\n`, (err) => (err ? reject(err) : resolve())));
+  } catch (err) {
+    s.stdin = null;
+    throw unavailable(`Console error: ${errorMessage(err)}`, 'console_error');
+  }
+}
+
+/** Quietly send a console command to a running Terraria server; false on failure. */
+async function quietTerrariaCommand(server: ServerRow, cmd: string): Promise<boolean> {
+  const s = state(server.id);
+  if (s.status !== 'running' || !server.container_id) return false;
+  try {
+    await terrariaConsole(server, s, cmd);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Ask a running server to flush its world to disk before files are copied (backups, clone).
+ * Terraria: `save` on the console. Minecraft: nothing here (callers keep their RCON flow).
+ * Returns true when a save was requested.
+ */
+export async function saveWorld(serverId: string, waitMs = 3000): Promise<boolean> {
+  if (state(serverId).status !== 'running') return false;
+  const server = await loadServer(serverId);
+  const v = terrariaVariant(server.type);
+  if (!v) return false;
+  const ok = await quietTerrariaCommand(server, v.saveCommand);
+  if (ok) {
+    systemLog(serverId, '[servcrafty] saving the world');
+    await new Promise((r) => setTimeout(r, waitMs));
+  }
+  return ok;
 }
 
 /** RCON command with no logging; returns null on failure. Used by pollers. */
@@ -378,6 +498,8 @@ export async function tryRcon(serverId: string, cmd: string): Promise<string | n
   if (s.status !== 'running') return null;
   const server = await loadServer(serverId);
   if (server.type === 'BEDROCK') return null;
+  // Terraria has no RCON: run the command on the console (used for `say` warnings).
+  if (gameOf(server.type) === 'terraria') return (await quietTerrariaCommand(server, cmd)) ? '' : null;
   return quietRcon(server, cmd);
 }
 
@@ -460,8 +582,38 @@ async function readProps(serverId: string): Promise<Record<string, string>> {
   }
 }
 
+function terrariaStats(server: ServerRow, s: RuntimeState): Stats {
+  const running = s.status === 'running';
+  const alive = ['running', 'starting', 'installing', 'stopping'].includes(s.status);
+  const dockerFresh = alive && s.docker && Date.now() - s.docker.at < 10_000 ? s.docker : null;
+  return {
+    status: s.status,
+    uptimeSec: alive && s.startedAt ? Math.floor((Date.now() - s.startedAt) / 1000) : 0,
+    memory: { usedMb: dockerFresh?.memUsedMb ?? 0, limitMb: dockerFresh?.memLimitMb || server.memory_mb },
+    cpuPercent: dockerFresh?.cpuPercent ?? 0,
+    tps: null,
+    mspt: { avg: null, p95: null },
+    players: {
+      online: running ? s.players.size : 0,
+      max: server.terraria?.maxPlayers ?? 8,
+      list: running ? [...s.players].map((name) => ({ name })) : [],
+    },
+    motd: server.terraria?.motd ?? null,
+    version: s.version,
+    packName: null,
+    packVersion: null,
+    source: 'docker',
+    diskMb: s.diskMb,
+    agent: null,
+  };
+}
+
 export async function getStats(server: ServerRow): Promise<Stats> {
   const s = state(server.id);
+  if (gameOf(server.type) === 'terraria') {
+    await refreshDisk(server, s).catch(() => undefined);
+    return terrariaStats(server, s);
+  }
   const running = s.status === 'running';
   if (running && server.type !== 'BEDROCK' && Date.now() - s.lastRconPoll > 4000) {
     s.lastRconPoll = Date.now();
@@ -533,6 +685,8 @@ function resetRuntime(s: RuntimeState): void {
   s.statsStream?.destroy();
   s.logStream = null;
   s.statsStream = null;
+  s.stdin?.end();
+  s.stdin = null;
   s.rcon?.close();
   s.rcon = null;
   s.docker = null;
@@ -549,6 +703,7 @@ export function start(serverId: string): Promise<void> {
     const s = state(serverId);
     if (['running', 'starting', 'installing'].includes(s.status)) throw conflict('Server is already running', 'already_running');
     await fsp.mkdir(serverDir(serverId), { recursive: true });
+    s.game = gameOf(server.type);
     s.expectedStop = false;
     s.logs = [];
     s.version = null;
@@ -562,8 +717,13 @@ export function start(serverId: string): Promise<void> {
       await container.start();
       s.startedAt = Date.now();
       resetRuntime(s);
-      await attachLogs(s, container.id, server.type === 'BEDROCK');
+      await attachLogs(s, container.id, ttyFor(server));
       attachStats(s, container.id, server.cpu);
+      if (terrariaVariant(server.type)?.console === 'stdin') {
+        await attachStdin(s, container.id).catch((err: unknown) =>
+          systemLog(serverId, `[servcrafty] could not attach to the console: ${errorMessage(err)}`),
+        );
+      }
       systemLog(serverId, `[servcrafty] container ${containerName(serverId)} started`);
     } catch (err) {
       systemLog(serverId, `[servcrafty] failed to start: ${errorMessage(err)}`);
@@ -592,15 +752,40 @@ async function stopContainer(server: ServerRow, s: RuntimeState, kill: boolean):
     return;
   }
   await setStatus(server.id, 'stopping');
+  const tv = terrariaVariant(server.type);
+  if (tv && !kill) {
+    // Terraria: `exit` saves the world and quits; give it time before docker stop/kill.
+    if (await sendStopCommand(server, s, tv.stopCommand)) {
+      const stopped = await Promise.race([
+        c.wait({ condition: 'not-running' }).then(
+          () => true,
+          () => false,
+        ),
+        new Promise<boolean>((r) => setTimeout(() => r(false), tv.stopTimeoutSec * 1000).unref()),
+      ]);
+      if (!stopped) systemLog(server.id, `[servcrafty] server did not exit within ${tv.stopTimeoutSec}s; stopping the container`);
+    }
+  }
   try {
     if (kill) await c.kill();
-    else await c.stop({ t: 90 }); // itzg forwards SIGTERM to a graceful "stop"
+    else await c.stop({ t: tv ? 15 : 90 }); // itzg forwards SIGTERM to a graceful "stop"
   } catch (err) {
     if ((err as { statusCode?: number }).statusCode !== 304) throw err; // 304 = already stopped
   }
   await c.wait({ condition: 'not-running' }).catch(() => undefined);
   resetRuntime(s);
   if (await setStatus(server.id, 'stopped')) bus.emit('notify', server.id, 'server.stopped', { reason: kill ? 'kill' : 'stop' });
+}
+
+async function sendStopCommand(server: ServerRow, s: RuntimeState, cmd: string): Promise<boolean> {
+  try {
+    await terrariaConsole(server, s, cmd);
+    pushLine(s, `> ${cmd}`);
+    return true;
+  } catch (err) {
+    systemLog(server.id, `[servcrafty] could not send "${cmd}": ${errorMessage(err)}`);
+    return false;
+  }
 }
 
 export function stop(serverId: string, kill = false): Promise<void> {
@@ -760,6 +945,7 @@ export async function initRuntime(logger: FastifyBaseLogger): Promise<void> {
   for (const server of servers) {
     const s = state(server.id);
     s.status = server.status;
+    s.game = gameOf(server.type);
     if (!dockerOk) {
       if (server.status !== 'stopped') await setStatus(server.id, 'stopped');
       continue;
@@ -771,8 +957,22 @@ export async function initRuntime(logger: FastifyBaseLogger): Promise<void> {
         // Prefill the backlog without re-analyzing old lines, then follow new output only.
         s.logs = [];
         s.logs = await getLogs(server, 500);
-        await attachLogs(s, info.Id, server.type === 'BEDROCK', Math.floor(Date.now() / 1000));
+        await attachLogs(s, info.Id, ttyFor(server), Math.floor(Date.now() / 1000));
         attachStats(s, info.Id, server.cpu);
+        if (gameOf(server.type) === 'terraria') {
+          // Players online before the restart are unknown; rebuild them from the recent log.
+          for (const line of s.logs) {
+            const e = parseTerrariaLine(line);
+            if (e?.kind === 'join') s.players.add(e.player);
+            else if (e?.kind === 'leave') s.players.delete(e.player);
+            else if (e?.kind === 'version') s.version ??= e.version;
+          }
+        }
+        if (terrariaVariant(server.type)?.console === 'stdin') {
+          await attachStdin(s, info.Id).catch((err: unknown) =>
+            logger.warn({ err: errorMessage(err), serverId: server.id }, 'could not re-attach to the console'),
+          );
+        }
         // Assume running if it has been up for a while; log analysis will confirm otherwise.
         s.status = 'starting';
         await setStatus(server.id, Date.now() - s.startedAt > 60_000 ? 'running' : 'starting');
@@ -793,6 +993,7 @@ export async function shutdownRuntime(): Promise<void> {
   for (const s of states.values()) {
     s.logStream?.destroy();
     s.statsStream?.destroy();
+    s.stdin?.end();
     s.rcon?.close();
   }
 }

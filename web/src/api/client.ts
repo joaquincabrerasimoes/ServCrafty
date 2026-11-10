@@ -93,6 +93,46 @@ export async function request<T>(method: string, path: string, opts: RequestOpti
   }
 }
 
+/**
+ * Multipart POST with upload progress (fetch cannot report it). Same error and 401 handling as
+ * `request`. `onProgress` receives a fraction between 0 and 1.
+ */
+export function uploadWithProgress<T>(path: string, form: FormData, opts: { query?: Query; onProgress?: (fraction: number) => void; signal?: AbortSignal } = {}): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', buildUrl(path, opts.query));
+    xhr.withCredentials = true;
+    xhr.setRequestHeader('Accept', 'application/json');
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && e.total > 0) opts.onProgress?.(e.loaded / e.total);
+    };
+    xhr.onerror = () => reject(new ApiError(0, 'network_error', 'Cannot reach the ServCrafty server.'));
+    xhr.onabort = () => reject(new DOMException('Aborted', 'AbortError'));
+    xhr.onload = () => {
+      const text = xhr.responseText;
+      let data: unknown = undefined;
+      if (text) {
+        try {
+          data = JSON.parse(text);
+        } catch {
+          data = text;
+        }
+      }
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(data as T);
+        return;
+      }
+      const d = data as { error?: { code?: string; message?: string }; message?: unknown } | undefined;
+      const code = d?.error?.code ?? `http_${xhr.status}`;
+      const message = d?.error?.message ?? (typeof d?.message === 'string' ? d.message : xhr.statusText || 'Request failed');
+      if (xhr.status === 401) unauthorizedHandler?.();
+      reject(new ApiError(xhr.status, code, message));
+    };
+    opts.signal?.addEventListener('abort', () => xhr.abort(), { once: true });
+    xhr.send(form);
+  });
+}
+
 export const api = {
   get: <T>(path: string, query?: Query, signal?: AbortSignal) => request<T>('GET', path, { query, signal }),
   post: <T>(path: string, body?: unknown, query?: Query) => request<T>('POST', path, { body: body ?? {}, query }),

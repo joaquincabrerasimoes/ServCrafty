@@ -4,7 +4,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { APP_VERSION, config } from '../config.js';
 import { query, queryOne } from '../db/pool.js';
-import { requireAdmin } from '../auth/plugin.js';
+import { requireAdmin, requireUser } from '../auth/plugin.js';
 import { badRequest } from '../lib/errors.js';
 import { formatPortPool, parsePortPool } from '../lib/ports.js';
 import { intQuery, parse } from '../lib/validation.js';
@@ -18,6 +18,8 @@ import {
   getCurseforgeKey,
   getDefaultJavaArgs,
   getPortPoolSpec,
+  getPublicServersHost,
+  normalizeHost,
   getPublicUrl,
   setSetting,
   SettingKeys,
@@ -32,10 +34,17 @@ async function settingsPayload() {
     curseforgeKeySet: !!(await getCurseforgeKey()),
     defaultJavaArgs: await getDefaultJavaArgs(),
     publicUrl: await getPublicUrl(),
+    publicServersHost: await getPublicServersHost(),
   };
 }
 
 export default async function adminRoutes(app: FastifyInstance): Promise<void> {
+  // Readable by any signed-in user: the address players use to reach game servers.
+  app.get('/public-config', async (req) => {
+    requireUser(req);
+    return { publicServersHost: await getPublicServersHost() };
+  });
+
   app.get('/admin/settings', async (req) => {
     requireAdmin(req);
     return settingsPayload();
@@ -51,6 +60,7 @@ export default async function adminRoutes(app: FastifyInstance): Promise<void> {
           defaultJavaArgs: z.string().max(4096),
           publicUrl: z.string().url().or(z.literal('')),
           lanNetworks: z.string().max(1000),
+          publicServersHost: z.string().max(255),
           globalLimits: z.object({
             maxServers: z.number().int().min(1).nullable(),
             maxRamMb: z.number().int().min(256).nullable(),
@@ -90,6 +100,15 @@ export default async function adminRoutes(app: FastifyInstance): Promise<void> {
       if (body.publicUrl) await setSetting(SettingKeys.publicUrl, body.publicUrl.replace(/\/+$/, ''));
       else await deleteSetting(SettingKeys.publicUrl);
       changed.push('publicUrl');
+    }
+    if (body.publicServersHost !== undefined) {
+      const host = normalizeHost(body.publicServersHost);
+      if (host && !/^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$|^[0-9a-f:]+$/i.test(host)) {
+        throw badRequest('Enter a host name or IP address, like play.example.com', 'invalid_public_servers_host');
+      }
+      if (host) await setSetting(SettingKeys.publicServersHost, host);
+      else await deleteSetting(SettingKeys.publicServersHost);
+      changed.push('publicServersHost');
     }
     if (body.lanNetworks !== undefined) {
       const spec = body.lanNetworks.trim();

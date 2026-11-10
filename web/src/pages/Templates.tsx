@@ -8,6 +8,7 @@ import { useT } from '@/i18n';
 import { useAuth } from '@/stores/auth';
 import { formatMb } from '@/lib/format';
 import { qk } from '@/lib/queries';
+import { gameOf } from '@/lib/games';
 import { toast } from '@/stores/toast';
 import { confirm } from '@/components/feedback';
 import { Badge, Button, EmptyState, ErrorState, Field, IconButton, Loading, Modal, PageHeader } from '@/components/ui';
@@ -72,7 +73,7 @@ export default function Templates() {
                 </div>
                 {tp.description && <p className="mt-1 text-sm text-muted">{tp.description}</p>}
                 <dl className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
-                  {c.type && <dd>{t(`type.${c.type}`)} {c.mcVersion ?? ''}</dd>}
+                  {c.type && <dd>{t(`type.${c.type}`)} {gameOf(c.type) === 'minecraft' ? c.mcVersion ?? '' : ''}</dd>}
                   {c.memoryMb && <dd>{formatMb(Number(c.memoryMb))}</dd>}
                   {c.modpack?.name && <dd>{c.modpack.name}</dd>}
                 </dl>

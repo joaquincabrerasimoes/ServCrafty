@@ -5,6 +5,7 @@ import { WifiOff } from 'lucide-react';
 import type { Stats } from '@/api/types';
 import { useT } from '@/i18n';
 import { canOperate } from '@/lib/access';
+import { serverCaps } from '@/lib/games';
 import { formatNumber, formatUptime } from '@/lib/format';
 import { sendCommand } from '@/lib/sendCommand';
 import { useLogs, useStats } from '@/lib/useFallbacks';
@@ -57,9 +58,9 @@ function TickGraph({ history, field }: { history: Sample[]; field: 'mspt' | 'cpu
   );
 }
 
-function PlayerHead({ name }: { name: string }) {
+function PlayerHead({ name, avatar }: { name: string; avatar: boolean }) {
   const [broken, setBroken] = useState(false);
-  if (broken)
+  if (broken || !avatar)
     return <span className="flex h-6 w-6 items-center justify-center rounded-[2px] bg-accent/20 font-mono text-[11px] font-bold text-accent">{name.slice(0, 1).toUpperCase()}</span>;
   return (
     <img
@@ -83,12 +84,12 @@ function StatLine({ label, value, title }: { label: string; value: React.ReactNo
   );
 }
 
-function StatsPanel({ stats, history }: { stats: Stats | null; history: Sample[] }) {
+function StatsPanel({ stats, history, tickStats }: { stats: Stats | null; history: Sample[]; tickStats: boolean }) {
   const t = useT();
   const used = stats?.memory?.usedMb ?? 0;
   const limit = stats?.memory?.limitMb ?? 0;
   const pct = limit ? Math.round((used / limit) * 100) : 0;
-  const hasTick = history.some((s) => s.mspt !== null) || stats?.mspt?.avg != null;
+  const hasTick = tickStats && (history.some((s) => s.mspt !== null) || stats?.mspt?.avg != null);
   return (
     <section className="gui-frame space-y-4">
       <h2 className="gui-legend">{t('overview.stats')}</h2>
@@ -105,11 +106,15 @@ function StatsPanel({ stats, history }: { stats: Stats | null; history: Sample[]
             : t('overview.cpuGraph', { pct: formatNumber(stats?.cpuPercent, 0) })}
         </p>
         <TickGraph history={history} field={hasTick ? 'mspt' : 'cpu'} />
-        {!hasTick && <p className="hint">{t('overview.noTick')}</p>}
+        {!hasTick && tickStats && <p className="hint">{t('overview.noTick')}</p>}
       </div>
       <div className="space-y-1 border-t border-line pt-3">
-        <StatLine label="TPS" value={stats?.tps != null ? formatNumber(stats.tps, 1) : '–'} />
-        <StatLine label={t('overview.p95')} value={stats?.mspt?.p95 != null ? `${formatNumber(stats.mspt.p95, 1)} ms` : '–'} />
+        {tickStats && (
+          <>
+            <StatLine label="TPS" value={stats?.tps != null ? formatNumber(stats.tps, 1) : '–'} />
+            <StatLine label={t('overview.p95')} value={stats?.mspt?.p95 != null ? `${formatNumber(stats.mspt.p95, 1)} ms` : '–'} />
+          </>
+        )}
         <StatLine label="CPU" value={stats ? `${formatNumber(stats.cpuPercent, 0)}%` : '–'} />
         <StatLine label={t('overview.uptime')} value={formatUptime(stats?.uptimeSec)} />
         {stats?.diskMb != null && <StatLine label={t('overview.disk')} value={`${formatNumber(stats.diskMb)} MB`} />}
@@ -123,7 +128,7 @@ function StatsPanel({ stats, history }: { stats: Stats | null; history: Sample[]
   );
 }
 
-function PlayersPanel({ stats }: { stats: Stats | null }) {
+function PlayersPanel({ stats, avatars }: { stats: Stats | null; avatars: boolean }) {
   const t = useT();
   const list = stats?.players?.list ?? [];
   return (
@@ -141,7 +146,7 @@ function PlayersPanel({ stats }: { stats: Stats | null }) {
           <ul>
             {list.map((p) => (
               <li key={p.name} className="flex items-center gap-2.5 rounded-[2px] px-2 py-1 font-mono text-[13px] hover:bg-white/5">
-                <PlayerHead name={p.name} />
+                <PlayerHead name={p.name} avatar={avatars} />
                 {p.name}
               </li>
             ))}
@@ -163,12 +168,13 @@ export default function Overview() {
   const stats = useStats(server.id, live);
   const logs = useLogs(server.id, live);
   const op = canOperate(server.access);
+  const caps = serverCaps(server);
 
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(17rem,22rem)_1fr]">
       <div className="flex flex-col gap-4">
-        <StatsPanel stats={stats} history={live.history} />
-        <PlayersPanel stats={stats} />
+        <StatsPanel stats={stats} history={live.history} tickStats={caps.hasTickStats} />
+        <PlayersPanel stats={stats} avatars={caps.hasPlayerHeads} />
       </div>
       <section className="gui-frame flex min-w-0 flex-col lg:max-h-[calc(100dvh-13rem)]">
         <div className="mb-2 flex items-center justify-between gap-2">

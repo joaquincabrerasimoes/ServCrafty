@@ -8,11 +8,13 @@ import type { Server, ServerStatus } from '@/api/types';
 import { useT } from '@/i18n';
 import { useServers, qk } from '@/lib/queries';
 import { canOperate } from '@/lib/access';
+import { serverGame, variantLabel } from '@/lib/games';
 import { formatMb, formatNumber } from '@/lib/format';
 import { quotaRows } from '@/lib/quota';
 import { Badge, Button, EmptyState, ErrorState, LinkButton, Loading, Meter, PageHeader } from '@/components/ui';
 import { StatusBadge } from '@/components/StatusBadge';
 import { PowerButtons } from '@/components/PowerButtons';
+import { CopyAddress } from '@/components/CopyAddress';
 import { ImportDialog } from '@/components/ImportDialog';
 
 const stripe: Record<ServerStatus, string> = {
@@ -58,9 +60,8 @@ function ServerRow({ server }: { server: Server }) {
           {server.access !== 'owner' && server.access !== 'admin' && <Badge>{t(`access.${server.access}`)}</Badge>}
         </div>
         <div className="mt-0.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted">
-          <span>
-            {t(`type.${server.type}`)} {server.mcVersion}
-          </span>
+          <Badge tone={serverGame(server) === 'minecraft' ? 'neutral' : 'accent'}>{t(`game.${serverGame(server)}`)}</Badge>
+          <span>{variantLabel(server, t, false)}</span>
           {server.modpack?.name && <span className="truncate">{server.modpack.name}</span>}
           <span className="font-mono text-xs">:{server.port}</span>
         </div>
@@ -84,11 +85,10 @@ function ServerRow({ server }: { server: Server }) {
       <div className="w-28 shrink-0">
         <StatusBadge status={server.status} />
       </div>
-      {canOperate(server.access) && (
-        <div className="relative z-10">
-          <PowerButtons server={server} compact />
-        </div>
-      )}
+      <div className="relative z-10 flex items-start gap-2">
+        <CopyAddress server={server} compact />
+        {canOperate(server.access) && <PowerButtons server={server} compact />}
+      </div>
     </div>
   );
 }

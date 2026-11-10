@@ -96,8 +96,42 @@ export const SERVER_TYPES = [
   'BEDROCK',
   'CURSEFORGE',
   'MODRINTH',
+  'TERRARIA',
+  'TSHOCK',
+  'TMODLOADER',
 ] as const;
 export type ServerType = (typeof SERVER_TYPES)[number];
+
+/** The game a server runs; `type` is the variant. Derived from `type` (see lib/games.ts). */
+export type Game = 'minecraft' | 'terraria';
+
+export const TERRARIA_LANGUAGES = ['en-US', 'de-DE', 'it-IT', 'fr-FR', 'es-ES', 'ru-RU', 'zh-Hans', 'pt-BR', 'pl-PL'] as const;
+export type TerrariaLanguage = (typeof TERRARIA_LANGUAGES)[number];
+
+/** Terraria configuration (servers.terraria). World creation values only matter until the world file exists. */
+export interface TerrariaConfig {
+  worldName: string;
+  /** 1 small, 2 medium, 3 large. */
+  size: 1 | 2 | 3;
+  /** 0 normal, 1 expert, 2 master, 3 journey. */
+  difficulty: 0 | 1 | 2 | 3;
+  seed?: string;
+  maxPlayers: number;
+  password?: string;
+  motd?: string;
+  secure: boolean;
+  language?: TerrariaLanguage;
+  /** TMODLOADER only: numeric Steam Workshop ids. */
+  workshopMods?: string[];
+  /** Set by the world import route. */
+  worldFile?: string;
+}
+
+export interface TerrariaWorld {
+  name: string;
+  sizeBytes: number;
+  modifiedAt: string;
+}
 
 export type ServerStatus = 'running' | 'stopped' | 'starting' | 'stopping' | 'crashed' | 'installing';
 export type Access = 'owner' | 'admin' | 'viewer' | 'operator' | 'manager';
@@ -118,7 +152,10 @@ export interface Server {
   ownerId?: string;
   ownerName?: string;
   name: string;
+  /** Always sent by the API; use `serverGame()` which falls back to the type. */
+  game?: Game;
   type: ServerType;
+  /** Minecraft version ("LATEST" for Terraria servers). */
   mcVersion: string;
   loaderVersion?: string | null;
   modpack?: ModpackRef | null;
@@ -129,6 +166,8 @@ export interface Server {
   port: number;
   env?: Record<string, string>;
   minecraft?: MinecraftConfig | null;
+  /** Null for Minecraft servers. */
+  terraria?: TerrariaConfig | null;
   containerId?: string | null;
   status: ServerStatus;
   autoRestart?: boolean;
@@ -151,6 +190,8 @@ export interface CreateServerBody {
   autoRestart?: boolean;
   lanAnnounce?: boolean;
   minecraft?: MinecraftConfig;
+  /** Terraria servers only. */
+  terraria?: Partial<TerrariaConfig>;
   eula: true;
 }
 
@@ -199,7 +240,7 @@ export interface Stats {
   mspt: { avg: number | null; p95: number | null };
   players: { online: number; max: number; list: Array<{ name: string }> };
   motd?: string;
-  /** Minecraft version. */
+  /** Game version (Minecraft version, or the Terraria log banner version). */
   version?: string | null;
   packName?: string | null;
   packVersion?: string | null;
@@ -338,6 +379,8 @@ export interface AdminSettings {
   curseforgeKey?: string;
   defaultJavaArgs?: string;
   publicUrl?: string;
+  /** Host name players use to reach game servers from outside. */
+  publicServersHost?: string;
 }
 
 export interface PortEntry {

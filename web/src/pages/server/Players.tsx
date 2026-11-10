@@ -6,6 +6,7 @@ import { serversApi } from '@/api';
 import type { PlayerAction, PlayerList } from '@/api/types';
 import { useT, type TKey } from '@/i18n';
 import { canOperate } from '@/lib/access';
+import { serverCaps } from '@/lib/games';
 import { formatRelative } from '@/lib/format';
 import { useStats } from '@/lib/useFallbacks';
 import { toast } from '@/stores/toast';
@@ -90,9 +91,10 @@ function JoinAttempts({ serverId, op }: { serverId: string; op: boolean }) {
   );
 }
 
-function Lists({ serverId, op }: { serverId: string; op: boolean }) {
+/** `banOnly`: games without operators or a whitelist (Terraria) only show the ban list, without an add form. */
+function Lists({ serverId, op, banOnly }: { serverId: string; op: boolean; banOnly?: boolean }) {
   const t = useT();
-  const [list, setList] = useState<PlayerList>('whitelist');
+  const [list, setList] = useState<PlayerList>(banOnly ? 'banned' : 'whitelist');
   const [name, setName] = useState('');
   const act = usePlayerAction(serverId);
   const cfg = LISTS.find((l) => l.id === list)!;
@@ -107,22 +109,25 @@ function Lists({ serverId, op }: { serverId: string; op: boolean }) {
 
   return (
     <Section
-      title={t('players.lists')}
+      title={banOnly ? t('players.list.banned') : t('players.lists')}
+      description={banOnly ? t('players.bannedHintTr') : undefined}
       actions={
-        <div className="inline-flex rounded-block border border-line p-0.5">
-          {LISTS.map((l) => (
-            <button
-              key={l.id}
-              onClick={() => setList(l.id)}
-              className={clsx('h-7 rounded-[2px] px-2.5 text-xs', list === l.id ? 'bg-raised font-medium' : 'text-muted hover:text-ink')}
-            >
-              {t(`players.list.${l.id}` as TKey)}
-            </button>
-          ))}
-        </div>
+        banOnly ? undefined : (
+          <div className="inline-flex rounded-block border border-line p-0.5">
+            {LISTS.map((l) => (
+              <button
+                key={l.id}
+                onClick={() => setList(l.id)}
+                className={clsx('h-7 rounded-[2px] px-2.5 text-xs', list === l.id ? 'bg-raised font-medium' : 'text-muted hover:text-ink')}
+              >
+                {t(`players.list.${l.id}` as TKey)}
+              </button>
+            ))}
+          </div>
+        )
       }
     >
-      {op && (
+      {op && !banOnly && (
         <form onSubmit={add} className="mb-4 flex gap-2">
           <input className="input" placeholder={t('players.name')} value={name} onChange={(e) => setName(e.target.value)} />
           <Button type="submit" icon={<ListPlus className="h-4 w-4" />}>
@@ -164,6 +169,7 @@ export default function Players() {
   const op = canOperate(server.access);
   const act = usePlayerAction(server.id);
   const online = stats?.players?.list ?? [];
+  const mcLists = serverCaps(server).hasOpsWhitelist;
 
   return (
     <div className="grid gap-4 lg:grid-cols-2">
@@ -177,12 +183,16 @@ export default function Players() {
                 <span className="font-mono text-sm">{p.name}</span>
                 {op && (
                   <div className="flex flex-wrap gap-1">
-                    <Button size="sm" variant="ghost" onClick={() => void act(p.name, 'op')} icon={<Crown className="h-4 w-4" />}>
-                      {t('players.action.op')}
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => void act(p.name, 'whitelist-add')} icon={<UserPlus className="h-4 w-4" />}>
-                      {t('players.action.whitelist-add')}
-                    </Button>
+                    {mcLists && (
+                      <>
+                        <Button size="sm" variant="ghost" onClick={() => void act(p.name, 'op')} icon={<Crown className="h-4 w-4" />}>
+                          {t('players.action.op')}
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => void act(p.name, 'whitelist-add')} icon={<UserPlus className="h-4 w-4" />}>
+                          {t('players.action.whitelist-add')}
+                        </Button>
+                      </>
+                    )}
                     <Button size="sm" variant="ghost" onClick={() => void act(p.name, 'kick')} icon={<DoorOpen className="h-4 w-4" />}>
                       {t('players.action.kick')}
                     </Button>
@@ -196,8 +206,8 @@ export default function Players() {
           </ul>
         )}
       </Section>
-      <JoinAttempts serverId={server.id} op={op} />
-      <Lists serverId={server.id} op={op} />
+      {mcLists && <JoinAttempts serverId={server.id} op={op} />}
+      <Lists serverId={server.id} op={op} banOnly={!mcLists} />
     </div>
   );
 }

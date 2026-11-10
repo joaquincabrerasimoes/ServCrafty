@@ -11,6 +11,7 @@ export const SettingKeys = {
   publicUrl: 'public_url',
   globalLimits: 'global_limits',
   lanNetworks: 'lan_networks',
+  publicServersHost: 'public_servers_host',
 } as const;
 
 const cache = new Map<string, unknown>();
@@ -78,4 +79,14 @@ export async function getDefaultJavaArgs(): Promise<string> {
 export async function getPublicUrl(): Promise<string> {
   const v = await getSetting<string>(SettingKeys.publicUrl);
   return (v || config().publicUrl).replace(/\/+$/, '');
+}
+
+/** Host name players use to reach game servers from outside (not the panel URL); '' when not set. */
+export async function getPublicServersHost(): Promise<string> {
+  return (await getSetting<string>(SettingKeys.publicServersHost)) ?? '';
+}
+
+/** Reduce what an admin typed ("https://play.example.com:25565/") to a bare host name or IP. */
+export function normalizeHost(input: string): string {
+  return input.trim().replace(/^[a-z][a-z0-9+.-]*:\/\//i, '').replace(/[/?#].*$/, '').replace(/:\d+$/, '');
 }

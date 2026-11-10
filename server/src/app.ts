@@ -21,6 +21,7 @@ import scheduleRoutes from './routes/schedules.js';
 import serverRoutes from './routes/servers.js';
 import shareRoutes from './routes/shares.js';
 import templateRoutes from './routes/templates.js';
+import terrariaRoutes from './routes/terraria.js';
 import updateRoutes from './routes/update.js';
 import userRoutes from './routes/users.js';
 import webhookRoutes from './routes/webhooks.js';
@@ -98,6 +99,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       await api.register(webhookRoutes);
       await api.register(shareRoutes);
       await api.register(modRoutes);
+      await api.register(terrariaRoutes);
       await api.register(templateRoutes);
       await api.register(catalogRoutes);
     },

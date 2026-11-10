@@ -77,6 +77,7 @@ migrations/001_init.sql
 - **Webhook test** makes one 5 s attempt and reports the network cause (refused, unresolved, timed out, TLS). Real deliveries still retry 3 times.
 - **Stats `version`** is the Minecraft version; `packName`/`packVersion` describe the modpack.
 - **TOTP replay.** The last accepted 30 s time step is stored per user (`users.totp_last_step`); a code at or before it is rejected, so a code cannot be used twice.
+- **Terraria** (SPEC "Other games: Terraria"). `lib/games.ts` is the registry (images, mounts, console kind, capabilities); `lib/terrariaConfig.ts` validates `terraria` and builds the env (TERRARIA, TMODLOADER) or the command-line args (TSHOCK); `lib/terrariaContainer.ts` builds the container spec. Data layout under the server dir: TERRARIA mounts the whole dir as `/root/.local/share/Terraria` (worlds in `Worlds/`, bans in `banlist.txt`); TSHOCK mounts `tshock/`, `Worlds/`, `plugins/`; TMODLOADER mounts the dir as `/data` (worlds in `tModLoader/Worlds/`) plus `banlist.txt` as `/terraria-server/banlist.txt`. Console commands go to the attached stdin (TERRARIA/TSHOCK; re-attached on panel restart) or `docker exec … inject` (TMODLOADER) and must be one line. Stop sends `exit` and waits up to 60 s before `docker stop`; backups and clone send `save` first. The container memory limit is `memoryMb` itself (no JVM overhead). TShock keeps bans in its own database, so `pardon` answers 400 `unsupported` and the banned list is empty there (use `ban del` on the console).
 - **Export.** `serverpack` leaves out `logs`, `libraries`, `versions` and similar caches. It also leaves out the world unless `?includeWorld=true` is passed. The pack carries a `servcrafty.json` so it can be imported again. Mods that Modrinth or CurseForge don't recognise go into `overrides/mods`. Warnings come back in the `X-ServCrafty-Warnings` header.
 
 ## Self-update and releases
@@ -158,3 +159,5 @@ Besides the spec messages, the socket sends `{type:"command_result", serverId, c
 | `GET /admin/audit` | `{items, total}` |
 | `GET /api/health` | `{ok, db, docker, version}` |
 | Player actions | `{applied:"live"\|"file", output}` |
+| `POST /servers/:id/terraria/world` | `{worldName, worldFile, terraria}` |
+| `GET /servers/:id/lists/banned` (Terraria) | `[{name, ip?}]` |

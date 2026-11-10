@@ -29,7 +29,7 @@ export default function AdminSettings() {
 
   useEffect(() => {
     if (!q.data) return;
-    setForm({ portPool: q.data.portPool, defaultJavaArgs: q.data.defaultJavaArgs ?? '', publicUrl: q.data.publicUrl ?? '', lanNetworks: q.data.lanNetworks ?? '' });
+    setForm({ portPool: q.data.portPool, defaultJavaArgs: q.data.defaultJavaArgs ?? '', publicUrl: q.data.publicUrl ?? '', publicServersHost: q.data.publicServersHost ?? '', lanNetworks: q.data.lanNetworks ?? '' });
     const g = q.data.globalLimits;
     const s = (v: number | null | undefined) => (v == null ? '' : String(v));
     setLimits({ maxServers: s(g?.maxServers), maxRamMb: s(g?.maxRamMb), maxCpu: s(g?.maxCpu), maxDiskMb: s(g?.maxDiskMb) });
@@ -80,6 +80,9 @@ export default function AdminSettings() {
             </Field>
             <Field label={t('admin.publicUrl')} hint={t('admin.publicUrlHint')}>
               <input className="input font-mono" value={form.publicUrl ?? ''} onChange={(e) => setForm({ ...form, publicUrl: e.target.value })} placeholder="https://craft.example.com" />
+            </Field>
+            <Field label={t('admin.publicServersHost')} hint={t('admin.publicServersHostHint')}>
+              <input className="input font-mono" value={form.publicServersHost ?? ''} onChange={(e) => setForm({ ...form, publicServersHost: e.target.value })} placeholder="play.example.com" autoCapitalize="none" spellCheck={false} />
             </Field>
           </div>
         </Section>

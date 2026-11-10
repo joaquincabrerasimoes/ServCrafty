@@ -120,3 +120,33 @@ Admin-only: (1) a dismissible banner in the main layout when `updateAvailable` (
 - Admin setting `globalLimits` `{maxServers,maxRamMb,maxCpu,maxDiskMb}` (null = no cap), in `GET/PUT /api/admin/settings` (also returns `hostUsage`). Caps apply to ALL users' servers combined and also bind admins; checked on create and on edits that grow a resource (400 `host_capacity_exceeded`). With a disk cap set, a server needs a disk limit.
 - `GET /api/account/quota` adds `host: {limits, usage}`; the UI shows each user's effective limit = min(own quota, what the host still has free), and `∞` only when neither exists.
 - `GET /api/servers/:id/join-attempts`, `DELETE /api/servers/:id/join-attempts/:name`: players refused by the whitelist (Java, parsed from the log).
+
+## Other games: Terraria (v0.2.0)
+Binding contract for the multi-game work. Every existing Minecraft behaviour must stay exactly as it is.
+
+**Model.** `servers.game` (`'minecraft'` default | `'terraria'`) says which game a server runs; `servers.type` stays the variant. New types: `TERRARIA` (vanilla), `TSHOCK`, `TMODLOADER`. New JSONB column `servers.terraria` (null for Minecraft). `game` is derived from `type` by one helper (`gameOf(type)`), never trusted from the client; API JSON exposes `game` and `terraria` on every server. Migration `007_terraria.sql` adds the columns and widens the `type` check (existing constraint name `servers_type_check`).
+
+**Images (all `linux/amd64`, pulled on first start like the Minecraft images).**
+| type | image | notes |
+|---|---|---|
+| TERRARIA | `hexlo/terraria-server-docker:latest` | env-driven (lower-case vars), worlds at `/root/.local/share/Terraria/Worlds`, container port 7777/tcp, needs `tty`+`stdin_open`; console = write `<cmd>
+` to the attached stdin (no leading slash); graceful stop = command `exit` (saves) then stop |
+| TSHOCK | `ghcr.io/pryaxis/tshock:latest` | configured by command-line args (`-world /worlds/<file> -autocreate N -worldname .. -seed .. -difficulty N -maxplayers N -password .. -motd ..`), mounts `/tshock` (config, logs), `/worlds`, `/plugins`, ports 7777 (REST 7878 is NOT published), `tty`+`stdin_open`; console via stdin, stop via `exit` |
+| TMODLOADER | `jacobsmile/tmodloader1.4:latest` | env `TMOD_*` (`TMOD_AUTODOWNLOAD`/`TMOD_ENABLEDMODS` = comma-separated Workshop IDs, `TMOD_PASS`, `TMOD_WORLDNAME`, `TMOD_WORLDSIZE`, `TMOD_WORLDSEED`, `TMOD_DIFFICULTY`, `TMOD_MAXPLAYERS`, `TMOD_MOTD`, `TMOD_SECURE`, `TMOD_LANGUAGE`, `TMOD_UPNP=0`), data dir `/data` (worlds in `/data/tModLoader/Worlds`), console via `docker exec <container> inject "<cmd>"`, graceful stop via `inject "exit"` |
+`SERVCRAFTY_IMAGE_TAG` (existing env override) also selects the tag for these images. The image name/tag table lives in ONE place (`server/src/lib/games.ts`).
+
+**Terraria config** (`TerrariaConfig`, zod-strict, `server/src/lib/terrariaConfig.ts`, camelCase):
+`worldName` (1-32 chars `[A-Za-z0-9 _-]`, default "ServCrafty"), `size` 1|2|3 (default 2), `difficulty` 0|1|2|3 (normal/expert/master/journey, default 0), `seed` (optional, <=40 chars `[A-Za-z0-9 _-]`), `maxPlayers` 1-255 (default 8), `password` (optional, <=64 chars, no quotes/backslashes/control chars), `motd` (optional, <=100 chars, no control chars), `secure` bool (default true), `language` (optional, one of en-US de-DE it-IT fr-FR es-ES ru-RU zh-Hans pt-BR pl-PL), `workshopMods` (TMODLOADER only; array of numeric Workshop id strings, max 200; others -> 400). `world` creation values (size/difficulty/seed/worldName) matter only while the world file does not exist (autocreate); password/maxPlayers/motd/secure/language/mods are applied on every start. Invalid -> 400 `invalid_terraria_config`. A server of game `terraria` rejects `minecraft`, `mcVersion` other than `LATEST`, `modpack`, `lanAnnounce`, `javaArgs`; a Minecraft server rejects `terraria`.
+
+**HTTP additions.**
+- `POST /servers` and `PATCH /servers/:id` accept `terraria` (PATCH merges and validates the whole object); `type` selects the variant. Terraria servers: `memoryMb` min 512, port mapped to container 7777/tcp.
+- `GET /servers/:id/terraria/worlds` -> `[{ name, sizeBytes, modifiedAt }]` (`.wld` files in the server's Worlds dir).
+- `POST /servers/:id/terraria/world` (multipart, one `.wld` and optionally its `.twld` companion; max 256 MB; manager level; server must be stopped; refuses to overwrite an existing world of the same name unless `?overwrite=1`) -> `{ worldName }`; the server then starts with `worldFile`/world name set to that file (the route also sets `terraria.worldFile`).
+- Players for Terraria: `GET /servers/:id/players` and `Stats.players.list` come from the log (`<name> has joined.` / `<name> has left.`, see `runtime.ts`), `POST /servers/:id/players/:name/{kick|ban|pardon}` run `kick`/`ban` console commands; `pardon` edits `banlist.txt`; `op`, `deop`, `whitelist-*` -> 400 `unsupported`. `GET /servers/:id/lists/banned` reads `banlist.txt` (names and IPs, one per line, as `{name}`); `ops` and `whitelist` return `[]`.
+- Everything Minecraft-specific answers 400 `unsupported_game` for a Terraria server: properties, mods/plugins catalog install, modpack export, LAN announce. Console commands, power, backups (a `save` command is sent first), schedules, webhooks, sharing, files, stats, logs, clone, delete work for both games.
+- Stats for Terraria: `tps`/`mspt` null, `players` from the log, `source: 'docker'`, `version` from the log banner (`Terraria Server v1.4.4.9`) when seen, memory/cpu from docker stats.
+
+**UI.**
+- Create server starts with a **Game** step (Minecraft | Terraria). Minecraft keeps today's steps. Terraria steps: Game, Type (Vanilla, TShock, tModLoader), Resources (memory default 2048 MB, CPU default 2), World & game settings (name, size, difficulty, seed, max players, password, MOTD, secure; Workshop mod IDs for tModLoader; "Import an existing world" file picker), Review. No Version step.
+- Server pages show only the tabs that apply: Terraria hides Properties, Mods, Export/Import (Transfer) and the Minecraft-specific Settings blocks (Java args, LAN announce, Minecraft config); Settings shows the Terraria config (applied on next start) and for tModLoader the Workshop IDs; Players shows online players with Kick/Ban plus the ban list; Overview hides TPS/tick graphs.
+- Server cards and the page header show the game and variant (translation keys `type.TERRARIA`, `type.TSHOCK`, `type.TMODLOADER`, `game.minecraft`, `game.terraria`).

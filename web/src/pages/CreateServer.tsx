@@ -2,20 +2,24 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
-import { ArrowLeft, ArrowRight, Check, Rocket } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, Pickaxe, RefreshCw, Rocket, Trees } from 'lucide-react';
 import { accountApi, catalogApi, serversApi } from '@/api';
-import type { CatalogProject, CatalogVersion, CreateServerBody, ServerType } from '@/api/types';
+import type { CatalogProject, CatalogVersion, CreateServerBody, Game, ServerType } from '@/api/types';
 import { useT, type TKey } from '@/i18n';
 import { quotaRows } from '@/lib/quota';
 import { toast } from '@/stores/toast';
 import { formatDate, formatMb } from '@/lib/format';
 import { qk } from '@/lib/queries';
-import { Button, ErrorState, Field, PageHeader, Spinner, Toggle } from '@/components/ui';
+import { GAMES, TERRARIA_TYPES, capsOf } from '@/lib/games';
+import { Button, ErrorState, Field, Meter, PageHeader, Spinner, Toggle } from '@/components/ui';
+import { errorMessage } from '@/api/client';
 import { CatalogSearch, ProjectIcon } from '@/components/CatalogSearch';
 import { Combobox, type ComboOption } from '@/components/Combobox';
 import { MEMORY_API_MAX_MB, MemoryField } from './create/MemoryField';
 import { MinecraftConfigStep } from './create/MinecraftConfigStep';
 import { mcDefaults, summarizeMc, toMinecraftConfig, validateMc, type Edition, type McForm } from './create/minecraftForm';
+import { TerrariaConfigFields, WorldFilePicker } from './create/TerrariaConfigStep';
+import { summarizeTr, toTerrariaConfig, trDefaults, validateTr, validateWorldFiles, type TrForm } from './create/terrariaForm';
 
 const GROUPS: Array<{ id: string; types: ServerType[] }> = [
   { id: 'vanilla', types: ['VANILLA'] },
@@ -28,32 +32,42 @@ const GROUPS: Array<{ id: string; types: ServerType[] }> = [
 const isModpack = (t: ServerType) => t === 'CURSEFORGE' || t === 'MODRINTH';
 const hasLoader = (t: ServerType) => ['FABRIC', 'QUILT', 'FORGE', 'NEOFORGE'].includes(t);
 
-const STEPS = ['wizard.stepType', 'wizard.stepVersion', 'wizard.stepResources', 'wizard.stepMinecraft', 'wizard.stepReview'] as const;
-const STEP_TYPE = 0;
-const STEP_VERSION = 1;
-const STEP_RESOURCES = 2;
-const STEP_MINECRAFT = 3;
-const STEP_REVIEW = 4;
+type StepId = 'game' | 'type' | 'version' | 'resources' | 'minecraft' | 'terraria' | 'review';
+const STEPS_BY_GAME: Record<Game, StepId[]> = {
+  minecraft: ['game', 'type', 'version', 'resources', 'minecraft', 'review'],
+  terraria: ['game', 'type', 'resources', 'terraria', 'review'],
+};
+const STEP_LABEL: Record<StepId, TKey> = {
+  game: 'wizard.stepGame',
+  type: 'wizard.stepType',
+  version: 'wizard.stepVersion',
+  resources: 'wizard.stepResources',
+  minecraft: 'wizard.stepMinecraft',
+  terraria: 'wizard.stepWorld',
+  review: 'wizard.stepReview',
+};
+const GAME_ICON: Record<Game, typeof Pickaxe> = { minecraft: Pickaxe, terraria: Trees };
+const DEFAULT_TYPE: Record<Game, ServerType> = { minecraft: 'PAPER', terraria: 'TERRARIA' };
 
-function Stepper({ step }: { step: number }) {
+function Stepper({ steps, step }: { steps: StepId[]; step: number }) {
   const t = useT();
   return (
     <nav aria-label={t('wizard.progress')} className="mb-8">
-      <ol className="grid grid-cols-5 gap-2">
-        {STEPS.map((k, i) => (
+      <ol className="grid gap-2" style={{ gridTemplateColumns: `repeat(${steps.length}, minmax(0, 1fr))` }}>
+        {steps.map((k, i) => (
           <li key={k} className="min-w-0" aria-current={i === step ? 'step' : undefined}>
             <div className={clsx('h-1.5 rounded-[1px]', i <= step ? 'bg-accent' : 'bg-line')} />
             <div className={clsx('mt-2 flex items-center gap-1.5 text-xs sm:text-sm', i === step ? 'font-medium text-ink' : 'text-muted')}>
               <span className="tabular-nums">{i + 1}.</span>
               {/* Narrow screens: only the numbers, plus the current step's name below. */}
-              <span className="hidden truncate sm:inline">{t(k)}</span>
-              <span className="sr-only sm:hidden">{t(k)}</span>
+              <span className="hidden truncate sm:inline">{t(STEP_LABEL[k])}</span>
+              <span className="sr-only sm:hidden">{t(STEP_LABEL[k])}</span>
             </div>
           </li>
         ))}
       </ol>
       <p className="mt-2 text-sm font-medium sm:hidden" aria-hidden="true">
-        {t('wizard.stepOf', { n: step + 1, total: STEPS.length })} · {t(STEPS[step]!)}
+        {t('wizard.stepOf', { n: step + 1, total: steps.length })} · {t(STEP_LABEL[steps[step]!])}
       </p>
     </nav>
   );
@@ -161,6 +175,7 @@ export default function CreateServer() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [step, setStep] = useState(0);
+  const [game, setGame] = useState<Game>('minecraft');
   const [type, setType] = useState<ServerType>('PAPER');
   const [mcVersion, setMcVersion] = useState('LATEST');
   const [loaderVersion, setLoaderVersion] = useState('');
@@ -180,8 +195,21 @@ export default function CreateServer() {
   const edition: Edition = type === 'BEDROCK' ? 'bedrock' : 'java';
   const [mc, setMc] = useState<McForm>(mcDefaults);
   const setMcField = <K extends keyof McForm>(k: K, v: McForm[K]) => setMc((f) => ({ ...f, [k]: v }));
+  // Terraria
+  const [tr, setTr] = useState<TrForm>(trDefaults);
+  const setTrField = <K extends keyof TrForm>(k: K, v: TrForm[K]) => setTr((f) => ({ ...f, [k]: v }));
+  const [worldFiles, setWorldFiles] = useState<File[]>([]);
+  // Once the server exists a failed world upload is retried against it instead of creating another one.
+  const [createdId, setCreatedId] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [uploadError, setUploadError] = useState<unknown>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const firstRender = useRef(true);
+
+  const steps = STEPS_BY_GAME[game];
+  const current = steps[step] ?? 'game';
+  const caps = capsOf(type, game);
+  const terraria = game === 'terraria';
 
   const quota = useQuery({ queryKey: qk.quota, queryFn: accountApi.quota, staleTime: 30_000 });
   // Each row already folds in the host-wide cap, so "free" is what this user can really still take.
@@ -203,15 +231,28 @@ export default function CreateServer() {
   const mcErrors = useMemo(() => validateMc(mc, edition, t), [mc, edition, t]);
   const mcConfig = useMemo(() => toMinecraftConfig(mc, edition), [mc, edition]);
   const cpuValid = Number.isFinite(cpu) && cpu >= 0.1 && cpu <= 256;
+  const importing = terraria && worldFiles.length > 0;
+  const trErrors = useMemo(() => {
+    const e = validateTr(tr, type, t);
+    // An imported world brings its own name, size, difficulty and seed.
+    if (worldFiles.length) {
+      delete e.worldName;
+      delete e.seed;
+    }
+    return e;
+  }, [tr, type, t, worldFiles.length]);
+  const worldFileError = useMemo(() => validateWorldFiles(worldFiles, type, t), [worldFiles, type, t]);
+  const trConfig = useMemo(() => toTerrariaConfig(tr, type), [tr, type]);
 
   const canNext = useMemo(() => {
-    if (step === STEP_VERSION) return modpack ? !!pack && !!packVersion : !!mcVersion;
-    if (step === STEP_RESOURCES)
-      return name.trim().length > 0 && memoryMb >= 1024 && memoryMb <= MEMORY_API_MAX_MB && cpuValid && !ramQuotaError && !cpuQuotaError;
-    if (step === STEP_MINECRAFT) return Object.keys(mcErrors).length === 0;
-    if (step === STEP_REVIEW) return eula;
+    if (current === 'version') return modpack ? !!pack && !!packVersion : !!mcVersion;
+    if (current === 'resources')
+      return name.trim().length > 0 && memoryMb >= caps.minMemoryMb && memoryMb <= MEMORY_API_MAX_MB && cpuValid && !ramQuotaError && !cpuQuotaError;
+    if (current === 'minecraft') return Object.keys(mcErrors).length === 0;
+    if (current === 'terraria') return Object.keys(trErrors).length === 0 && !worldFileError;
+    if (current === 'review') return caps.needsEula ? eula : !worldFileError;
     return true;
-  }, [step, modpack, pack, packVersion, mcVersion, name, memoryMb, cpuValid, ramQuotaError, cpuQuotaError, mcErrors, eula]);
+  }, [current, modpack, pack, packVersion, mcVersion, name, memoryMb, caps, cpuValid, ramQuotaError, cpuQuotaError, mcErrors, trErrors, worldFileError, eula]);
 
   // Move focus to the step heading so keyboard and screen reader users land on the new step.
   useEffect(() => {
@@ -224,6 +265,16 @@ export default function CreateServer() {
     document.querySelector('main')?.scrollTo?.({ top: 0 });
   }, [step]);
 
+  const pickGame = (g: Game) => {
+    if (g === game) return;
+    setGame(g);
+    setType(DEFAULT_TYPE[g]);
+    setPack(null);
+    setPackVersion(null);
+    setWorldFiles([]);
+    setMemoryMb(capsOf(DEFAULT_TYPE[g], g).defaultMemoryMb);
+  };
+
   const pickType = (tp: ServerType) => {
     if ((tp === 'BEDROCK') !== (type === 'BEDROCK')) setMc(mcDefaults()); // option sets differ per edition
     if (tp === 'BEDROCK') setLanAnnounce(false);
@@ -231,37 +282,68 @@ export default function CreateServer() {
     setPack(null);
     setPackVersion(null);
     if (isModpack(tp) && memoryMb < 6144) setMemoryMb(6144);
+    // Only tModLoader worlds come with a .twld companion.
+    if (tp !== 'TMODLOADER') setWorldFiles((fs) => fs.filter((f) => !/\.twld$/i.test(f.name)));
+  };
+
+  const finish = (id: string | null) => navigate(id ? `/servers/${id}` : '/');
+
+  const uploadWorld = async (id: string) => {
+    setUploadError(null);
+    setUploadProgress(0);
+    try {
+      await serversApi.uploadTerrariaWorld(id, worldFiles, false, setUploadProgress);
+      void qc.invalidateQueries({ queryKey: qk.server(id) });
+      toast.success(t('tr.importDone'));
+      return true;
+    } catch (e) {
+      setUploadError(e);
+      toast.error(e);
+      return false;
+    } finally {
+      setUploadProgress(null);
+    }
   };
 
   const submit = async () => {
     setBusy(true);
     try {
-      const body: CreateServerBody = {
-        name: name.trim(),
-        type,
-        mcVersion: modpack ? packMc ?? 'LATEST' : mcVersion,
-        memoryMb,
-        cpu,
-        autoRestart,
-        eula: true,
-      };
-      if (mcConfig) body.minecraft = mcConfig;
-      if (lanAnnounce && edition === 'java') body.lanAnnounce = true;
-      if (hasLoader(type) && loaderVersion.trim()) body.loaderVersion = loaderVersion.trim();
-      if (diskMb) body.diskMb = diskMb;
-      if (port) body.port = port;
-      if (modpack && pack && packVersion) {
-        const source = type === 'CURSEFORGE' ? 'curseforge' : 'modrinth';
-        body.modpack =
-          source === 'curseforge'
-            ? { source, projectId: pack.id, fileId: packVersion.id, name: pack.name }
-            : { source, projectId: pack.id, versionId: packVersion.id, name: pack.name };
+      let id = createdId;
+      if (!id) {
+        const body: CreateServerBody = {
+          name: name.trim(),
+          type,
+          mcVersion: terraria ? 'LATEST' : modpack ? packMc ?? 'LATEST' : mcVersion,
+          memoryMb,
+          cpu,
+          autoRestart,
+          eula: true,
+        };
+        if (terraria) {
+          body.terraria = trConfig;
+        } else {
+          if (mcConfig) body.minecraft = mcConfig;
+          if (lanAnnounce && edition === 'java') body.lanAnnounce = true;
+          if (hasLoader(type) && loaderVersion.trim()) body.loaderVersion = loaderVersion.trim();
+          if (modpack && pack && packVersion) {
+            const source = type === 'CURSEFORGE' ? 'curseforge' : 'modrinth';
+            body.modpack =
+              source === 'curseforge'
+                ? { source, projectId: pack.id, fileId: packVersion.id, name: pack.name }
+                : { source, projectId: pack.id, versionId: packVersion.id, name: pack.name };
+          }
+        }
+        if (diskMb) body.diskMb = diskMb;
+        if (port) body.port = port;
+        const server = await serversApi.create(body);
+        id = server?.id ?? null;
+        await qc.invalidateQueries({ queryKey: qk.servers });
+        void qc.invalidateQueries({ queryKey: qk.quota });
+        toast.success(t('wizard.created', { name: body.name }));
+        if (importing && id) setCreatedId(id);
       }
-      const server = await serversApi.create(body);
-      await qc.invalidateQueries({ queryKey: qk.servers });
-      void qc.invalidateQueries({ queryKey: qk.quota });
-      toast.success(t('wizard.created', { name: body.name }));
-      navigate(server?.id ? `/servers/${server.id}` : '/');
+      if (importing && id && !(await uploadWorld(id))) return;
+      finish(id);
     } catch (e) {
       toast.error(e);
     } finally {
@@ -269,20 +351,75 @@ export default function CreateServer() {
     }
   };
 
+  const reviewRows: string[][] = [
+    [t('wizard.stepGame'), t(`game.${game}`)],
+    [t('server.name'), name],
+    [t('server.type'), t(`type.${type}`)],
+    ...(caps.hasMcVersion
+      ? [[t('server.mcVersion'), modpack ? packMc ?? t('wizard.latest') : mcVersion === 'LATEST' ? t('wizard.latest') : mcVersion]]
+      : []),
+    ...(modpack && pack ? [[t('wizard.modpack'), `${pack.name} · ${packVersion?.name ?? ''}`]] : []),
+    ...(hasLoader(type) ? [[t('server.loaderVersion'), loaderVersion || t('wizard.latest')]] : []),
+    [t('server.memory'), formatMb(memoryMb)],
+    [t('server.cpu'), String(cpu)],
+    [t('server.disk'), diskMb ? formatMb(diskMb) : t('wizard.unlimited')],
+    [t('server.port'), port ? String(port) : t('wizard.auto')],
+    [t('server.autoRestart'), autoRestart ? t('common.yes') : t('common.no')],
+    ...(caps.hasLan ? [[t('lan.label'), lanAnnounce ? t('common.yes') : t('common.no')]] : []),
+  ];
+  const configStep: StepId = terraria ? 'terraria' : 'minecraft';
+  const configRows = terraria
+    ? summarizeTr(trConfig, t, importing ? worldFiles.map((f) => f.name).join(', ') : null)
+    : mcConfig
+      ? summarizeMc(mcConfig, edition, t)
+      : null;
+  const locked = createdId !== null; // the server exists; only the world upload is left
+
   return (
     <div className="mx-auto max-w-3xl">
       <PageHeader title={t('wizard.title')} subtitle={t('wizard.subtitle')} />
-      <Stepper step={step} />
+      <Stepper steps={steps} step={step} />
       <h2 ref={headingRef} tabIndex={-1} className="sr-only">
-        {t(STEPS[step]!)}
+        {t(STEP_LABEL[current])}
       </h2>
-      {serversQuotaFull && (
+      {serversQuotaFull && !locked && (
         <p role="alert" className="mb-5 rounded-md border border-danger/30 bg-danger/5 px-4 py-3 text-sm text-danger">
           {t(serversRow?.hostBound ? 'wizard.hostServers' : 'wizard.quotaServers')}
         </p>
       )}
 
-      {step === STEP_TYPE && (
+      {current === 'game' && (
+        <div className="space-y-4">
+          <div role="group" aria-label={t('wizard.stepGame')} className="grid gap-3 sm:grid-cols-2">
+            {GAMES.map((g) => {
+              const Icon = GAME_ICON[g];
+              const on = game === g;
+              return (
+                <button
+                  key={g}
+                  type="button"
+                  onClick={() => pickGame(g)}
+                  aria-pressed={on}
+                  className={clsx(
+                    'relative flex flex-col items-start gap-3 rounded-md border p-5 text-left',
+                    on ? 'border-accent bg-accent/10' : 'border-line bg-surface hover:border-muted',
+                  )}
+                >
+                  <span className={clsx('flex h-11 w-11 items-center justify-center rounded-block', on ? 'bg-accent text-accent-ink' : 'bg-raised text-muted')}>
+                    <Icon className="h-6 w-6" aria-hidden="true" />
+                  </span>
+                  <span className="text-lg font-semibold">{t(`game.${g}`)}</span>
+                  <span className="text-sm text-muted">{t(`wizard.gameHint.${g}`)}</span>
+                  {on && <Check className="absolute right-3 top-3 h-5 w-5 text-accent" aria-hidden="true" />}
+                </button>
+              );
+            })}
+          </div>
+          <p className="text-sm text-muted">{t('wizard.moreGames')}</p>
+        </div>
+      )}
+
+      {current === 'type' && !terraria && (
         <div className="space-y-6">
           {GROUPS.map((g) => (
             <div key={g.id}>
@@ -310,7 +447,28 @@ export default function CreateServer() {
         </div>
       )}
 
-      {step === STEP_VERSION && (
+      {current === 'type' && terraria && (
+        <div role="group" aria-label={t('wizard.stepType')} className="grid gap-2 sm:grid-cols-3">
+          {TERRARIA_TYPES.map((tp) => (
+            <button
+              key={tp}
+              type="button"
+              onClick={() => pickType(tp)}
+              aria-pressed={type === tp}
+              className={clsx(
+                'relative flex flex-col gap-1 rounded-block border px-3 py-3 text-left text-sm',
+                type === tp ? 'border-accent bg-accent/10' : 'border-line bg-surface hover:border-muted',
+              )}
+            >
+              <span className="pe-5 font-medium">{t(`type.${tp}`)}</span>
+              <span className="text-muted">{t(`wizard.trType.${tp}`)}</span>
+              {type === tp && <Check className="absolute right-2 top-2 h-4 w-4 text-accent" aria-hidden="true" />}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {current === 'version' && (
         <div className="space-y-5">
           {modpack ? (
             <>
@@ -348,15 +506,24 @@ export default function CreateServer() {
         </div>
       )}
 
-      {step === STEP_RESOURCES && (
+      {current === 'resources' && (
         <div className="space-y-5">
           <Field label={t('server.name')}>
-            <input className="input" value={name} onChange={(e) => setName(e.target.value)} maxLength={64} autoFocus placeholder={t('wizard.namePlaceholder')} />
+            <input
+              className="input"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              maxLength={64}
+              autoFocus
+              placeholder={t(terraria ? 'wizard.namePlaceholderTr' : 'wizard.namePlaceholder')}
+            />
           </Field>
           <MemoryField
             valueMb={memoryMb}
             onChange={setMemoryMb}
-            maxMb={Math.max(1024, Math.min(MEMORY_API_MAX_MB, freeRamMb ?? MEMORY_API_MAX_MB))}
+            minMb={caps.minMemoryMb}
+            hint={terraria ? t('wizard.memoryHintTr') : undefined}
+            maxMb={Math.max(caps.minMemoryMb, Math.min(MEMORY_API_MAX_MB, freeRamMb ?? MEMORY_API_MAX_MB))}
             quotaError={ramQuotaError}
           />
           <div className="grid gap-4 sm:grid-cols-3">
@@ -383,42 +550,47 @@ export default function CreateServer() {
         </div>
       )}
 
-      {step === STEP_MINECRAFT && <MinecraftConfigStep form={mc} set={setMcField} errors={mcErrors} edition={edition} modpack={modpack} lanAnnounce={lanAnnounce} onLanAnnounce={setLanAnnounce} />}
+      {current === 'minecraft' && <MinecraftConfigStep form={mc} set={setMcField} errors={mcErrors} edition={edition} modpack={modpack} lanAnnounce={lanAnnounce} onLanAnnounce={setLanAnnounce} />}
 
-      {step === STEP_REVIEW && (
+      {current === 'terraria' && (
+        <div className="space-y-4">
+          <p className="text-sm text-muted">{t('tr.intro')}</p>
+          <TerrariaConfigFields
+            form={tr}
+            set={setTrField}
+            errors={trErrors}
+            type={type}
+            worldLocked={importing}
+            worldLockedHint={t('tr.importLocksWorld')}
+            worldSlot={<WorldFilePicker files={worldFiles} onChange={setWorldFiles} type={type} error={worldFileError} />}
+          />
+        </div>
+      )}
+
+      {current === 'review' && (
         <div className="space-y-5">
           <dl className="panel divide-y divide-line text-sm">
-            {[
-              [t('server.name'), name],
-              [t('server.type'), t(`type.${type}`)],
-              [t('server.mcVersion'), modpack ? packMc ?? t('wizard.latest') : mcVersion === 'LATEST' ? t('wizard.latest') : mcVersion],
-              ...(modpack && pack ? [[t('wizard.modpack'), `${pack.name} · ${packVersion?.name ?? ''}`]] : []),
-              ...(hasLoader(type) ? [[t('server.loaderVersion'), loaderVersion || t('wizard.latest')]] : []),
-              [t('server.memory'), formatMb(memoryMb)],
-              [t('server.cpu'), String(cpu)],
-              [t('server.disk'), diskMb ? formatMb(diskMb) : t('wizard.unlimited')],
-              [t('server.port'), port ? String(port) : t('wizard.auto')],
-              [t('server.autoRestart'), autoRestart ? t('common.yes') : t('common.no')],
-              ...(edition === 'java' ? [[t('lan.label'), lanAnnounce ? t('common.yes') : t('common.no')]] : []),
-            ].map(([k, v]) => (
+            {reviewRows.map(([k, v]) => (
               <div key={k} className="flex justify-between gap-4 px-4 py-2.5">
                 <dt className="text-muted">{k}</dt>
                 <dd className="min-w-0 break-words text-end font-medium">{v}</dd>
               </div>
             ))}
           </dl>
-          <section aria-labelledby="review-mc" className="panel text-sm">
+          <section aria-labelledby="review-config" className="panel text-sm">
             <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-2">
-              <h3 id="review-mc" className="text-base font-semibold">
-                {t('wizard.stepMinecraft')}
+              <h3 id="review-config" className="text-base font-semibold">
+                {t(STEP_LABEL[configStep])}
               </h3>
-              <Button size="sm" variant="ghost" onClick={() => setStep(STEP_MINECRAFT)}>
-                {t('common.edit')}
-              </Button>
+              {!locked && (
+                <Button size="sm" variant="ghost" onClick={() => setStep(steps.indexOf(configStep))}>
+                  {t('common.edit')}
+                </Button>
+              )}
             </div>
-            {mcConfig ? (
+            {configRows ? (
               <dl className="divide-y divide-line">
-                {summarizeMc(mcConfig, edition, t).map(([k, v]) => (
+                {configRows.map(([k, v]) => (
                   <div key={k} className="flex justify-between gap-4 px-4 py-2.5">
                     <dt className="shrink-0 text-muted">{k}</dt>
                     <dd className="min-w-0 break-words text-end font-medium">{v}</dd>
@@ -429,26 +601,61 @@ export default function CreateServer() {
               <p className="px-4 py-3 text-muted">{t('mc.allDefaults')}</p>
             )}
           </section>
-          <label className="flex items-start gap-3 rounded-md border border-line bg-surface p-4 text-sm">
-            <input type="checkbox" className="mt-0.5 h-4 w-4 accent-[rgb(var(--accent))]" checked={eula} onChange={(e) => setEula(e.target.checked)} />
-            <span>
-              {t('wizard.eula')}{' '}
-              <a href="https://aka.ms/MinecraftEULA" target="_blank" rel="noreferrer" className="text-accent underline">
-                aka.ms/MinecraftEULA
-              </a>
-            </span>
-          </label>
+          {caps.needsEula && (
+            <label className="flex items-start gap-3 rounded-md border border-line bg-surface p-4 text-sm">
+              <input type="checkbox" className="mt-0.5 h-4 w-4 accent-[rgb(var(--accent))]" checked={eula} onChange={(e) => setEula(e.target.checked)} />
+              <span>
+                {t('wizard.eula')}{' '}
+                <a href="https://aka.ms/MinecraftEULA" target="_blank" rel="noreferrer" className="text-accent underline">
+                  aka.ms/MinecraftEULA
+                </a>
+              </span>
+            </label>
+          )}
+          {uploadProgress !== null && (
+            <div className="panel space-y-2 p-4 text-sm" aria-live="polite">
+              <p>{t('tr.uploading', { pct: Math.round(uploadProgress * 100) })}</p>
+              <Meter value={Math.round(uploadProgress * 100)} max={100} />
+            </div>
+          )}
+          {locked && uploadProgress === null && !!uploadError && (
+            <div role="alert" className="space-y-3 rounded-md border border-danger/30 bg-danger/5 p-4 text-sm">
+              <p className="font-medium text-danger">{t('tr.uploadFailed', { error: errorMessage(uploadError) })}</p>
+              <p className="text-muted">{t('tr.uploadFailedBody')}</p>
+              <WorldFilePicker files={worldFiles} onChange={setWorldFiles} type={type} error={worldFileError} disabled={busy} />
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" onClick={() => finish(createdId)}>
+                  {t('tr.openWithoutWorld')}
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
       <div className="mt-8 flex justify-between gap-2 border-t border-line pt-5">
-        <Button variant="ghost" onClick={() => (step === STEP_TYPE ? navigate(-1) : setStep(step - 1))} icon={<ArrowLeft className="h-4 w-4 rtl:-scale-x-100" />}>
-          {step === STEP_TYPE ? t('common.cancel') : t('common.back')}
+        <Button
+          variant="ghost"
+          disabled={locked}
+          onClick={() => (step === 0 ? navigate(-1) : setStep(step - 1))}
+          icon={<ArrowLeft className="h-4 w-4 rtl:-scale-x-100" />}
+        >
+          {step === 0 ? t('common.cancel') : t('common.back')}
         </Button>
-        {step < STEP_REVIEW ? (
+        {current !== 'review' ? (
           <Button variant="primary" disabled={!canNext} onClick={() => setStep(step + 1)}>
             {t('common.next')}
             <ArrowRight className="h-4 w-4 rtl:-scale-x-100" />
+          </Button>
+        ) : locked ? (
+          <Button
+            variant="primary"
+            disabled={!worldFiles.length || !!worldFileError}
+            loading={busy}
+            onClick={() => void submit()}
+            icon={<RefreshCw className="h-4 w-4" />}
+          >
+            {t('tr.retryUpload')}
           </Button>
         ) : (
           <Button variant="primary" disabled={!canNext || serversQuotaFull} loading={busy} onClick={() => void submit()} icon={<Rocket className="h-4 w-4" />}>

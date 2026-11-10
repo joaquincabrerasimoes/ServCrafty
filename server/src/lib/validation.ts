@@ -33,6 +33,9 @@ export const serverTypes = [
   'BEDROCK',
   'CURSEFORGE',
   'MODRINTH',
+  'TERRARIA',
+  'TSHOCK',
+  'TMODLOADER',
 ] as const;
 export type ServerType = (typeof serverTypes)[number];
 export const serverTypeSchema = z.enum(serverTypes);

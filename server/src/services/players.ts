@@ -3,6 +3,8 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { badRequest, conflict, notFound } from '../lib/errors.js';
 import { readJson, writeJsonAtomic } from '../lib/fsutil.js';
+import { terrariaVariant, type TerrariaVariant } from '../lib/games.js';
+import { parseBanlist, removeFromBanlist, validateTerrariaPlayerName, type BanEntry } from '../lib/terrariaFiles.js';
 import { fetchJson } from '../lib/http.js';
 import { parseProperties } from '../lib/properties.js';
 import { serverDir } from './docker.js';
@@ -134,12 +136,61 @@ async function offlineAction(server: ServerRow, action: PlayerAction, name: stri
     });
 }
 
+// ---------------------------------------------------------------------------
+// Terraria (kick/ban on the console, bans in banlist.txt)
+// ---------------------------------------------------------------------------
+
+/** Console command for a Terraria kick/ban. TShock replaces the vanilla commands with its own. */
+export function terrariaCommandFor(type: string, action: 'kick' | 'ban', name: string, reason: string): string {
+  if (type === 'TSHOCK') {
+    const r = reason ? ` ${reason}` : '';
+    return action === 'kick' ? `kick "${name}"${r}` : `ban add "${name}"${r}`;
+  }
+  // Vanilla / tModLoader take the rest of the line as the player name (no reason argument).
+  return `${action} ${name}`;
+}
+
+function banlistPath(server: ServerRow, v: TerrariaVariant): string | null {
+  return v.banlistRel ? path.join(serverDir(server.id), v.banlistRel) : null;
+}
+
+async function terrariaPlayerAction(
+  server: ServerRow,
+  v: TerrariaVariant,
+  action: PlayerAction,
+  rawName: string,
+  reason: string,
+): Promise<{ applied: 'live' | 'file'; output: string }> {
+  const name = validateTerrariaPlayerName(rawName);
+  if (action === 'kick' || action === 'ban') {
+    if (runtime.getStatus(server.id) !== 'running') throw conflict('Server is not running', 'not_running');
+    const output = await runtime.sendCommand(server.id, terrariaCommandFor(server.type, action, name, reason.replace(/["\\]/g, '')));
+    return { applied: 'live', output };
+  }
+  if (action === 'pardon') {
+    const file = banlistPath(server, v);
+    if (!file) throw badRequest('TShock keeps bans in its database; use the "ban del" console command', 'unsupported');
+    const text = await fsp.readFile(file, 'utf8').catch(() => '');
+    const r = removeFromBanlist(text, name);
+    if (!r.removed) throw notFound(`"${name}" is not banned`, 'not_banned');
+    const tmp = `${file}.scf-tmp`;
+    // Rewrite in place (TMODLOADER bind-mounts this single file, so it must keep its inode).
+    await fsp.writeFile(tmp, r.text);
+    await fsp.copyFile(tmp, file);
+    await fsp.rm(tmp, { force: true });
+    return { applied: 'file', output: '' };
+  }
+  throw badRequest('Terraria servers have no operators or whitelist', 'unsupported');
+}
+
 export async function playerAction(
   server: ServerRow,
   action: PlayerAction,
   name: string,
   reason?: string,
 ): Promise<{ applied: 'live' | 'file'; output: string }> {
+  const tv = terrariaVariant(server.type);
+  if (tv) return terrariaPlayerAction(server, tv, action, name, sanitizeReason(reason));
   validatePlayerName(server, name);
   const r = sanitizeReason(reason);
   if (runtime.getStatus(server.id) === 'running') {
@@ -151,6 +202,14 @@ export async function playerAction(
 }
 
 export async function readList(server: ServerRow, kind: ListKind): Promise<unknown[]> {
+  const tv = terrariaVariant(server.type);
+  if (tv) {
+    if (kind !== 'banned') return [];
+    const file = banlistPath(server, tv);
+    if (!file) return [];
+    const entries: BanEntry[] = parseBanlist(await fsp.readFile(file, 'utf8').catch(() => ''));
+    return entries;
+  }
   const dir = serverDir(server.id);
   if (server.type === 'BEDROCK') {
     if (kind === 'whitelist') return readJson<unknown[]>(path.join(dir, 'allowlist.json'), []);

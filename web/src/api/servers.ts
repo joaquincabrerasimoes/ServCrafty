@@ -1,4 +1,4 @@
-import { api, asList, downloadUrl } from './client';
+import { api, asList, downloadUrl, uploadWithProgress } from './client';
 import type {
   Backup,
   CatalogSource,
@@ -17,8 +17,15 @@ import type {
   ShareLevel,
   Stats,
   Template,
+  TerrariaConfig,
+  TerrariaWorld,
   Webhook,
 } from './types';
+
+/** PATCH body. `terraria` is merged into the stored config; a null field clears that optional value. */
+export type UpdateServerBody = Omit<Partial<Server>, 'terraria'> & {
+  terraria?: { [K in keyof TerrariaConfig]?: TerrariaConfig[K] | null };
+} & Record<string, unknown>;
 
 /** The API keeps the schedule payload as an object ({command, keep, ...}); the UI edits just the command text. */
 type RawSchedule = Omit<Schedule, 'payload'> & { payload?: { command?: string } | null };
@@ -49,7 +56,7 @@ export const serversApi = {
   list: async () => asList<Server>(await api.get('/servers'), 'servers'),
   get: (id: string) => api.get<Server>(s(id)),
   create: (body: CreateServerBody) => api.post<Server>('/servers', body),
-  update: (id: string, body: Partial<Server> & Record<string, unknown>) => api.patch<Server>(s(id), body),
+  update: (id: string, body: UpdateServerBody) => api.patch<Server>(s(id), body),
   remove: (id: string) => api.del<void>(s(id)),
 
   power: (id: string, action: PowerAction) => api.post<void>(`${s(id)}/power`, { action }),
@@ -162,6 +169,18 @@ export const serversApi = {
         fileId: u.latest?.id,
       }),
     ),
+
+  // Terraria
+  terrariaWorlds: async (id: string) => asList<TerrariaWorld>(await api.get(`${s(id)}/terraria/worlds`), 'worlds'),
+  /** One .wld and optionally its .twld companion. The server must be stopped. */
+  uploadTerrariaWorld: (id: string, files: File[], overwrite = false, onProgress?: (fraction: number) => void) => {
+    const fd = new FormData();
+    for (const f of files) fd.append('file', f, f.name);
+    return uploadWithProgress<{ worldName: string }>(`${s(id)}/terraria/world`, fd, {
+      query: overwrite ? { overwrite: 1 } : undefined,
+      onProgress,
+    });
+  },
 
   // Clone / templates / export / import
   clone: (id: string, name: string) => api.post<Server>(`${s(id)}/clone`, { name }),

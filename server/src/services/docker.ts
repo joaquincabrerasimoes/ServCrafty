@@ -4,7 +4,9 @@ import path from 'node:path';
 import { PassThrough, type Readable } from 'node:stream';
 import { config } from '../config.js';
 import { unavailable } from '../lib/errors.js';
+import { terrariaImage, terrariaVariant, TERRARIA_VARIANTS, type TerrariaType } from '../lib/games.js';
 import { minecraftEnv } from '../lib/minecraftConfig.js';
+import { terrariaContainerSpec } from '../lib/terrariaContainer.js';
 import type { ServerRow } from './types.js';
 import { getDefaultJavaArgs } from './settings.js';
 
@@ -78,6 +80,8 @@ export function javaImageTag(mcVersion: string): string {
 }
 
 export function imageFor(server: ServerRow): string {
+  const tv = terrariaVariant(server.type);
+  if (tv) return terrariaImage(tv.type, server.env?.[IMAGE_TAG_ENV]);
   if (server.type === 'BEDROCK') return `${BEDROCK_IMAGE}:latest`;
   const forced = server.env?.[IMAGE_TAG_ENV];
   return `${JAVA_IMAGE}:${forced || javaImageTag(server.mc_version)}`;
@@ -184,10 +188,10 @@ async function imageExists(image: string): Promise<boolean> {
 }
 
 /** Pull an image if missing, reporting coarse progress lines. */
-export async function ensureImage(image: string, onProgress: (line: string) => void): Promise<void> {
+export async function ensureImage(image: string, onProgress: (line: string) => void, platform?: string): Promise<void> {
   if (await imageExists(image)) return;
   onProgress(`[servcrafty] pulling image ${image} ...`);
-  const stream = (await docker().pull(image)) as Readable;
+  const stream = (await (platform ? docker().pull(image, { platform }) : docker().pull(image))) as Readable;
   await new Promise<void>((resolve, reject) => {
     let last = 0;
     docker().modem.followProgress(
@@ -212,12 +216,58 @@ export async function removeContainerIfExists(nameOrId: string): Promise<void> {
   }
 }
 
+/**
+ * Create the data directories (and single-file mounts) a Terraria variant needs before its
+ * container starts, so docker never creates them itself. All three images run as root, so no
+ * ownership change is needed.
+ */
+export async function ensureTerrariaDirs(serverId: string, type: TerrariaType): Promise<void> {
+  const v = TERRARIA_VARIANTS[type];
+  const root = serverDir(serverId);
+  await fsp.mkdir(root, { recursive: true });
+  for (const d of v.dirs) await fsp.mkdir(path.join(root, d), { recursive: true, mode: 0o755 });
+  for (const m of v.mounts) {
+    if (!m.hostRel) continue;
+    const abs = path.join(root, m.hostRel);
+    if (m.file) {
+      // A missing bind-mount source would be created by docker as a directory.
+      const st = await fsp.lstat(abs).catch(() => null);
+      if (st && !st.isFile()) await fsp.rm(abs, { recursive: true, force: true });
+      if (!st || !st.isFile()) await fsp.writeFile(abs, '', { mode: 0o644 });
+    } else await fsp.mkdir(abs, { recursive: true, mode: 0o755 });
+  }
+}
+
+async function createTerrariaContainer(server: ServerRow, type: TerrariaType, onProgress: (line: string) => void): Promise<Docker.Container> {
+  const v = TERRARIA_VARIANTS[type];
+  const image = imageFor(server);
+  await ensureImage(image, onProgress, v.platform);
+  await ensureNetwork();
+  await removeContainerIfExists(containerName(server.id));
+  if (server.container_id) await removeContainerIfExists(server.container_id);
+  await ensureTerrariaDirs(server.id, type);
+  return docker().createContainer(
+    terrariaContainerSpec(
+      { id: server.id, type, port: server.port, memory_mb: server.memory_mb, cpu: server.cpu, env: server.env, terraria: server.terraria },
+      {
+        name: containerName(server.id),
+        hostDir: hostServerDir(server.id),
+        network: config().dockerNetwork,
+        labels: { [LABEL_SERVER]: server.id, 'servcrafty.managed': 'true' },
+        imageTagEnv: IMAGE_TAG_ENV,
+      },
+    ),
+  );
+}
+
 /** (Re)create the game container for a server with its current configuration. */
 export async function createServerContainer(
   server: ServerRow,
   cfKey: string | undefined,
   onProgress: (line: string) => void,
 ): Promise<Docker.Container> {
+  const tv = terrariaVariant(server.type);
+  if (tv) return createTerrariaContainer(server, tv.type, onProgress);
   const image = imageFor(server);
   await ensureImage(image, onProgress);
   await ensureNetwork();

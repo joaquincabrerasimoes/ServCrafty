@@ -6,9 +6,11 @@ import { config } from '../config.js';
 import { query, queryOne, tx } from '../db/pool.js';
 import { randomPassword } from '../lib/crypto.js';
 import { badRequest, conflict } from '../lib/errors.js';
+import { gameOf, GAMES, isTerrariaType, type Game } from '../lib/games.js';
 import { minecraftConfigSchema, normalizeMinecraftConfig } from '../lib/minecraftConfig.js';
 import { parsePortPool } from '../lib/ports.js';
-import { serverTypeSchema } from '../lib/validation.js';
+import { mergeTerrariaConfig, normalizeTerrariaConfig, type TerrariaConfig } from '../lib/terrariaConfig.js';
+import { serverTypeSchema, type ServerType } from '../lib/validation.js';
 import { serverDir } from './docker.js';
 import { refreshLanAnnouncer } from './lanAnnouncer.js';
 import * as runtime from './runtime.js';
@@ -49,6 +51,11 @@ export const serverConfigSchema = z.object({
   lanAnnounce: z.boolean().optional(),
   /** Initial Minecraft configuration, applied on the server's first start. */
   minecraft: minecraftConfigSchema.nullable().optional(),
+  /**
+   * Terraria configuration (Terraria types only). Validated by lib/terrariaConfig.ts in the
+   * service so errors carry the `invalid_terraria_config` code.
+   */
+  terraria: z.record(z.unknown()).nullable().optional(),
 });
 export type ServerConfig = z.infer<typeof serverConfigSchema>;
 
@@ -75,9 +82,46 @@ export const updateServerSchema = z
     autoRestart: z.boolean(),
     lanAnnounce: z.boolean(),
     type: serverTypeSchema,
+    /** Merged over the current Terraria config (null fields are removed; null resets to defaults). */
+    terraria: z.record(z.unknown()).nullable(),
   })
   .partial();
 export type UpdateServerInput = z.infer<typeof updateServerSchema>;
+
+/** Fields of a server that only make sense for one game. */
+interface GameFields {
+  mcVersion?: string | null;
+  loaderVersion?: string | null;
+  modpack?: unknown;
+  javaArgs?: string | null;
+  lanAnnounce?: boolean | null;
+  minecraft?: unknown;
+  terraria?: unknown;
+  memoryMb?: number;
+}
+
+/**
+ * Reject fields that belong to the other game (400 `unsupported_game`) and enforce the game's
+ * memory minimum. Pure; exported for tests.
+ */
+export function assertGameFields(type: ServerType, f: GameFields): void {
+  const game = gameOf(type);
+  const min = GAMES[game].memoryMinMb;
+  if (f.memoryMb !== undefined && f.memoryMb < min) throw badRequest(`memoryMb must be at least ${min}`, 'validation_error');
+  const reject = (field: string) => {
+    throw badRequest(`"${field}" is not supported for ${game === 'terraria' ? 'Terraria' : 'Minecraft'} servers`, 'unsupported_game');
+  };
+  if (game === 'minecraft') {
+    if (f.terraria !== undefined && f.terraria !== null) reject('terraria');
+    return;
+  }
+  if (f.minecraft !== undefined && f.minecraft !== null) reject('minecraft');
+  if (f.modpack !== undefined && f.modpack !== null) reject('modpack');
+  if (f.lanAnnounce) reject('lanAnnounce');
+  if (f.javaArgs !== undefined && f.javaArgs !== null && f.javaArgs !== '') reject('javaArgs');
+  if (f.loaderVersion !== undefined && f.loaderVersion !== null && f.loaderVersion !== '') reject('loaderVersion');
+  if (f.mcVersion !== undefined && f.mcVersion !== null && f.mcVersion.toUpperCase() !== 'LATEST') reject('mcVersion');
+}
 
 const PORT_LOCK = 727_002;
 
@@ -113,6 +157,9 @@ export async function createServer(
     if (actor.role !== 'admin') throw badRequest('Only admins can create servers for other users', 'forbidden_owner');
     owner = await getUser(input.ownerId);
   }
+  assertGameFields(input.type, input);
+  const game: Game = gameOf(input.type);
+  const terraria: TerrariaConfig | null = isTerrariaType(input.type) ? normalizeTerrariaConfig(input.type, input.terraria ?? {}) : null;
   if ((input.type === 'CURSEFORGE' || input.type === 'MODRINTH') && !input.modpack) {
     throw badRequest('A modpack is required for this server type', 'modpack_required');
   }
@@ -127,8 +174,8 @@ export async function createServer(
     const port = await pickPort(client, input.port);
     const r = await client.query<ServerRow>(
       `INSERT INTO servers (owner_id, name, type, mc_version, loader_version, modpack, java_args, memory_mb, cpu,
-                            disk_mb, port, env, auto_restart, rcon_password, minecraft, lan_announce)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *`,
+                            disk_mb, port, env, auto_restart, rcon_password, minecraft, lan_announce, game, terraria)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING *`,
       [
         owner.id,
         input.name,
@@ -145,7 +192,9 @@ export async function createServer(
         input.autoRestart ?? true,
         randomPassword(),
         minecraft && Object.keys(minecraft).length ? JSON.stringify(minecraft) : null,
-        lanAnnounce,
+        game === 'minecraft' ? lanAnnounce : false,
+        game,
+        terraria ? JSON.stringify(terraria) : null,
       ],
     );
     return r.rows[0]!;
@@ -153,7 +202,7 @@ export async function createServer(
   const dir = serverDir(server.id);
   try {
     await fsp.mkdir(dir, { recursive: true });
-    await fsp.writeFile(path.join(dir, 'eula.txt'), 'eula=true\n');
+    if (game === 'minecraft') await fsp.writeFile(path.join(dir, 'eula.txt'), 'eula=true\n');
     if (seed) await seed(dir, server);
   } catch (err) {
     await query('DELETE FROM servers WHERE id = $1', [server.id]);
@@ -165,6 +214,17 @@ export async function createServer(
 }
 
 export async function updateServer(actor: UserRow, server: ServerRow, patch: UpdateServerInput): Promise<ServerRow> {
+  const nextType = patch.type ?? server.type;
+  const game = gameOf(server.type);
+  if (gameOf(nextType) !== game) throw badRequest('A server cannot be switched to another game', 'game_change_unsupported');
+  assertGameFields(nextType, patch);
+  let terraria: TerrariaConfig | null = null;
+  if (isTerrariaType(nextType)) {
+    terraria =
+      patch.terraria !== undefined
+        ? mergeTerrariaConfig(nextType, server.terraria, patch.terraria)
+        : normalizeTerrariaConfig(nextType, server.terraria ?? {});
+  }
   const updated = await tx(async (client) => {
     const owner = await getUser(server.owner_id);
     const memoryMb = patch.memoryMb ?? server.memory_mb;
@@ -191,7 +251,7 @@ export async function updateServer(actor: UserRow, server: ServerRow, patch: Upd
     const lanAnnounce = type === 'BEDROCK' ? false : (patch.lanAnnounce ?? server.lan_announce);
     const r = await client.query<ServerRow>(
       `UPDATE servers SET name=$2, type=$3, mc_version=$4, loader_version=$5, modpack=$6, java_args=$7, memory_mb=$8,
-         cpu=$9, disk_mb=$10, port=$11, env=$12, auto_restart=$13, lan_announce=$14 WHERE id=$1 RETURNING *`,
+         cpu=$9, disk_mb=$10, port=$11, env=$12, auto_restart=$13, lan_announce=$14, game=$15, terraria=$16 WHERE id=$1 RETURNING *`,
       [
         server.id,
         patch.name ?? server.name,
@@ -206,7 +266,9 @@ export async function updateServer(actor: UserRow, server: ServerRow, patch: Upd
         port,
         JSON.stringify(patch.env ?? server.env ?? {}),
         patch.autoRestart ?? server.auto_restart,
-        lanAnnounce,
+        game === 'minecraft' ? lanAnnounce : false,
+        game,
+        terraria ? JSON.stringify(terraria) : null,
       ],
     );
     return r.rows[0]!;
@@ -237,7 +299,17 @@ export function configOf(server: ServerRow): ServerConfig {
     autoRestart: server.auto_restart,
     lanAnnounce: server.lan_announce,
     minecraft: server.minecraft ?? null,
+    ...(server.terraria ? { terraria: { ...server.terraria } } : {}),
   };
+}
+
+/** Set fields of the Terraria config directly (world import); validated like a PATCH. */
+export async function setTerrariaFields(server: ServerRow, fields: Partial<TerrariaConfig>): Promise<ServerRow> {
+  if (!isTerrariaType(server.type)) throw badRequest('Not a Terraria server', 'unsupported_game');
+  const cfg = mergeTerrariaConfig(server.type, server.terraria, fields);
+  const row = await queryOne<ServerRow>('UPDATE servers SET terraria = $2 WHERE id = $1 RETURNING *', [server.id, JSON.stringify(cfg)]);
+  if (!row) throw badRequest('Server not found', 'server_not_found');
+  return row;
 }
 
 export async function getServerRow(id: string): Promise<ServerRow | null> {

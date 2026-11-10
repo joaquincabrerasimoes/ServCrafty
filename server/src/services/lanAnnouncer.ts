@@ -3,6 +3,7 @@ import os from 'node:os';
 import type { FastifyBaseLogger } from 'fastify';
 import { config } from '../config.js';
 import { query } from '../db/pool.js';
+import { gameOf } from '../lib/games.js';
 import { bus } from './events.js';
 import * as runtime from './runtime.js';
 
@@ -59,7 +60,7 @@ export interface Announcement {
 export function selectAnnouncements(rows: AnnounceRow[], isRunning: (id: string) => boolean): Announcement[] {
   const out: Announcement[] = [];
   for (const r of rows) {
-    if (!r.lan_announce || r.type === 'BEDROCK' || !isRunning(r.id)) continue;
+    if (!r.lan_announce || r.type === 'BEDROCK' || gameOf(r.type) !== 'minecraft' || !isRunning(r.id)) continue;
     if (!Number.isInteger(r.port) || r.port < 1 || r.port > 65535) continue;
     out.push({ id: r.id, packet: buildPacket(sanitizeMotd(r.minecraft?.motd, r.name), r.port) });
   }
@@ -247,7 +248,7 @@ export function initLanAnnouncer(logger: FastifyBaseLogger): void {
   instance = new LanAnnouncer({
     loadRows: () =>
       query<AnnounceRow>(
-        `SELECT id, name, type, port, lan_announce, minecraft FROM servers WHERE lan_announce AND type <> 'BEDROCK'`,
+        `SELECT id, name, type, port, lan_announce, minecraft FROM servers WHERE lan_announce AND type <> 'BEDROCK' AND game = 'minecraft'`,
       ),
     isRunning: (id) => runtime.getStatus(id) === 'running',
     listAddresses: () => listAnnounceAddresses(os.networkInterfaces(), allow),

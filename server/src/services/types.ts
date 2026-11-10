@@ -1,5 +1,7 @@
 import type { ServerType } from '../lib/validation.js';
 import type { MinecraftConfig } from '../lib/minecraftConfig.js';
+import { gameOf, type Game } from '../lib/games.js';
+import type { TerrariaConfig } from '../lib/terrariaConfig.js';
 
 export type Role = 'admin' | 'user';
 export type ShareLevel = 'viewer' | 'operator' | 'manager';
@@ -84,6 +86,8 @@ export interface ServerRow {
   owner_id: string;
   name: string;
   type: ServerType;
+  /** Game the server runs; always derived from `type` (lib/games.ts `gameOf`). */
+  game: Game;
   mc_version: string;
   loader_version: string | null;
   modpack: ModpackRef | null;
@@ -95,6 +99,8 @@ export interface ServerRow {
   env: Record<string, string>;
   /** Initial Minecraft configuration (see lib/minecraftConfig.ts); applied on first start. */
   minecraft: MinecraftConfig | null;
+  /** Terraria configuration (see lib/terrariaConfig.ts); null for Minecraft servers. */
+  terraria: TerrariaConfig | null;
   container_id: string | null;
   status: ServerStatus;
   auto_restart: boolean;
@@ -110,6 +116,7 @@ export interface PublicServer {
   ownerName: string | null;
   name: string;
   type: ServerType;
+  game: Game;
   mcVersion: string;
   loaderVersion: string | null;
   modpack: ModpackRef | null;
@@ -120,6 +127,7 @@ export interface PublicServer {
   port: number;
   env: Record<string, string>;
   minecraft: MinecraftConfig | null;
+  terraria: TerrariaConfig | null;
   status: ServerStatus;
   autoRestart: boolean;
   lanAnnounce: boolean;
@@ -134,6 +142,7 @@ export function toPublicServer(s: ServerRow, access: Access, ownerName: string |
     ownerName,
     name: s.name,
     type: s.type,
+    game: gameOf(s.type),
     mcVersion: s.mc_version,
     loaderVersion: s.loader_version,
     modpack: s.modpack,
@@ -144,6 +153,7 @@ export function toPublicServer(s: ServerRow, access: Access, ownerName: string |
     port: s.port,
     env: s.env ?? {},
     minecraft: s.minecraft ?? null,
+    terraria: s.terraria ?? null,
     status: s.status,
     autoRestart: s.auto_restart,
     lanAnnounce: s.lan_announce,

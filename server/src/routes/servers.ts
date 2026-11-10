@@ -11,6 +11,7 @@ import * as cf from '../catalog/curseforge.js';
 import * as mr from '../catalog/modrinth.js';
 import { AppError, badRequest } from '../lib/errors.js';
 import { copyDir } from '../lib/fsutil.js';
+import { assertMinecraft, gameOf } from '../lib/games.js';
 import { parseProperties, serializeProperties } from '../lib/properties.js';
 import { intQuery, parse } from '../lib/validation.js';
 import { loadServerFor, listServersFor } from '../services/access.js';
@@ -69,7 +70,7 @@ async function enrichModpack(type: string, mp: ModpackRef | null | undefined): P
   return out;
 }
 
-const RESTART_FIELDS = ['type', 'mcVersion', 'loaderVersion', 'modpack', 'javaArgs', 'memoryMb', 'cpu', 'port', 'env'] as const;
+const RESTART_FIELDS = ['type', 'mcVersion', 'loaderVersion', 'modpack', 'javaArgs', 'memoryMb', 'cpu', 'port', 'env', 'terraria'] as const;
 
 export default async function serverRoutes(app: FastifyInstance): Promise<void> {
   app.get('/servers', async (req) => {
@@ -197,6 +198,7 @@ export default async function serverRoutes(app: FastifyInstance): Promise<void> 
   app.get<IdParams>('/servers/:id/properties', async (req) => {
     const user = requireUser(req);
     const { server } = await loadServerFor(user, req.params.id, 'viewer');
+    assertMinecraft(server, 'server.properties');
     try {
       return parseProperties(await fsp.readFile(path.join(serverDir(server.id), 'server.properties'), 'utf8'));
     } catch {
@@ -207,6 +209,7 @@ export default async function serverRoutes(app: FastifyInstance): Promise<void> 
   app.put<IdParams>('/servers/:id/properties', async (req) => {
     const user = requireUser(req);
     const { server } = await loadServerFor(user, req.params.id, 'manager');
+    assertMinecraft(server, 'server.properties');
     const raw = parse(z.record(z.union([z.string(), z.number(), z.boolean()])), req.body);
     const values: Record<string, string> = {};
     for (const [k, v] of Object.entries(raw)) {
@@ -230,8 +233,11 @@ export default async function serverRoutes(app: FastifyInstance): Promise<void> 
       req.body,
     );
     if (body.copyFiles && runtime.getStatus(server.id) === 'running') {
-      await runtime.tryRcon(server.id, 'save-all flush');
-      await new Promise((r) => setTimeout(r, 1500));
+      if (gameOf(server.type) === 'terraria') await runtime.saveWorld(server.id);
+      else {
+        await runtime.tryRcon(server.id, 'save-all flush');
+        await new Promise((r) => setTimeout(r, 1500));
+      }
     }
     const clone = await createServer(user, { ...configOf(server), name: body.name, port: body.port }, async (dir) => {
       if (body.copyFiles) {
@@ -281,6 +287,7 @@ export default async function serverRoutes(app: FastifyInstance): Promise<void> 
   app.get<IdParams & { Querystring: { format?: string; includeWorld?: string } }>('/servers/:id/export', async (req, reply) => {
     const user = requireUser(req);
     const { server } = await loadServerFor(user, req.params.id, 'manager');
+    assertMinecraft(server, 'Modpack export');
     const format = parse(z.enum(['curseforge', 'modrinth', 'serverpack']), req.query.format ?? 'serverpack') as ExportFormat;
     const stats = await runtime.getStats(server).catch(() => null);
     const out = await exportServer(server, format, {
