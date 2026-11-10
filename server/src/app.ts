@@ -12,10 +12,12 @@ import { registerAuth } from './auth/plugin.js';
 import { AppError } from './lib/errors.js';
 import accountRoutes from './routes/account.js';
 import adminRoutes from './routes/admin.js';
+import adminGameRoutes from './routes/adminGames.js';
 import internalRoutes from './routes/internal.js';
 import authRoutes from './routes/auth.js';
 import backupRoutes from './routes/backups.js';
 import catalogRoutes from './routes/catalog.js';
+import docsRoutes from './routes/docs.js';
 import fileRoutes from './routes/files.js';
 import gameRoutes from './routes/games.js';
 import modRoutes from './routes/mods.js';
@@ -97,6 +99,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       await api.register(accountRoutes);
       await api.register(userRoutes);
       await api.register(adminRoutes);
+      await api.register(adminGameRoutes);
       await api.register(internalRoutes);
       await api.register(updateRoutes);
       await api.register(serverRoutes);
@@ -112,6 +115,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       await api.register(webuiRoutes);
       await api.register(templateRoutes);
       await api.register(catalogRoutes);
+      await api.register(docsRoutes);
     },
     { prefix: '/api' },
   );

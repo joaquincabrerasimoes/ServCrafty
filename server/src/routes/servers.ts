@@ -19,6 +19,7 @@ import { loadServerFor, listServersFor } from '../services/access.js';
 import { audit } from '../services/audit.js';
 import { serverDir } from '../services/docker.js';
 import { getDefinition } from '../services/gameDefinitions.js';
+import { assertServerCanStart } from '../services/gameAccess.js';
 import { exportServer, importArchive, importFieldsSchema, type ExportFormat } from '../services/modpack.js';
 import { dismissAttempt, listAttempts } from '../services/joinAttempts.js';
 import { listKinds, playerAction, playerActions, readList, type ListKind, type PlayerAction } from '../services/players.js';
@@ -131,6 +132,8 @@ export default async function serverRoutes(app: FastifyInstance): Promise<void> 
     const { server } = await loadServerFor(user, req.params.id, 'operator');
     const { action } = parse(z.object({ action: z.enum(['start', 'stop', 'restart', 'kill']) }), req.body);
     if (action === 'start' || action === 'restart') {
+      // A game disabled with blockStart answers 409 game_disabled now (the start itself runs in the background).
+      await assertServerCanStart(server);
       // Start can take minutes (image pulls); run in background, report via status events.
       void runtime.power(server.id, action).catch((err: unknown) => req.log.warn({ err, serverId: server.id }, `${action} failed`));
       await new Promise((r) => setTimeout(r, 150));

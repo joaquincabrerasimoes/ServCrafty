@@ -2,6 +2,8 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { requireUser } from '../auth/plugin.js';
 import { validateDefinition } from '../lib/gameDefinition.js';
+import { steamGameKey } from '../lib/games.js';
+import { forgetGameKey, getDisabledGames } from '../services/gameAccess.js';
 import { parse } from '../lib/validation.js';
 import { audit } from '../services/audit.js';
 import {
@@ -22,7 +24,11 @@ type IdParams = { Params: { id: string } };
 export default async function gameRoutes(app: FastifyInstance): Promise<void> {
   app.get('/games', async (req) => {
     requireUser(req);
-    return listEntries().map(definitionSummary);
+    const disabled = await getDisabledGames();
+    return listEntries().map((e) => {
+      const key = steamGameKey(e.definition.id);
+      return { ...definitionSummary(e), key, disabled: !!disabled[key], blockStart: disabled[key]?.blockStart === true };
+    });
   });
 
   app.get<IdParams>('/games/:id', async (req) => {
@@ -58,6 +64,8 @@ export default async function gameRoutes(app: FastifyInstance): Promise<void> {
   app.delete<IdParams>('/games/:id', async (req) => {
     const user = requireUser(req);
     const e = await deleteCustomDefinition(user, req.params.id);
+    // Grants and the disabled flag of a deleted definition are forgotten (a new definition may reuse the id).
+    await forgetGameKey(steamGameKey(e.definition.id));
     await audit(req, 'game.delete', 'game', e.definition.id, { name: e.definition.name });
     return { ok: true };
   });

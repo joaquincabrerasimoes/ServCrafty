@@ -12,7 +12,8 @@ import { RateLimiter } from '../lib/rateLimit.js';
 import { parse } from '../lib/validation.js';
 import { audit } from '../services/audit.js';
 import { blockedForRemote } from '../services/lanOnly.js';
-import { toPublicUser, type UserRow } from '../services/types.js';
+import { publicUserWithGames } from '../services/gameAccess.js';
+import type { UserRow } from '../services/types.js';
 import { findUserByUsername } from '../services/users.js';
 
 const loginLimiter = new RateLimiter(10, 5 * 60_000);
@@ -55,7 +56,7 @@ export default async function authRoutes(app: FastifyInstance): Promise<void> {
     }
     await createSession(req, reply, user.id, true);
     await audit(req, 'auth.login', 'user', user.id, {}, user.id);
-    return { status: 'ok', user: toPublicUser(user) };
+    return { status: 'ok', user: await publicUserWithGames(user, { creatable: true }) };
   });
 
   app.post('/auth/mfa/totp', async (req, reply) => {
@@ -68,7 +69,7 @@ export default async function authRoutes(app: FastifyInstance): Promise<void> {
     }
     await completeMfa(reply, session);
     await audit(req, 'auth.login', 'user', user.id, { mfa: 'totp' }, user.id);
-    return { status: 'ok', user: toPublicUser(user) };
+    return { status: 'ok', user: await publicUserWithGames(user, { creatable: true }) };
   });
 
   app.post('/auth/mfa/passkey/options', async (req) => {
@@ -88,7 +89,7 @@ export default async function authRoutes(app: FastifyInstance): Promise<void> {
     }
     await completeMfa(reply, session);
     await audit(req, 'auth.login', 'user', user.id, { mfa: 'passkey' }, user.id);
-    return { status: 'ok', user: toPublicUser(user) };
+    return { status: 'ok', user: await publicUserWithGames(user, { creatable: true }) };
   });
 
   app.post('/auth/logout', async (req, reply) => {
@@ -100,6 +101,6 @@ export default async function authRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/auth/me', async (req) => {
     const user = requireUser(req);
-    return { user: toPublicUser(user), mfa: await mfaInfo(user.id), authVia: req.authVia };
+    return { user: await publicUserWithGames(user, { creatable: true }), mfa: await mfaInfo(user.id), authVia: req.authVia };
   });
 }

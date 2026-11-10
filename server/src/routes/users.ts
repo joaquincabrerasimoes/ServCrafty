@@ -9,6 +9,20 @@ import { idParam, parse, quotaInt, quotaNum } from '../lib/validation.js';
 import { audit } from '../services/audit.js';
 import { toPublicUser, type UserRow } from '../services/types.js';
 import { countAdmins, createUser, findUserByUsername, getUser, quotaUsage } from '../services/users.js';
+import { normalizeGameList } from '../lib/gameAccess.js';
+import {
+  allowedGamesByUser,
+  allowedGamesField,
+  existingGameKeys,
+  getAllowedGames,
+  publicUserWithGames,
+  setAllowedGames,
+} from '../services/gameAccess.js';
+
+/** GET/PUT /users/:id/games payload: the granted keys, or `{games:null, unrestricted:true}` for an admin. */
+async function gamesPayload(u: UserRow): Promise<{ games: string[] | null; unrestricted: boolean }> {
+  return u.role === 'admin' ? { games: null, unrestricted: true } : { games: await getAllowedGames(u.id), unrestricted: false };
+}
 
 const quotasSchema = z
   .object({ maxServers: quotaInt, maxRamMb: quotaInt, maxCpu: quotaNum, maxDiskMb: quotaInt })
@@ -29,8 +43,10 @@ export default async function userRoutes(app: FastifyInstance): Promise<void> {
               coalesce(sum(s.cpu),0)::float8 AS cpu, coalesce(sum(coalesce(s.disk_mb,0)),0)::int AS disk
        FROM users u LEFT JOIN servers s ON s.owner_id = u.id GROUP BY u.id ORDER BY u.created_at`,
     );
+    const granted = await allowedGamesByUser();
     return rows.map((r) => ({
       ...toPublicUser(r),
+      allowedGames: allowedGamesField(r, granted.get(r.id)),
       usage: { servers: r.servers, ram_mb: r.ram, cpu: r.cpu, disk_mb: r.disk },
     }));
   });
@@ -72,7 +88,7 @@ export default async function userRoutes(app: FastifyInstance): Promise<void> {
       : created;
     await audit(req, 'user.created', 'user', u.id, { username: u.username, role: u.role });
     reply.code(201);
-    return toPublicUser(u);
+    return publicUserWithGames(u);
   });
 
   app.patch('/users/:id', async (req) => {
@@ -136,7 +152,25 @@ export default async function userRoutes(app: FastifyInstance): Promise<void> {
       passwordReset: !!body.password,
     });
     const final = body.resetMfa || body.password ? await getUser(id) : updated!;
-    return { ...toPublicUser(final), usage: await quotaUsage(id) };
+    return { ...(await publicUserWithGames(final)), usage: await quotaUsage(id) };
+  });
+
+  // ---- per-user game access (allowlist; default nothing; admins are unrestricted) ----
+  app.get('/users/:id/games', async (req) => {
+    requireAdmin(req);
+    const { id } = parse(idParam, req.params);
+    return gamesPayload(await getUser(id));
+  });
+
+  app.put('/users/:id/games', async (req) => {
+    requireAdmin(req);
+    const { id } = parse(idParam, req.params);
+    const body = parse(z.object({ games: z.array(z.string().min(1).max(64)).max(1000) }).strict(), req.body);
+    const u = await getUser(id);
+    const games = normalizeGameList(body.games, existingGameKeys());
+    await setAllowedGames(id, games);
+    await audit(req, 'user.games', 'user', id, { games });
+    return gamesPayload(u);
   });
 
   app.delete<{ Querystring: { transferTo?: string } }>('/users/:id', async (req) => {

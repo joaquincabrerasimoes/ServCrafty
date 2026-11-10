@@ -280,7 +280,6 @@ export async function importArchive(
     if (man.manifestType === 'minecraftModpack') {
       const primary = man.minecraft?.modLoaders?.find((m) => m.primary) ?? man.minecraft?.modLoaders?.[0];
       const [loaderName, ...rest] = (primary?.id ?? '').split('-');
-      if (!(await getCurseforgeKey())) warnings.push('CurseForge API key is not configured; the pack cannot download its mods until it is set');
       const server = await createServer(
         actor,
         {
@@ -296,6 +295,8 @@ export async function importArchive(
           await fsp.copyFile(file, path.join(dir, 'modpack.zip'));
         },
       );
+      // Checked after createServer so a refused import (game access) fails before any other lookup.
+      if (!(await getCurseforgeKey())) warnings.push('CurseForge API key is not configured; the pack cannot download its mods until it is set');
       return { server, detected: 'curseforge', warnings };
     }
   }

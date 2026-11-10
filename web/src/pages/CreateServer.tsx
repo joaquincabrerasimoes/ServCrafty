@@ -2,18 +2,20 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
-import { ArrowLeft, ArrowRight, Check, Download, Gamepad2, Pickaxe, RefreshCw, Rocket, Trees } from 'lucide-react';
-import { accountApi, catalogApi, serversApi } from '@/api';
-import type { CatalogProject, CatalogVersion, CreateServerBody, Game, GameSummary, ServerType } from '@/api/types';
+import { ArrowLeft, ArrowRight, Ban, Check, Download, Gamepad2, Lock, Pickaxe, RefreshCw, Rocket, Trees } from 'lucide-react';
+import { ApiError, accountApi, authApi, catalogApi, serversApi } from '@/api';
+import type { CatalogProject, CatalogVersion, CreateServerBody, Game, GameKey, GameSummary, ServerType } from '@/api/types';
 import { useT, type TKey } from '@/i18n';
 import { quotaRows } from '@/lib/quota';
 import { toast } from '@/stores/toast';
 import { formatDate, formatMb } from '@/lib/format';
 import { qk } from '@/lib/queries';
 import { GAMES, TERRARIA_TYPES, capsOf } from '@/lib/games';
-import { protocolLabel, publishedPorts, useGameDefs } from '@/lib/gameDefs';
+import { gamesKey, protocolLabel, publishedPorts, useGameDefs } from '@/lib/gameDefs';
+import { defKey, useAdminGames } from '@/lib/gameKeys';
+import { useAuth } from '@/stores/auth';
 import { GameIcon } from '@/components/GameBits';
-import { Badge, Button, ErrorState, Field, Meter, PageHeader, Spinner, Toggle } from '@/components/ui';
+import { Badge, Button, EmptyState, ErrorState, Field, Meter, PageHeader, Spinner, Toggle } from '@/components/ui';
 import { errorMessage } from '@/api/client';
 import { CatalogSearch, ProjectIcon } from '@/components/CatalogSearch';
 import { Combobox, type ComboOption } from '@/components/Combobox';
@@ -57,25 +59,56 @@ const GAME_ICON: Record<Game, typeof Pickaxe> = { minecraft: Pickaxe, terraria: 
 const DEFAULT_TYPE: Record<Game, ServerType> = { minecraft: 'PAPER', terraria: 'TERRARIA', steam: 'STEAMCMD' };
 
 /** One card of the Game step. */
-function GameCard({ on, onClick, icon, title, body, extra }: { on: boolean; onClick: () => void; icon: React.ReactNode; title: string; body?: string; extra?: string }) {
+function GameCard({
+  on,
+  onClick,
+  icon,
+  title,
+  body,
+  extra,
+  unavailable,
+}: {
+  on: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  title: string;
+  body?: string;
+  extra?: string;
+  /** Shown greyed and not selectable, with this note (e.g. disabled by an administrator). */
+  unavailable?: string;
+}) {
   return (
     <button
       type="button"
       onClick={onClick}
-      aria-pressed={on}
+      aria-pressed={unavailable ? undefined : on}
+      disabled={!!unavailable}
       className={clsx(
         'relative flex min-w-0 flex-col items-start gap-3 rounded-md border p-5 text-left',
-        on ? 'border-accent bg-accent/10' : 'border-line bg-surface hover:border-muted',
+        unavailable
+          ? 'cursor-not-allowed border-dashed border-line bg-raised/40 text-muted'
+          : on
+            ? 'border-accent bg-accent/10'
+            : 'border-line bg-surface hover:border-muted',
       )}
     >
-      {icon}
+      <span className={clsx(unavailable && 'opacity-50 grayscale')}>{icon}</span>
       <span className="pe-6 text-lg font-semibold">{title}</span>
-      {body && <span className="line-clamp-3 text-sm text-muted">{body}</span>}
-      {extra && <span className="text-xs text-muted">{extra}</span>}
-      {on && <Check className="absolute right-3 top-3 h-5 w-5 text-accent" aria-hidden="true" />}
+      {body && <span className={clsx('line-clamp-3 text-sm text-muted', unavailable && 'opacity-70')}>{body}</span>}
+      {extra && !unavailable && <span className="text-xs text-muted">{extra}</span>}
+      {unavailable && (
+        <span className="inline-flex items-center gap-1.5 text-xs font-medium text-warn">
+          <Ban className="h-3.5 w-3.5" aria-hidden="true" />
+          {unavailable}
+        </span>
+      )}
+      {on && !unavailable && <Check className="absolute right-3 top-3 h-5 w-5 text-accent" aria-hidden="true" />}
     </button>
   );
 }
+
+/** ok: selectable; disabled: shown greyed (an admin disabled the game); hidden: not granted to this user. */
+type GameAvail = 'ok' | 'disabled' | 'hidden';
 
 function Stepper({ steps, step }: { steps: StepId[]; step: number }) {
   const t = useT();
@@ -239,6 +272,37 @@ export default function CreateServer() {
   const [updateOnStart, setUpdateOnStart] = useState(true);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const firstRender = useRef(true);
+  // Game access (v0.3.2): /auth/me is re-read on entry so grants and disabled games are current.
+  const storeUser = useAuth((s) => s.user);
+  const isAdmin = storeUser?.role === 'admin';
+  const meQ = useQuery({ queryKey: qk.me, queryFn: authApi.me, staleTime: 0 });
+  useEffect(() => {
+    if (meQ.data?.user) useAuth.setState({ user: meQ.data.user });
+  }, [meQ.data]);
+  const adminGames = useAdminGames(isAdmin);
+  const [gameError, setGameError] = useState<string | null>(null);
+  /** null when the API does not send creatableGames (older backend): everything is selectable. */
+  const creatable = useMemo<Set<GameKey> | null>(() => {
+    const list = meQ.data?.user.creatableGames ?? storeUser?.creatableGames;
+    return Array.isArray(list) ? new Set(list) : null;
+  }, [meQ.data, storeUser?.creatableGames]);
+  const availOf = (key: GameKey, def?: GameSummary): GameAvail => {
+    const disabled = !!def?.disabled || !!adminGames.data?.find((g) => g.key === key)?.disabled;
+    if (!creatable) return disabled ? 'disabled' : 'ok';
+    if (creatable.has(key)) return 'ok';
+    // Not creatable: greyed when we know an admin disabled it, hidden when it was simply not granted.
+    if (disabled || isAdmin || storeUser?.allowedGames?.includes(key)) return 'disabled';
+    return 'hidden';
+  };
+
+  const selectedKey: GameKey | null = game === 'steam' ? (steamDef ? defKey(steamDef) : null) : game;
+  // The freshest copy of the chosen definition (its disabled flag may have changed since it was picked).
+  const steamDefNow = steamDef ? defs.data?.find((d) => d.id === steamDef.id) ?? steamDef : undefined;
+  const selectedOk = !!selectedKey && availOf(selectedKey, steamDefNow) === 'ok';
+  const okBuiltins = GAMES.filter((g) => availOf(g) === 'ok');
+  const okDefs = (defs.data ?? []).filter((d) => availOf(defKey(d), d) === 'ok');
+  const accessKnown = !!creatable && !meQ.isLoading && !defs.isLoading && (!isAdmin || !adminGames.isLoading);
+  const noneCreatable = accessKnown && okBuiltins.length === 0 && okDefs.length === 0;
 
   const steps = STEPS_BY_GAME[game];
   const current = steps[step] ?? 'game';
@@ -282,6 +346,7 @@ export default function CreateServer() {
   const trConfig = useMemo(() => toTerrariaConfig(tr, type), [tr, type]);
 
   const canNext = useMemo(() => {
+    if (current === 'game') return selectedOk;
     if (current === 'version') return modpack ? !!pack && !!packVersion : !!mcVersion;
     if (current === 'resources')
       return name.trim().length > 0 && memoryMb >= minMemoryMb && memoryMb <= MEMORY_API_MAX_MB && cpuValid && !ramQuotaError && !cpuQuotaError;
@@ -290,7 +355,7 @@ export default function CreateServer() {
     if (current === 'terraria') return Object.keys(trErrors).length === 0 && !worldFileError;
     if (current === 'review') return caps.needsEula ? eula : !worldFileError;
     return true;
-  }, [current, modpack, pack, packVersion, mcVersion, name, memoryMb, minMemoryMb, caps, cpuValid, ramQuotaError, cpuQuotaError, mcErrors, steamErrors, trErrors, worldFileError, eula]);
+  }, [current, selectedOk, modpack, pack, packVersion, mcVersion, name, memoryMb, minMemoryMb, caps, cpuValid, ramQuotaError, cpuQuotaError, mcErrors, steamErrors, trErrors, worldFileError, eula]);
 
   // Move focus to the step heading so keyboard and screen reader users land on the new step.
   useEffect(() => {
@@ -331,6 +396,13 @@ export default function CreateServer() {
     setMemoryMb(capsOf(DEFAULT_TYPE[g], g).defaultMemoryMb);
   };
 
+  // The default selection (Minecraft) may not be available to this user: move it to the first game that is.
+  useEffect(() => {
+    if (step !== 0 || selectedOk || !accessKnown) return;
+    if (okBuiltins[0]) pickGame(okBuiltins[0]);
+    else if (okDefs[0]) pickSteamGame(okDefs[0]);
+  }, [accessKnown, selectedOk, okBuiltins.join(), okDefs.map((d) => d.id).join(), step]);
+
   const pickType = (tp: ServerType) => {
     if ((tp === 'BEDROCK') !== (type === 'BEDROCK')) setMc(mcDefaults()); // option sets differ per edition
     if (tp === 'BEDROCK') setLanAnnounce(false);
@@ -363,6 +435,7 @@ export default function CreateServer() {
 
   const submit = async () => {
     setBusy(true);
+    setGameError(null);
     try {
       let id = createdId;
       if (!id) {
@@ -403,7 +476,15 @@ export default function CreateServer() {
       if (importing && id && !(await uploadWorld(id))) return;
       finish(id);
     } catch (e) {
-      toast.error(e);
+      if (e instanceof ApiError && (e.code === 'game_not_allowed' || e.code === 'game_disabled')) {
+        // Access changed while the wizard was open: say so where the user is looking and refresh the cards.
+        const gameLabel = steam ? steamDef?.name ?? '' : t(`game.${game as 'minecraft' | 'terraria'}`);
+        setGameError(t(e.code === 'game_disabled' ? 'wizard.errGameDisabled' : 'wizard.errGameNotAllowed', { name: gameLabel }));
+        void meQ.refetch();
+        void qc.invalidateQueries({ queryKey: gamesKey });
+      } else {
+        toast.error(e);
+      }
     } finally {
       setBusy(false);
     }
@@ -454,14 +535,22 @@ export default function CreateServer() {
 
       {current === 'game' && (
         <div className="space-y-4">
+          {noneCreatable && (
+            <div className="panel">
+              <EmptyState icon={<Lock className="h-10 w-10" />} title={t('wizard.noGamesTitle')} body={t('wizard.noGamesBody')} />
+            </div>
+          )}
           <div role="group" aria-label={t('wizard.stepGame')} className="grid gap-3 sm:grid-cols-2">
             {GAMES.map((g) => {
               const Icon = GAME_ICON[g];
-              const on = game === g;
+              const avail = availOf(g);
+              if (avail === 'hidden') return null;
+              const on = game === g && avail === 'ok';
               return (
                 <GameCard
                   key={g}
                   on={on}
+                  unavailable={avail === 'disabled' ? t('wizard.gameDisabledNote') : undefined}
                   onClick={() => pickGame(g)}
                   icon={
                     <span className={clsx('flex h-11 w-11 items-center justify-center rounded-block', on ? 'bg-accent text-accent-ink' : 'bg-raised text-muted')}>
@@ -474,12 +563,15 @@ export default function CreateServer() {
               );
             })}
             {defs.data?.map((d) => {
-              const on = steam && steamDef?.id === d.id;
+              const avail = availOf(defKey(d), d);
+              if (avail === 'hidden') return null;
+              const on = steam && steamDef?.id === d.id && avail === 'ok';
               const r = d.resources;
               return (
                 <GameCard
                   key={d.id}
                   on={on}
+                  unavailable={avail === 'disabled' ? t('wizard.gameDisabledNote') : undefined}
                   onClick={() => pickSteamGame(d)}
                   icon={<GameIcon src={d.icon} active={on} />}
                   title={d.name}
@@ -496,7 +588,7 @@ export default function CreateServer() {
             </p>
           )}
           {defs.error && <ErrorState error={defs.error} onRetry={() => void defs.refetch()} />}
-          {!defs.isLoading && !defs.error && !defs.data?.length && <p className="text-sm text-muted">{t('wizard.moreGames')}</p>}
+          {!defs.isLoading && !defs.error && !defs.data?.length && !noneCreatable && <p className="text-sm text-muted">{t('wizard.moreGames')}</p>}
         </div>
       )}
 
@@ -770,6 +862,12 @@ export default function CreateServer() {
             </div>
           )}
         </div>
+      )}
+
+      {gameError && (
+        <p role="alert" className="mt-6 rounded-md border border-danger/30 bg-danger/5 px-4 py-3 text-sm text-danger">
+          {gameError}
+        </p>
       )}
 
       <div className="mt-8 flex justify-between gap-2 border-t border-line pt-5">

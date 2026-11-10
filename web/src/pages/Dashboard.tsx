@@ -59,6 +59,11 @@ function ServerRow({ server }: { server: Server }) {
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <h2 className="truncate text-lg font-semibold group-hover:text-accent">{server.name}</h2>
           {server.access !== 'owner' && server.access !== 'admin' && <Badge>{t(`access.${server.access}`)}</Badge>}
+          {server.gameBlocked ? (
+            <Badge tone="danger">{t('gameAccess.badgeBlocked')}</Badge>
+          ) : server.gameDisabled ? (
+            <Badge tone="warn">{t('gameAccess.disabledBadge')}</Badge>
+          ) : null}
         </div>
         <div className="mt-0.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted">
           <GameBadge server={server} />

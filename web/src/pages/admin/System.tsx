@@ -3,6 +3,7 @@ import { adminApi } from '@/api';
 import { useT } from '@/i18n';
 import { Badge, ErrorState, LinkButton, Loading, PageHeader, Section } from '@/components/ui';
 import { fmtVersion, useAppVersion, useUpdateInfo } from '@/lib/updates';
+import { ProcessesSection } from './Processes';
 
 /** Panel version + update status (the rest of the page is the open-ended /admin/system payload). */
 function PanelVersion() {
@@ -83,6 +84,7 @@ export default function System() {
     <>
       <PageHeader title={t('admin.systemTitle')} />
       <PanelVersion />
+      <ProcessesSection />
       {q.isLoading ? (
         <Loading />
       ) : q.error ? (

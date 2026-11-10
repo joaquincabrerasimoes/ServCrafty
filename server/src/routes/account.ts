@@ -10,7 +10,8 @@ import { listPasskeys, registrationOptions, toPublicPasskey, verifyRegistration 
 import { badRequest, conflict, forbidden, notFound, unauthorized } from '../lib/errors.js';
 import { parse } from '../lib/validation.js';
 import { audit } from '../services/audit.js';
-import { toPublicUser, type UserRow } from '../services/types.js';
+import type { UserRow } from '../services/types.js';
+import { publicUserWithGames } from '../services/gameAccess.js';
 import { getGlobalLimits, hostUsage } from '../services/globalLimits.js';
 import { quotaUsage } from '../services/users.js';
 
@@ -47,7 +48,7 @@ export default async function accountRoutes(app: FastifyInstance): Promise<void>
       `UPDATE users SET email = $2, locale = $3, theme = $4 WHERE id = $1 RETURNING *`,
       [user.id, body.email !== undefined ? body.email : user.email, body.locale ?? user.locale, body.theme ?? user.theme],
     );
-    return { user: toPublicUser(u!) };
+    return { user: await publicUserWithGames(u!, { creatable: true }) };
   });
 
   app.get('/account/quota', async (req) => {

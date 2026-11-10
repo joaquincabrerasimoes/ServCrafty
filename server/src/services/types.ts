@@ -5,6 +5,7 @@ import type { TerrariaConfig } from '../lib/terrariaConfig.js';
 import { publicSteamConfig, type SteamConfig } from '../lib/steamPlan.js';
 import { mainPort } from '../lib/gameDefinition.js';
 import { getDefinition, getEntry } from './gameDefinitions.js';
+import { serverGameState } from './gameAccess.js';
 
 export type Role = 'admin' | 'user';
 export type ShareLevel = 'viewer' | 'operator' | 'manager';
@@ -153,6 +154,10 @@ export interface PublicServer {
   lanAnnounce: boolean;
   createdAt: string;
   access: Access;
+  /** The server's game is disabled by an admin (no new servers of it). */
+  gameDisabled: boolean;
+  /** The game is disabled with blockStart: this server cannot be started. */
+  gameBlocked: boolean;
 }
 
 export interface SteamGameInfo {
@@ -234,6 +239,7 @@ export function toPublicServer(s: ServerRow, access: Access, ownerName: string |
     lanAnnounce: s.lan_announce,
     createdAt: s.created_at.toISOString(),
     access,
+    ...serverGameState(s),
   };
 }
 

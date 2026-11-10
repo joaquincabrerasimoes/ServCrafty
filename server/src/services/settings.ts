@@ -13,6 +13,8 @@ export const SettingKeys = {
   lanNetworks: 'lan_networks',
   publicServersHost: 'public_servers_host',
   steamApiKey: 'steam_api_key',
+  /** `{ "<gameKey>": { blockStart, disabledAt, by } }` (v0.3.2 disabled games; see services/gameAccess.ts). */
+  disabledGames: 'disabled_games',
 } as const;
 
 const cache = new Map<string, unknown>();

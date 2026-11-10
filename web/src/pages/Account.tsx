@@ -12,6 +12,7 @@ import { toast } from '@/stores/toast';
 import { confirm } from '@/components/feedback';
 import { Badge, Button, ErrorState, Field, IconButton, Loading, Meter, Modal, PageHeader, Section } from '@/components/ui';
 import { LocaleSelect, ThemeSwitch } from '@/components/PrefsControls';
+import { DocsMenu } from '@/components/DocsMenu';
 
 function Profile() {
   const t = useT();
@@ -326,7 +327,7 @@ function Tokens() {
   };
 
   return (
-    <Section title={t('account.tokens')} description={t('account.tokensBody')}>
+    <Section title={t('account.tokens')} description={t('account.tokensBody')} actions={<DocsMenu />}>
       {q.isLoading ? (
         <Loading />
       ) : q.error ? (

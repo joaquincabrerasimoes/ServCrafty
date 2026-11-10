@@ -37,6 +37,7 @@ import {
 } from './docker.js';
 import { bus } from './events.js';
 import { getDefinition } from './gameDefinitions.js';
+import { assertServerCanStart } from './gameAccess.js';
 import { ensureSteamPorts } from './steamPorts.js';
 import { recordAttempt } from './joinAttempts.js';
 import { RconClient, stripFormatting } from './rcon.js';
@@ -878,6 +879,15 @@ export async function getStats(server: ServerRow): Promise<Stats> {
   };
 }
 
+/**
+ * The container totals the runtime already has from its docker stats stream (no extra docker call), or
+ * null when there is no fresh sample. `cpuPercent` is relative to the server's CPU allotment, as in Stats.
+ */
+export function dockerSample(serverId: string): { memUsedMb: number; memLimitMb: number; cpuPercent: number; at: number } | null {
+  const d = states.get(serverId)?.docker;
+  return d && Date.now() - d.at < 10_000 ? { ...d } : null;
+}
+
 export function onlinePlayers(serverId: string): string[] {
   return [...state(serverId).players];
 }
@@ -931,6 +941,8 @@ export function start(serverId: string): Promise<void> {
     let server = await loadServer(serverId);
     const s = state(serverId);
     if (['running', 'starting', 'installing'].includes(s.status)) throw conflict('Server is already running', 'already_running');
+    // A game disabled with blockStart: no start of any kind (manual, restart, auto-start, crash restart, schedules).
+    await assertServerCanStart(server);
     // A definition may have gained published ports since the server was created.
     if (isSteamType(server.type)) server = await ensureSteamPorts(server, { running: false, log: (l) => systemLog(serverId, l) });
     // Generated secrets a definition gained after the server was created are filled in (and stored) once.
@@ -1081,6 +1093,8 @@ export function stop(serverId: string, kill = false, manual = true): Promise<voi
 }
 
 export async function restart(serverId: string): Promise<void> {
+  // Refuse before stopping: a blocked game must not be left stopped by a restart that cannot start it again.
+  await assertServerCanStart(await loadServer(serverId));
   await stop(serverId);
   await start(serverId);
 }
@@ -1293,9 +1307,17 @@ export async function initRuntime(logger: FastifyBaseLogger): Promise<void> {
  */
 export async function stopAllServers(): Promise<{ stopped: number; failed: number }> {
   const ids = [...states.entries()].filter(([, s]) => ['running', 'starting', 'installing'].includes(s.status)).map(([id]) => id);
+  return systemStopServers(ids, '[servcrafty] host is shutting down: stopping the server');
+}
+
+/**
+ * Gracefully stop the given servers in parallel as a SYSTEM stop (`manual: false`: not counted as a user
+ * stop, so automatic start keeps working). Used by host shutdown and by disabling a game with blockStart.
+ */
+export async function systemStopServers(ids: readonly string[], message: string): Promise<{ stopped: number; failed: number }> {
   const results = await Promise.allSettled(
     ids.map((id) => {
-      systemLog(id, '[servcrafty] host is shutting down: stopping the server');
+      systemLog(id, message);
       return stop(id, false, false);
     }),
   );

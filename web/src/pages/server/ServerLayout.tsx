@@ -1,6 +1,6 @@
 import { Navigate, NavLink, Outlet, useLocation, useOutletContext, useParams } from 'react-router-dom';
 import clsx from 'clsx';
-import { Copy } from 'lucide-react';
+import { Ban, Copy, Info } from 'lucide-react';
 import type { GameSummary, Server } from '@/api/types';
 import { useT, type TKey } from '@/i18n';
 import { useServer } from '@/lib/queries';
@@ -99,6 +99,21 @@ export default function ServerLayout() {
           <CopyAddress server={server} />
         </div>
       </div>
+
+      {server.gameBlocked ? (
+        <div role="status" className="mb-5 flex gap-3 rounded-md border border-danger/30 bg-danger/5 px-4 py-3 text-sm">
+          <Ban className="mt-0.5 h-4 w-4 shrink-0 text-danger" aria-hidden="true" />
+          <div>
+            <p className="font-medium text-danger">{t('gameAccess.blockedBannerTitle')}</p>
+            <p className="mt-0.5 text-muted">{t('gameAccess.blockedBannerBody')}</p>
+          </div>
+        </div>
+      ) : server.gameDisabled ? (
+        <p className="mb-5 flex items-center gap-2 text-sm text-muted">
+          <Info className="h-4 w-4 shrink-0" aria-hidden="true" />
+          {t('gameAccess.disabledNotice')}
+        </p>
+      ) : null}
 
       <nav className="scrollbar-thin -mx-4 mb-6 overflow-x-auto border-b border-line px-4 sm:mx-0 sm:px-0">
         <div className="flex min-w-max gap-1">

@@ -6,6 +6,7 @@ import { closeDb } from './db/pool.js';
 import { ensureGracefulUnit } from './lib/gracefulUnit.js';
 import { purgeExpiredSessions } from './auth/sessions.js';
 import { loadGameDefinitions } from './services/gameDefinitions.js';
+import { loadDisabledGames } from './services/gameAccess.js';
 import { initLanAnnouncer, stopLanAnnouncer } from './services/lanAnnouncer.js';
 import { initRuntime, shutdownRuntime } from './services/runtime.js';
 import { initScheduler, stopScheduler } from './services/scheduler.js';
@@ -27,6 +28,8 @@ async function main(): Promise<void> {
 
   // Definitions first: the runtime needs them to re-attach to running SteamCMD servers.
   await loadGameDefinitions(log);
+  // Disabled games (v0.3.2): the server JSON reads a synchronous snapshot.
+  await loadDisabledGames();
   initWebhooks(log);
   await initRuntime(log);
   await initScheduler(log);

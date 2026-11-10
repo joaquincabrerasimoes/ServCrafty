@@ -13,7 +13,7 @@ RUN npm prune --omit=dev --workspaces --include-workspace-root || true
 # ---- runtime: Node + bundled dockerd (DinD) ----
 FROM docker:27-dind AS runtime
 COPY --from=build /usr/local/bin/node /usr/local/bin/node
-RUN apk add --no-cache libstdc++ tini bash curl tar iptables
+RUN apk add --no-cache libstdc++ tini bash curl tar iptables procps
 WORKDIR /app
 COPY --from=build /app/package.json ./
 COPY --from=build /app/node_modules ./node_modules
@@ -22,6 +22,8 @@ COPY --from=build /app/server/dist ./server/dist
 COPY --from=build /app/server/migrations ./server/migrations
 # Built-in SteamCMD game definitions (read at boot).
 COPY --from=build /app/server/games ./server/games
+# API documentation served by GET /api/docs/* (guide + OpenAPI file).
+COPY --from=build /app/server/docs ./server/docs
 COPY --from=build /app/web/dist ./web/dist
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh

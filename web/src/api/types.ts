@@ -21,6 +21,10 @@ export interface User {
   canAuthorGames?: boolean;
   totpEnabled?: boolean;
   createdAt?: string;
+  /** Game keys this user may create servers for (admin list/get). null = unrestricted (admins). */
+  allowedGames?: string[] | null;
+  /** /auth/me and login only: the game keys the signed-in user can create servers for right now. */
+  creatableGames?: string[];
 }
 
 export type LoginResponse =
@@ -185,6 +189,10 @@ export interface Server {
   lanAnnounce?: boolean;
   createdAt?: string;
   access: Access;
+  /** The game this server runs is disabled by an admin (no new servers). */
+  gameDisabled?: boolean;
+  /** The game is disabled with blockStart: the server cannot be started. */
+  gameBlocked?: boolean;
 }
 
 export interface CreateServerBody {
@@ -599,6 +607,10 @@ export type GameSummary = Partial<Omit<GameDefinition, 'scripts' | 'id' | 'name'
   ownerId?: string | null;
   ownerName?: string | null;
   updatedAt?: string;
+  /** Game key, `steam:<id>`. */
+  key?: string;
+  disabled?: boolean;
+  blockStart?: boolean;
 };
 
 /** One problem reported by POST /games/validate or invalid_steam_config. */
@@ -638,4 +650,85 @@ export interface WorkshopItem {
 export interface WorkshopSearchResult {
   items: WorkshopItem[];
   total: number;
+}
+
+/* ------------------------------------------------------------ v0.3.2: game access, disabled games, processes */
+
+/** "minecraft", "terraria" or "steam:<definitionId>". */
+export type GameKey = string;
+export type GameKind = 'minecraft' | 'terraria' | 'steam';
+
+/** GET /users/:id/games */
+export interface UserGamesResponse {
+  /** null for admins (unrestricted). */
+  games: GameKey[] | null;
+  unrestricted?: boolean;
+}
+
+/** GET /admin/games item. */
+export interface AdminGame {
+  key: GameKey;
+  name: string;
+  builtin: boolean;
+  kind: GameKind;
+  disabled: boolean;
+  blockStart: boolean;
+  servers: number;
+  running: number;
+}
+
+/** PUT /admin/games/:key/disabled response. */
+export interface GameDisabledResult {
+  key: GameKey;
+  disabled: boolean;
+  blockStart: boolean;
+  /** Servers stopped by this call. */
+  stopped: number;
+}
+
+/** One process inside a game container (GET /admin/processes). */
+export interface ProcessInfo {
+  pid: number;
+  ppid: number;
+  user: string;
+  cpuPercent: number;
+  memMb: number;
+  memPercent: number;
+  state: string;
+  elapsedSec: number;
+  cpuTimeSec: number;
+  command: string;
+}
+
+export interface ProcessServer {
+  serverId: string;
+  name: string;
+  game: Game;
+  gameKey: GameKey;
+  status: ServerStatus;
+  containerId: string | null;
+  /** Container CPU as a percent of the server's own CPU allotment (like Stats.cpuPercent). */
+  cpuPercent: number | null;
+  /** The server's CPU allotment in cores. */
+  cpuLimit?: number | null;
+  memUsedMb: number | null;
+  memLimitMb: number | null;
+  processes: ProcessInfo[];
+}
+
+export interface ProcessesResponse {
+  takenAt: string;
+  intervalMs: number;
+  host: { cpuCount: number; memTotalMb: number };
+  servers: ProcessServer[];
+  dockerAvailable: boolean;
+}
+
+/** GET /docs item. */
+export interface DocInfo {
+  id: string;
+  title: string;
+  filename: string;
+  url: string;
+  contentType: string;
 }

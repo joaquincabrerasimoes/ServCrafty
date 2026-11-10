@@ -37,6 +37,41 @@ export function gameLabel(game: Game): string {
   return game === 'terraria' ? 'Terraria' : game === 'steam' ? 'SteamCMD' : 'Minecraft';
 }
 
+/**
+ * A "game key" identifies something a server can be created for (SPEC "v0.3.2"): `minecraft`,
+ * `terraria`, or `steam:<definitionId>`. Used by per-user game access and by disabled games.
+ */
+export type GameKey = string;
+export const MINECRAFT_KEY = 'minecraft';
+export const TERRARIA_KEY = 'terraria';
+export const STEAM_KEY_PREFIX = 'steam:';
+
+/** Game key of a SteamCMD game definition. */
+export function steamGameKey(definitionId: string): GameKey {
+  return `${STEAM_KEY_PREFIX}${definitionId}`;
+}
+
+/** Kind of a game key, or null when it is malformed. */
+export function gameKeyKind(key: string): Game | null {
+  if (key === MINECRAFT_KEY) return 'minecraft';
+  if (key === TERRARIA_KEY) return 'terraria';
+  if (key.startsWith(STEAM_KEY_PREFIX) && /^[a-z0-9][a-z0-9-]{1,39}$/.test(key.slice(STEAM_KEY_PREFIX.length))) return 'steam';
+  return null;
+}
+
+/** Definition id of a `steam:<id>` key (null for other keys). */
+export function steamIdOfKey(key: string): string | null {
+  return gameKeyKind(key) === 'steam' ? key.slice(STEAM_KEY_PREFIX.length) : null;
+}
+
+/** Game key of a server row (or of a creation input): STEAMCMD servers use `steam.gameId`. */
+export function serverGameKey(server: { type: ServerType | string; steam?: { gameId?: unknown } | null }): GameKey {
+  const game = gameOf(server.type);
+  if (game !== 'steam') return game;
+  const id = server.steam?.gameId;
+  return steamGameKey(typeof id === 'string' ? id : '');
+}
+
 export interface GameCapabilities {
   /** Console commands go over RCON (Java) and RCON pollers (list, tick query) run. */
   hasRcon: boolean;

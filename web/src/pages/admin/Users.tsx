@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Pencil, Plus, ShieldCheck, Trash2 } from 'lucide-react';
+import { Gamepad2, Pencil, Plus, ShieldCheck, Trash2 } from 'lucide-react';
 import { usersApi, type UpdateUserBody } from '@/api';
 import type { Quotas, Role, User } from '@/api/types';
 import { useT } from '@/i18n';
@@ -9,6 +9,7 @@ import { formatMb, formatNumber, formatDate } from '@/lib/format';
 import { toast } from '@/stores/toast';
 import { confirm } from '@/components/feedback';
 import { Badge, Button, ErrorState, Field, IconButton, Loading, Modal, PageHeader, Toggle } from '@/components/ui';
+import { UserGamesDialog } from './UserGamesDialog';
 
 type Draft = {
   id?: string;
@@ -46,6 +47,7 @@ export default function Users() {
   const q = useQuery({ queryKey: ['users'], queryFn: usersApi.list });
   const [draft, setDraft] = useState<Draft | null>(null);
   const [busy, setBusy] = useState(false);
+  const [gamesFor, setGamesFor] = useState<User | null>(null);
   const refresh = () => qc.invalidateQueries({ queryKey: ['users'] });
 
   const save = async () => {
@@ -112,6 +114,7 @@ export default function Users() {
               <tr>
                 <th>{t('login.username')}</th>
                 <th>{t('users.role')}</th>
+                <th>{t('gameAccess.col')}</th>
                 <th className="hidden md:table-cell">{t('users.quotas')}</th>
                 <th className="hidden lg:table-cell">{t('users.created')}</th>
                 <th />
@@ -132,6 +135,17 @@ export default function Users() {
                   <td>
                     <Badge tone={u.role === 'admin' ? 'accent' : 'neutral'}>{t(`role.${u.role}`)}</Badge>
                   </td>
+                  <td className="whitespace-nowrap text-xs">
+                    {u.role === 'admin' || u.allowedGames === null ? (
+                      <span className="text-muted">{t('gameAccess.unrestricted')}</span>
+                    ) : u.allowedGames === undefined ? (
+                      <span className="text-muted">–</span>
+                    ) : u.allowedGames.length ? (
+                      <span title={u.allowedGames.join(', ')}>{u.allowedGames.length === 1 ? t('gameAccess.summaryOne') : t('gameAccess.summary', { n: u.allowedGames.length })}</span>
+                    ) : (
+                      <span className="text-warn">{t('gameAccess.summaryNone')}</span>
+                    )}
+                  </td>
                   <td className="hidden text-xs text-muted md:table-cell">
                     {quota(u.maxServers, (n) => formatNumber(n))} {t('quota.serversShort')} · {quota(u.maxRamMb, formatMb)} · {quota(u.maxCpu, (n) => formatNumber(n, 1))} CPU ·{' '}
                     {quota(u.maxDiskMb, formatMb)}
@@ -139,6 +153,9 @@ export default function Users() {
                   <td className="hidden text-muted lg:table-cell">{formatDate(u.createdAt)}</td>
                   <td>
                     <div className="flex justify-end">
+                      <IconButton label={t('gameAccess.action', { name: u.username })} onClick={() => setGamesFor(u)}>
+                        <Gamepad2 className="h-4 w-4" />
+                      </IconButton>
                       <IconButton label={t('common.edit')} onClick={() => setDraft(toDraft(u))}>
                         <Pencil className="h-4 w-4" />
                       </IconButton>
@@ -232,6 +249,7 @@ export default function Users() {
           </div>
         )}
       </Modal>
+      <UserGamesDialog user={gamesFor} onClose={() => setGamesFor(null)} />
     </>
   );
 }

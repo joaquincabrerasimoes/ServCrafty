@@ -7,7 +7,8 @@ import { query, queryOne, tx } from '../db/pool.js';
 import { randomPassword } from '../lib/crypto.js';
 import { badRequest, notFound } from '../lib/errors.js';
 import { mainPort, type GameDefinition } from '../lib/gameDefinition.js';
-import { gameLabel, gameOf, GAMES, isSteamType, isTerrariaType, type Game } from '../lib/games.js';
+import { gameLabel, gameOf, GAMES, isSteamType, isTerrariaType, serverGameKey, type Game } from '../lib/games.js';
+import { assertCanCreateServer } from './gameAccess.js';
 import { minecraftConfigSchema, normalizeMinecraftConfig } from '../lib/minecraftConfig.js';
 import {
   mergeSteamConfig,
@@ -193,6 +194,13 @@ export async function createServer(
     owner = await getUser(input.ownerId);
   }
   const game: Game = gameOf(input.type);
+  // Game access (allowlist of the creating user) and disabled games, before anything else is validated.
+  // Every creation path (POST /servers, clone, template instantiate, imports) goes through here.
+  const gameId = (input.steam as { gameId?: unknown } | null | undefined)?.gameId;
+  if (game !== 'steam' || (typeof gameId === 'string' && gameId)) {
+    await assertCanCreateServer(actor, serverGameKey({ type: input.type, steam: game === 'steam' ? { gameId } : null }));
+  }
+  // (An absent steam.gameId is rejected by steamForCreate as invalid_steam_config.)
   const steam = game === 'steam' ? steamForCreate(input) : null;
   if (steam && input.port !== undefined) {
     throw badRequest('SteamCMD servers get their ports from the pool; "port" cannot be chosen', 'port_not_supported');

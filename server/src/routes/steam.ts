@@ -9,6 +9,7 @@ import { intQuery, parse } from '../lib/validation.js';
 import { loadServerFor } from '../services/access.js';
 import { audit } from '../services/audit.js';
 import { requireDefinition } from '../services/gameDefinitions.js';
+import { assertServerCanStart } from '../services/gameAccess.js';
 import * as runtime from '../services/runtime.js';
 import { updateSteamConfig } from '../services/servers.js';
 import { getSteamApiKey } from '../services/settings.js';
@@ -30,6 +31,8 @@ export default async function steamRoutes(app: FastifyInstance): Promise<void> {
     const user = requireUser(req);
     const { server } = await loadServerFor(user, req.params.id, 'operator');
     assertSteam(server, 'Game file updates');
+    // The update runs at the next start, which a game disabled with blockStart does not allow.
+    await assertServerCanStart(server);
     await updateSteamConfig(server.id, (cur) => ({ ...cur, validateNext: true }));
     const restarting = runtime.isRunning(server.id);
     if (restarting) {

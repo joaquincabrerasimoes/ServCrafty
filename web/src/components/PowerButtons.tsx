@@ -15,6 +15,9 @@ export function PowerButtons({ server, status, compact }: { server: Server; stat
   const st = status ?? server.status;
   const running = st === 'running' || st === 'starting';
   const transitional = st === 'starting' || st === 'stopping' || st === 'installing';
+  // An admin disabled this game and blocked starting it (409 game_disabled from the API).
+  const blocked = server.gameBlocked === true;
+  const blockedHint = blocked ? t('gameAccess.startBlocked') : undefined;
 
   const act = async (action: PowerAction) => {
     if (action === 'kill') {
@@ -37,15 +40,35 @@ export function PowerButtons({ server, status, compact }: { server: Server; stat
   return (
     <div className="flex flex-wrap gap-2">
       {!running && st !== 'stopping' && (
-        <Button size={size} variant="primary" loading={busy === 'start'} disabled={st === 'installing'} onClick={() => void act('start')} icon={<Play className="h-4 w-4" />}>
-          {t('power.start')}
-        </Button>
+        // A disabled button gets no pointer events, so the explanation lives on a wrapper.
+        <span title={blockedHint} className="inline-flex">
+          <Button
+            size={size}
+            variant="primary"
+            loading={busy === 'start'}
+            disabled={st === 'installing' || blocked}
+            aria-label={blocked ? `${t('power.start')}: ${blockedHint}` : undefined}
+            onClick={() => void act('start')}
+            icon={<Play className="h-4 w-4" />}
+          >
+            {t('power.start')}
+          </Button>
+        </span>
       )}
       {(running || st === 'stopping') && (
         <>
-          <Button size={size} loading={busy === 'restart'} disabled={transitional} onClick={() => void act('restart')} icon={<RotateCw className="h-4 w-4" />}>
-            {t('power.restart')}
-          </Button>
+          <span title={blockedHint} className="inline-flex">
+            <Button
+              size={size}
+              loading={busy === 'restart'}
+              disabled={transitional || blocked}
+              aria-label={blocked ? `${t('power.restart')}: ${blockedHint}` : undefined}
+              onClick={() => void act('restart')}
+              icon={<RotateCw className="h-4 w-4" />}
+            >
+              {t('power.restart')}
+            </Button>
+          </span>
           <Button size={size} loading={busy === 'stop'} disabled={st === 'stopping'} onClick={() => void act('stop')} icon={<Square className="h-4 w-4" />}>
             {t('power.stop')}
           </Button>
