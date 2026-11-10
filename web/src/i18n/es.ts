@@ -149,6 +149,8 @@ export const es: Record<keyof typeof en, string> = {
   'server.port': 'Puerto',
   'server.javaArgs': 'Argumentos de Java',
   'server.autoRestart': 'Reiniciar automáticamente tras un fallo',
+  'server.autoStart': 'Iniciar automáticamente cuando {host} arranque (salvo que se detenga manualmente)',
+  'server.autoStartHint': 'Tras reiniciar el host, este servidor arranca solo. Si lo detienes tú, se queda detenido hasta que lo inicies de nuevo. Las paradas por apagado del host no cuentan.',
   'lan.label': 'Mostrar en la red local',
   'lan.hint': 'Muestra este servidor en "Buscando partidas en tu red local" de Minecraft Java para los jugadores de la misma red. Funciona cuando ServCrafty se ejecuta directamente en tu red (LXC de Proxmox, o Docker con red host).',
   'lan.bedrock': 'El descubrimiento en red local solo está disponible para servidores de Minecraft Java.',

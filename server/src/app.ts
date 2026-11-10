@@ -12,6 +12,7 @@ import { registerAuth } from './auth/plugin.js';
 import { AppError } from './lib/errors.js';
 import accountRoutes from './routes/account.js';
 import adminRoutes from './routes/admin.js';
+import internalRoutes from './routes/internal.js';
 import authRoutes from './routes/auth.js';
 import backupRoutes from './routes/backups.js';
 import catalogRoutes from './routes/catalog.js';
@@ -91,6 +92,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       await api.register(accountRoutes);
       await api.register(userRoutes);
       await api.register(adminRoutes);
+      await api.register(internalRoutes);
       await api.register(updateRoutes);
       await api.register(serverRoutes);
       await api.register(fileRoutes);

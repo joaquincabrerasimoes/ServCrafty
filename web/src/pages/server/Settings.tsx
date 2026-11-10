@@ -1,3 +1,4 @@
+import { usePublicConfig } from '@/components/CopyAddress';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
@@ -18,6 +19,7 @@ import { useServerCtx } from './ServerLayout';
 
 export default function ServerSettings() {
   const t = useT();
+  const { installType } = usePublicConfig();
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { server } = useServerCtx();
@@ -31,6 +33,7 @@ export default function ServerSettings() {
     port: server.port,
     javaArgs: server.javaArgs ?? '',
     autoRestart: server.autoRestart ?? false,
+    autoStart: server.autoStart ?? false,
     lanAnnounce: server.lanAnnounce ?? false,
   });
   const [env, setEnv] = useState<Array<[string, string]>>(Object.entries(server.env ?? {}));
@@ -72,6 +75,7 @@ export default function ServerSettings() {
         port: Number(form.port),
         ...(caps.hasJava ? { javaArgs: form.javaArgs.trim() || null } : {}),
         autoRestart: form.autoRestart,
+        autoStart: form.autoStart,
         ...(caps.hasJava && server.type !== 'BEDROCK' ? { lanAnnounce: form.lanAnnounce } : {}),
         ...(caps.hasTerrariaConfig ? { terraria: toTerrariaPatch(tr, server.type, worldLocked) } : {}),
         env: Object.fromEntries(env.filter(([k]) => k.trim()).map(([k, v]) => [k.trim(), v])),
@@ -152,6 +156,10 @@ export default function ServerSettings() {
           )}
           <div className="sm:col-span-2">
             <Toggle checked={form.autoRestart} onChange={(v) => set('autoRestart', v)} label={t('server.autoRestart')} />
+          </div>
+          <div className="sm:col-span-2">
+            <Toggle checked={form.autoStart} onChange={(v) => set('autoStart', v)} label={t('server.autoStart', { host: installType === 'lxc' ? 'LXC' : 'Docker' })} />
+            <p className="hint mt-1">{t('server.autoStartHint')}</p>
           </div>
           {caps.hasJava && (
             <div className="sm:col-span-2">

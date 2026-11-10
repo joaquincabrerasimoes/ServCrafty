@@ -176,7 +176,8 @@ export default function Overview() {
         <StatsPanel stats={stats} history={live.history} tickStats={caps.hasTickStats} />
         <PlayersPanel stats={stats} avatars={caps.hasPlayerHeads} />
       </div>
-      <section className="gui-frame flex min-w-0 flex-col lg:max-h-[calc(100dvh-13rem)]">
+      {/* On desktop this panel is sized by the row (Stats + Players), not by its own content: size containment keeps the growing log from stretching the page. */}
+      <section className="gui-frame flex min-w-0 flex-col lg:min-h-0 lg:[contain:size]">
         <div className="mb-2 flex items-center justify-between gap-2">
           <h2 className="gui-legend !mb-0">{t('overview.log')}</h2>
           {live.conn !== 'open' && (
@@ -186,7 +187,7 @@ export default function Overview() {
             </span>
           )}
         </div>
-        <LogView lines={logs} className="h-[22rem] sm:h-[28rem] lg:h-auto lg:min-h-[24rem] lg:flex-1" />
+        <LogView lines={logs} className="h-[22rem] sm:h-[28rem] lg:h-auto lg:min-h-0 lg:flex-1" />
         <div className="mt-2">
           <CommandInput
             disabled={!op || server.status !== 'running'}

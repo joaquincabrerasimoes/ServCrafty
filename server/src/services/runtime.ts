@@ -220,6 +220,7 @@ function analyzeLine(s: RuntimeState, line: string): void {
   if (/Stopping (the )?server|Stopping server/i.test(line) && s.status === 'running') {
     // An in-game/console "stop": treat as an expected shutdown.
     s.expectedStop = true;
+    void query('UPDATE servers SET stopped_by_user=true WHERE id=$1', [s.id]).catch(() => undefined);
     void setStatus(s.id, 'stopping');
   }
   if (!s.version) s.version = detectMcVersion(line);
@@ -707,6 +708,7 @@ export function start(serverId: string): Promise<void> {
     s.expectedStop = false;
     s.logs = [];
     s.version = null;
+    await query('UPDATE servers SET stopped_by_user=false WHERE id=$1', [serverId]);
     await setStatus(serverId, 'starting');
     try {
       // The previous container (if still alive) is force-removed when the new one is created. Its
@@ -788,9 +790,11 @@ async function sendStopCommand(server: ServerRow, s: RuntimeState, cmd: string):
   }
 }
 
-export function stop(serverId: string, kill = false): Promise<void> {
+/** `manual: false` is for stops the system makes (host shutdown, backups); those do not block auto-start. */
+export function stop(serverId: string, kill = false, manual = true): Promise<void> {
   return withLock(serverId, async () => {
     const server = await loadServer(serverId);
+    await query('UPDATE servers SET stopped_by_user=$2 WHERE id=$1', [serverId, manual]);
     await stopContainer(server, state(serverId), kill);
   });
 }
@@ -983,8 +987,67 @@ export async function initRuntime(logger: FastifyBaseLogger): Promise<void> {
       if (server.status !== 'stopped') await setStatus(server.id, 'stopped');
     }
   }
+  if (dockerOk) void autoStartServers(logger);
   if (dockerOk) void watchDockerEvents();
   else setTimeout(() => void watchDockerEvents(), 10_000).unref();
+}
+
+/**
+ * Stop every running game server cleanly (Minecraft saves via SIGTERM, Terraria via `exit`), in parallel.
+ * Used when the whole container shuts down; a normal panel restart or self-update leaves servers running.
+ */
+export async function stopAllServers(): Promise<{ stopped: number; failed: number }> {
+  const ids = [...states.entries()].filter(([, s]) => ['running', 'starting', 'installing'].includes(s.status)).map(([id]) => id);
+  const results = await Promise.allSettled(
+    ids.map((id) => {
+      systemLog(id, '[servcrafty] host is shutting down: stopping the server');
+      return stop(id, false, false);
+    }),
+  );
+  results.forEach((r, i) => {
+    if (r.status === 'rejected') log?.warn({ err: errorMessage(r.reason), serverId: ids[i] }, 'graceful stop failed');
+  });
+  return { stopped: results.filter((r) => r.status === 'fulfilled').length, failed: results.filter((r) => r.status === 'rejected').length };
+}
+
+/**
+ * After the host came up: start servers that have "automatic start" on and were not stopped by a user.
+ * Servers that survived a plain panel restart are already running and are skipped. One at a time, so a
+ * host with several servers is not hit by every JVM starting at once.
+ */
+async function containerIsRunning(...refs: Array<string | null>): Promise<boolean> {
+  for (const ref of refs) {
+    if (!ref) continue;
+    try {
+      if ((await docker().getContainer(ref).inspect()).State.Running) return true;
+    } catch {
+      /* no such container */
+    }
+  }
+  return false;
+}
+
+async function autoStartServers(logger: FastifyBaseLogger): Promise<void> {
+  const due = await query<{ id: string; name: string; container_id: string | null }>(
+    `SELECT id, name, container_id FROM servers WHERE auto_start AND NOT stopped_by_user ORDER BY created_at`,
+  );
+  for (const { id, name, container_id } of due) {
+    if (isRunning(id)) continue;
+    // A self-update restarts only the panel; the game containers keep running. Ask Docker directly, by the
+    // stored id and by name, so a server that is already up is never started (and its container never replaced).
+    if (await containerIsRunning(container_id, containerName(id))) {
+      logger.info({ serverId: id }, `${name} is already running, not auto-starting`);
+      continue;
+    }
+    try {
+      systemLog(id, '[servcrafty] automatic start');
+      await start(id);
+      logger.info({ serverId: id }, `auto-started ${name}`);
+    } catch (err) {
+      logger.warn({ err: errorMessage(err), serverId: id }, 'automatic start failed');
+    }
+    await new Promise((r) => setTimeout(r, 5000));
+  }
 }
 
 export async function shutdownRuntime(): Promise<void> {

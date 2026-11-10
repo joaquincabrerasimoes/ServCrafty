@@ -42,7 +42,7 @@ export default async function adminRoutes(app: FastifyInstance): Promise<void> {
   // Readable by any signed-in user: the address players use to reach game servers.
   app.get('/public-config', async (req) => {
     requireUser(req);
-    return { publicServersHost: await getPublicServersHost() };
+    return { publicServersHost: await getPublicServersHost(), installType: process.env.INSTALL_TYPE === 'lxc' ? 'lxc' : 'docker' };
   });
 
   app.get('/admin/settings', async (req) => {

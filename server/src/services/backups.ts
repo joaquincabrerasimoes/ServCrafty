@@ -155,7 +155,7 @@ export async function restoreBackup(server: ServerRow, b: BackupRow): Promise<vo
   busy.add(server.id);
   const wasRunning = runtime.isRunning(server.id);
   try {
-    if (wasRunning) await runtime.stop(server.id);
+    if (wasRunning) await runtime.stop(server.id, false, false);
     const dir = serverDir(server.id);
     const aside = `${dir}.pre-restore-${Date.now()}`;
     await fsp.rename(dir, aside).catch(async (err: NodeJS.ErrnoException) => {

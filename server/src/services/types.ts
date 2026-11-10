@@ -104,6 +104,9 @@ export interface ServerRow {
   container_id: string | null;
   status: ServerStatus;
   auto_restart: boolean;
+  auto_start: boolean;
+  /** Set when a user stops the server; cleared when it starts. Host shutdowns do not set it. */
+  stopped_by_user: boolean;
   /** Announce this (Java) server on the LAN while it runs. */
   lan_announce: boolean;
   rcon_password: string;
@@ -130,6 +133,7 @@ export interface PublicServer {
   terraria: TerrariaConfig | null;
   status: ServerStatus;
   autoRestart: boolean;
+  autoStart: boolean;
   lanAnnounce: boolean;
   createdAt: string;
   access: Access;
@@ -156,6 +160,7 @@ export function toPublicServer(s: ServerRow, access: Access, ownerName: string |
     terraria: s.terraria ?? null,
     status: s.status,
     autoRestart: s.auto_restart,
+    autoStart: s.auto_start,
     lanAnnounce: s.lan_announce,
     createdAt: s.created_at.toISOString(),
     access,

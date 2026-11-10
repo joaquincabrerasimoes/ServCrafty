@@ -171,6 +171,8 @@ export interface Server {
   containerId?: string | null;
   status: ServerStatus;
   autoRestart?: boolean;
+  /** Start when the host comes up, unless a user stopped it. */
+  autoStart?: boolean;
   lanAnnounce?: boolean;
   createdAt?: string;
   access: Access;
@@ -188,6 +190,7 @@ export interface CreateServerBody {
   port?: number;
   env?: Record<string, string>;
   autoRestart?: boolean;
+  autoStart?: boolean;
   lanAnnounce?: boolean;
   minecraft?: MinecraftConfig;
   /** Terraria servers only. */

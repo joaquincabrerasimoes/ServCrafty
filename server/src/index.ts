@@ -3,6 +3,7 @@ import { buildApp } from './app.js';
 import { config } from './config.js';
 import { migrate } from './db/migrate.js';
 import { closeDb } from './db/pool.js';
+import { ensureGracefulUnit } from './lib/gracefulUnit.js';
 import { purgeExpiredSessions } from './auth/sessions.js';
 import { initLanAnnouncer, stopLanAnnouncer } from './services/lanAnnouncer.js';
 import { initRuntime, shutdownRuntime } from './services/runtime.js';
@@ -36,6 +37,14 @@ async function main(): Promise<void> {
   }
 
   await app.listen({ port: c.port, host: c.host });
+
+  // LXC installs: make sure the container's shutdown stops game servers gracefully (see lib/gracefulUnit.ts).
+  if (process.env.INSTALL_TYPE === 'lxc') {
+    ensureGracefulUnit().then(
+      (changed) => changed && log.info('installed servcrafty-graceful.service'),
+      (err: unknown) => log.warn({ err: err instanceof Error ? err.message : String(err) }, 'could not install servcrafty-graceful.service'),
+    );
+  }
 
   let closing = false;
   const shutdown = async (signal: string) => {

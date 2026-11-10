@@ -80,6 +80,7 @@ export const updateServerSchema = z
     port: z.number().int().min(1).max(65535),
     env: envSchema,
     autoRestart: z.boolean(),
+    autoStart: z.boolean(),
     lanAnnounce: z.boolean(),
     type: serverTypeSchema,
     /** Merged over the current Terraria config (null fields are removed; null resets to defaults). */
@@ -249,6 +250,7 @@ export async function updateServer(actor: UserRow, server: ServerRow, patch: Upd
       throw badRequest('LAN discovery is only available for Minecraft Java servers', 'lan_announce_unsupported');
     }
     const lanAnnounce = type === 'BEDROCK' ? false : (patch.lanAnnounce ?? server.lan_announce);
+    if (patch.autoStart !== undefined) await client.query('UPDATE servers SET auto_start=$2 WHERE id=$1', [server.id, patch.autoStart]);
     const r = await client.query<ServerRow>(
       `UPDATE servers SET name=$2, type=$3, mc_version=$4, loader_version=$5, modpack=$6, java_args=$7, memory_mb=$8,
          cpu=$9, disk_mb=$10, port=$11, env=$12, auto_restart=$13, lan_announce=$14, game=$15, terraria=$16 WHERE id=$1 RETURNING *`,

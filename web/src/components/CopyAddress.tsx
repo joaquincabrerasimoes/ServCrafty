@@ -7,14 +7,18 @@ import { useT } from '@/i18n';
 import { toast } from '@/stores/toast';
 import { Button } from './ui';
 
-/** Host name players use from the internet (Admin > Settings); '' until it is configured. */
-export function usePublicServersHost(): string {
+export function usePublicConfig(): { publicServersHost: string; installType: 'lxc' | 'docker' } {
   const q = useQuery({
     queryKey: ['public-config'],
-    queryFn: () => api.get<{ publicServersHost: string }>('/public-config'),
+    queryFn: () => api.get<{ publicServersHost: string; installType?: 'lxc' | 'docker' }>('/public-config'),
     staleTime: 5 * 60_000,
   });
-  return q.data?.publicServersHost ?? '';
+  return { publicServersHost: q.data?.publicServersHost ?? '', installType: q.data?.installType ?? 'docker' };
+}
+
+/** Host name players use from the internet (Admin > Settings); '' until it is configured. */
+export function usePublicServersHost(): string {
+  return usePublicConfig().publicServersHost;
 }
 
 async function copy(text: string): Promise<boolean> {
