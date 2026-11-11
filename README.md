@@ -53,6 +53,9 @@ A self-hosted web panel for running and managing Minecraft servers. Each server 
 - Server templates, and one-click clone.
 - Import and export: CurseForge manifest zip, Modrinth `.mrpack` and server-pack zip.
 
+**Live map**
+- BlueMap for Java servers (Paper-family, Fabric, Quilt, Forge, NeoForge): one switch installs it, and the 3D map opens inside the panel through its authenticated proxy, with no extra port exposed. The rendered map is stored in your PostgreSQL database, in a schema (and a restricted role) of its own per server; deleting the server drops it. See [BlueMap](#bluemap).
+
 **Live monitoring** (modelled on the vanilla server window)
 - Memory bar, average tick time graph, TPS and p95 tick, CPU, uptime, disk, players list with heads, and a live log with a command box.
 - Java servers are read over RCON plus Docker stats; crashes are detected and servers can auto-restart with backoff.
@@ -330,6 +333,16 @@ docs/screenshots/  images used in this README
 Dockerfile, docker-compose.yml, SPEC.md
 ```
 
+## BlueMap
+
+Server page > **Map** > *Enable BlueMap* (manager access). The panel installs the right BlueMap build from Modrinth at the next start, points it at the panel database and proxies its web page. Notes:
+
+- Supported: Paper, Purpur, Folia, Spigot, Fabric, Quilt, Forge and NeoForge servers. Not Vanilla, Bedrock or modpack servers.
+- Each server gets a PostgreSQL schema and a login role of its own, both named `bluemap_<server id>`; the role can only use its schema. The database user in `DATABASE_URL` therefore needs `CREATEROLE` and `CREATE` on the database: `ALTER ROLE servcrafty CREATEROLE; GRANT CREATE ON DATABASE servcrafty TO servcrafty;`.
+- Game containers must be able to reach PostgreSQL. If `DATABASE_URL` points at `localhost`, set **Admin > Settings > BlueMap database address** to an address containers can use (and let `pg_hba.conf` allow password logins from the Docker network).
+- Enabling means you accept Mojang's EULA: BlueMap downloads the Minecraft client for its textures. The first render of a large world uses a lot of CPU and memory.
+- Turning BlueMap off keeps the rendered map; *Delete map data* frees it. Deleting the server drops its schema.
+
 ## Known limitations
 
 - **Docker inside LXC needs a recent Proxmox** (LXC 7.x, Proxmox VE 9.1+); see the note in *Install on Proxmox*.
@@ -340,6 +353,7 @@ Dockerfile, docker-compose.yml, SPEC.md
 - **CurseForge** needs your own API key, and some files have no download URL in the API (authors can disable third-party distribution) and cannot be installed; such dependencies are reported as skipped.
 - Only **linux/amd64** images are built by the release workflow.
 - Passkeys were exercised only with software authenticators (`server/test/passkeys.e2e.ts`, which runs against a live server and is not part of `npm test`, and a browser virtual authenticator); they have not been tried on real phones or hardware keys.
+- **BlueMap** has been verified by unit tests with injected dependencies only (config generation, schema/role SQL, proxy behaviour); it has not been run against a real BlueMap, PostgreSQL role setup or Docker daemon yet.
 - Not tested end to end yet: the **CurseForge live API** (no key was used during development), the **Proxmox installer on a real host**, and the **self-update on a published release** (no release exists yet).
 
 ## Roadmap ideas
@@ -350,7 +364,6 @@ Not promised, just on the list:
 - A TCP/UDP router (mc-router style) so many servers can share one public port
 - Historical resource graphs
 - Prometheus metrics endpoint
-- Dynmap integration
 - Discord chat bridge
 
 ## License

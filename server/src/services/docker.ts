@@ -3,6 +3,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { PassThrough, type Readable } from 'node:stream';
 import { APP_VERSION, config } from '../config.js';
+import { addBluemapProject, bluemapKind } from '../lib/bluemap.js';
 import { badRequest, unavailable } from '../lib/errors.js';
 import { isSteamType, steamImage, terrariaImage, terrariaVariant, TERRARIA_VARIANTS, type TerrariaType } from '../lib/games.js';
 import { minecraftEnv } from '../lib/minecraftConfig.js';
@@ -180,6 +181,11 @@ export async function buildEnv(
   for (const [k, v] of Object.entries(server.env ?? {})) {
     if (PROTECTED_ENV.has(k) || k === IMAGE_TAG_ENV) continue;
     env[k] = String(v);
+  }
+  // BlueMap (v0.4.0): itzg installs the build for the server's loader and Minecraft version.
+  if (server.bluemap?.enabled && bluemapKind(server.type)) {
+    env.MODRINTH_PROJECTS = addBluemapProject(env.MODRINTH_PROJECTS);
+    env.MODRINTH_DOWNLOAD_DEPENDENCIES ??= 'required';
   }
   return Object.entries(env).map(([k, v]) => `${k}=${v}`);
 }

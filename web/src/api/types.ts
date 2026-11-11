@@ -193,6 +193,22 @@ export interface Server {
   gameDisabled?: boolean;
   /** The game is disabled with blockStart: the server cannot be started. */
   gameBlocked?: boolean;
+  /** BlueMap web map (Java servers). `url` redirects into the proxy session. */
+  bluemap?: { supported: boolean; enabled: boolean; url: string | null };
+}
+
+/** GET/PUT /servers/:id/bluemap. */
+export interface BluemapStatus {
+  supported: boolean;
+  enabled: boolean;
+  kind: 'plugin' | 'mod' | null;
+  /** Map data stored in PostgreSQL (kept while BlueMap is disabled); null when none. */
+  dataBytes: number | null;
+  tables: number | null;
+  /** Why enabling would fail: the database host is not reachable from game containers. */
+  dbIssue: 'loopback' | 'invalid_database_url' | null;
+  restartRequired: boolean;
+  url: string | null;
 }
 
 export interface CreateServerBody {
@@ -417,6 +433,8 @@ export interface AdminSettings {
   publicUrl?: string;
   /** Host name players use to reach game servers from outside. */
   publicServersHost?: string;
+  /** `host[:port]` game containers use to reach PostgreSQL for BlueMap (empty = DATABASE_URL's host). */
+  bluemapDbHost?: string;
 }
 
 export interface PortEntry {

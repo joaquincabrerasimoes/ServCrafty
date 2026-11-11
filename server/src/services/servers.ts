@@ -5,7 +5,8 @@ import { z } from 'zod';
 import { config } from '../config.js';
 import { query, queryOne, tx } from '../db/pool.js';
 import { randomPassword } from '../lib/crypto.js';
-import { badRequest, notFound } from '../lib/errors.js';
+import { badRequest, errorMessage, notFound } from '../lib/errors.js';
+import { dropBluemapData } from './bluemap.js';
 import { mainPort, type GameDefinition } from '../lib/gameDefinition.js';
 import { gameLabel, gameOf, GAMES, isSteamType, isTerrariaType, serverGameKey, type Game } from '../lib/games.js';
 import { assertCanCreateServer } from './gameAccess.js';
@@ -375,6 +376,13 @@ export async function updateSteamConfig(serverId: string, fn: (cur: SteamConfig)
 
 export async function deleteServer(server: ServerRow): Promise<void> {
   await runtime.destroy(server);
+  // BlueMap: the server's schema and role go with it, freeing the space in the shared database.
+  // Best effort: a server must stay deletable even if the drop fails (the schema is then named in the log).
+  if (server.bluemap) {
+    await dropBluemapData(server.bluemap, server.id).catch((err: unknown) =>
+      console.error(`[servcrafty] could not drop BlueMap schema ${server.bluemap?.schema} of deleted server ${server.id}: ${errorMessage(err)}`),
+    );
+  }
   await query('DELETE FROM servers WHERE id = $1', [server.id]);
   await fsp.rm(serverDir(server.id), { recursive: true, force: true }).catch(() => undefined);
   await fsp.rm(path.join(config().backupsDir, server.id), { recursive: true, force: true }).catch(() => undefined);

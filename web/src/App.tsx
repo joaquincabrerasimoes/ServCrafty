@@ -29,6 +29,7 @@ const Transfer = lazy(() => import('./pages/server/Transfer'));
 const ServerSettings = lazy(() => import('./pages/server/Settings'));
 const Workshop = lazy(() => import('./pages/server/Workshop'));
 const WebUi = lazy(() => import('./pages/server/WebUi'));
+const BlueMap = lazy(() => import('./pages/server/BlueMap'));
 
 const AdminUsers = lazy(() => import('./pages/admin/Users'));
 const AdminSettings = lazy(() => import('./pages/admin/Settings'));
@@ -89,6 +90,7 @@ export function App() {
               <Route path="mods" element={<Mods />} />
               <Route path="workshop" element={<Workshop />} />
               <Route path="webui/:uiId" element={<WebUi />} />
+              <Route path="map" element={<BlueMap />} />
               <Route path="backups" element={<Backups />} />
               <Route path="schedules" element={<Schedules />} />
               <Route path="webhooks" element={<Webhooks />} />

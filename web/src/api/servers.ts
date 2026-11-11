@@ -1,6 +1,7 @@
 import { api, asList, downloadUrl, uploadWithProgress } from './client';
 import type {
   Backup,
+  BluemapStatus,
   CatalogSource,
   CreateServerBody,
   FileEntry,
@@ -190,6 +191,12 @@ export const serversApi = {
   steamUpdate: (id: string) => api.post<void>(`${s(id)}/steam/update`),
   /** Replaces a generated variable (definition `generate`) with a new random value; applies on the next start. */
   steamRegenerate: (id: string, key: string) => api.post<{ value: string }>(`${s(id)}/steam/regenerate`, { key }),
+
+  // BlueMap
+  bluemap: (id: string) => api.get<BluemapStatus>(`${s(id)}/bluemap`),
+  setBluemap: (id: string, body: { enabled: boolean; acceptDownload?: boolean; deleteData?: boolean }) =>
+    api.put<BluemapStatus>(`${s(id)}/bluemap`, body),
+  resetBluemap: (id: string) => api.post<BluemapStatus>(`${s(id)}/bluemap/reset`),
 
   // Clone / templates / export / import
   clone: (id: string, name: string) => api.post<Server>(`${s(id)}/clone`, { name }),

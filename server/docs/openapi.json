@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "ServCrafty API",
-    "version": "0.3.2",
+    "version": "0.4.0",
     "description": "REST API of the ServCrafty game-server panel. Authenticate with `Authorization: Bearer scf_...` (create a token in Account > API tokens). A token has exactly the permissions of its owner. Errors always look like `{\"error\":{\"code\",\"message\"}}`. A token cannot create other tokens, change passwords or manage MFA/passkeys (those need a browser session). Admin tokens without 2FA are refused from outside the LAN when the LAN-only rule is configured. The live WebSocket (`/ws`, outside `/api`) is described in the guide."
   },
   "servers": [
@@ -76,6 +76,10 @@
     {
       "name": "Sharing",
       "description": "Share a server with other users."
+    },
+    {
+      "name": "BlueMap",
+      "description": "Live 3D map of Java servers (BlueMap), stored in PostgreSQL. The map itself is viewed in the panel; these endpoints enable and manage it."
     },
     {
       "name": "Mods",
@@ -4932,6 +4936,140 @@
           }
         }
       }
+    },
+    "/servers/{id}/bluemap": {
+      "get": {
+        "tags": [
+          "BlueMap"
+        ],
+        "summary": "BlueMap status of a server",
+        "operationId": "get_servers_id_bluemap",
+        "description": "Requires **viewer** access to the server.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BluemapStatus"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "BlueMap"
+        ],
+        "summary": "Enable or disable BlueMap",
+        "operationId": "put_servers_id_bluemap",
+        "description": "Requires **manager** access. Enabling creates a PostgreSQL schema and a role of their own for the server (`400 bluemap_db_privileges` if the panel's database user may not create them, `400 bluemap_db_unreachable` if the database host cannot be reached from game containers, `400 bluemap_eula_required` without `acceptDownload`, `400 bluemap_unsupported` for other server types). BlueMap is installed at the next start of the server (`restartRequired`). Disabling keeps the stored map unless `deleteData` is true (`409 server_running` while the server runs).",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BluemapSetRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BluemapStatus"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/servers/{id}/bluemap/reset": {
+      "post": {
+        "tags": [
+          "BlueMap"
+        ],
+        "summary": "Discard the server's rendered map",
+        "operationId": "post_servers_id_bluemap_reset",
+        "description": "Requires **manager** access and a stopped server (`409 server_running`). BlueMap renders the world again at the next start.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BluemapStatus"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -6203,6 +6341,21 @@
           "restartRequired": {
             "type": "boolean",
             "description": "Only in PATCH responses: true when the server runs and a changed field needs a restart."
+          },
+          "bluemap": {
+            "type": "object",
+            "properties": {
+              "supported": {
+                "type": "boolean"
+              },
+              "enabled": {
+                "type": "boolean"
+              },
+              "url": {
+                "type": "string",
+                "nullable": true
+              }
+            }
           }
         },
         "required": [
@@ -7808,6 +7961,10 @@
           },
           "publicServersHost": {
             "type": "string"
+          },
+          "bluemapDbHost": {
+            "type": "string",
+            "description": "`host` or `host:port` that game containers use to reach PostgreSQL for BlueMap. Empty = the host of DATABASE_URL."
           }
         },
         "additionalProperties": true
@@ -7870,6 +8027,10 @@
                 "nullable": true
               }
             }
+          },
+          "bluemapDbHost": {
+            "type": "string",
+            "description": "`host` or `host:port` that game containers use to reach PostgreSQL for BlueMap. Empty = the host of DATABASE_URL."
           }
         }
       },
@@ -8096,6 +8257,74 @@
           "url",
           "contentType"
         ]
+      },
+      "BluemapStatus": {
+        "type": "object",
+        "properties": {
+          "supported": {
+            "type": "boolean",
+            "description": "The server type can run BlueMap (Paper, Purpur, Folia, Spigot, Fabric, Quilt, Forge, NeoForge)."
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "plugin",
+              "mod"
+            ],
+            "nullable": true,
+            "description": "What gets installed."
+          },
+          "dataBytes": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Size of the server's map data in the database (kept while BlueMap is disabled); null when there is none."
+          },
+          "tables": {
+            "type": "integer",
+            "nullable": true
+          },
+          "dbIssue": {
+            "type": "string",
+            "enum": [
+              "loopback",
+              "invalid_database_url"
+            ],
+            "nullable": true,
+            "description": "Why enabling would fail: the database host is not reachable from game containers (an administrator sets the BlueMap database address in settings)."
+          },
+          "restartRequired": {
+            "type": "boolean",
+            "description": "The running server must restart for the last change to apply."
+          },
+          "url": {
+            "type": "string",
+            "nullable": true,
+            "description": "Browser URL of the proxied map (needs a signed-in browser session); null when not enabled."
+          }
+        }
+      },
+      "BluemapSetRequest": {
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "acceptDownload": {
+            "type": "boolean",
+            "description": "Required (true) when enabling: BlueMap downloads the Minecraft client from Mojang, so Mojang's EULA must be accepted."
+          },
+          "deleteData": {
+            "type": "boolean",
+            "description": "When disabling: also delete the server's map data (its schema and role). The server must be stopped."
+          }
+        }
       }
     }
   }

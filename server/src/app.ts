@@ -16,6 +16,7 @@ import adminGameRoutes from './routes/adminGames.js';
 import internalRoutes from './routes/internal.js';
 import authRoutes from './routes/auth.js';
 import backupRoutes from './routes/backups.js';
+import bluemapRoutes from './routes/bluemap.js';
 import catalogRoutes from './routes/catalog.js';
 import docsRoutes from './routes/docs.js';
 import fileRoutes from './routes/files.js';
@@ -112,6 +113,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       await api.register(terrariaRoutes);
       await api.register(gameRoutes);
       await api.register(steamRoutes);
+      await api.register(bluemapRoutes);
       await api.register(webuiRoutes);
       await api.register(templateRoutes);
       await api.register(catalogRoutes);

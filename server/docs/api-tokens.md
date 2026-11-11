@@ -380,7 +380,27 @@ curl -s -X POST   -H "$AUTH" "$BASE/servers/$SID/workshop/refresh"         # re-
 
 Workshop changes apply on the next start (`restartRequired` tells you whether the server is running). An item from another game is rejected with `400 workshop_wrong_game`. At most 200 items per server.
 
-### 7.12 Other things you will want
+### 7.12 BlueMap live map (Java servers)
+
+BlueMap draws a 3D map of a Java server (Paper, Purpur, Folia, Spigot, Fabric, Quilt, Forge, NeoForge; not Vanilla or modpack servers). The rendered map is stored in the panel's PostgreSQL database, in a schema of its own per server, and is viewed in the panel (the viewer is a browser page, not part of the token API). `bluemap.enabled` and `bluemap.url` are part of the server JSON.
+
+```bash
+curl -s -H "$AUTH" "$BASE/servers/$SID/bluemap" | jq        # supported? enabled? stored size, dbIssue
+
+# enable (manager). You must accept Mojang's EULA: BlueMap downloads the Minecraft client from Mojang.
+curl -s -X PUT "$BASE/servers/$SID/bluemap" -H "$AUTH" -H "Content-Type: application/json" -d '{"enabled":true,"acceptDownload":true}'
+
+# disable but keep the rendered map / disable and delete it (server must be stopped for deleteData)
+curl -s -X PUT "$BASE/servers/$SID/bluemap" -H "$AUTH" -H "Content-Type: application/json" -d '{"enabled":false}'
+curl -s -X PUT "$BASE/servers/$SID/bluemap" -H "$AUTH" -H "Content-Type: application/json" -d '{"enabled":false,"deleteData":true}'
+
+# discard the rendered map so it renders again (server must be stopped)
+curl -s -X POST -H "$AUTH" "$BASE/servers/$SID/bluemap/reset"
+```
+
+BlueMap is installed (and removed) at the next start of the server; `restartRequired` says whether a running server has to restart. Deleting the server deletes its map data. `400 bluemap_db_unreachable` means the panel database is on `localhost`, which game containers cannot reach: an administrator sets **BlueMap database address** in Admin > Settings. `400 bluemap_db_privileges` means the panel's database user may not create roles and schemas.
+
+### 7.13 Other things you will want
 
 ```bash
 # change settings (manager): partial update; restartRequired tells you if a restart is needed
@@ -415,7 +435,7 @@ curl -s -X DELETE -H "$AUTH" "$BASE/servers/$SID"
 
 Minecraft mods and plugins: `GET/POST /servers/{id}/mods...`, search with `GET /catalog/search`. Export a server as a modpack: `GET /servers/{id}/export?format=serverpack`.
 
-**Game web admin pages.** Some games have their own web interface (`steamGame.webui` in the server JSON). The panel exposes it through a sandboxed proxy under `/api/servers/{id}/webui/...` that is meant for browsers (it uses short-lived session URLs). It is not part of the token API; open it from the panel.
+**Game web admin pages and the BlueMap map.** Some games have their own web interface (`steamGame.webui` in the server JSON), and BlueMap serves a map. The panel exposes them through a sandboxed proxy under `/api/servers/{id}/webui/...` that is meant for browsers (it uses short-lived session URLs). It is not part of the token API; open it from the panel.
 
 ---
 
@@ -581,6 +601,8 @@ await fetch(`${BASE}/servers/${server.id}/files/upload?path=`, {
 | `403 game_not_allowed` | An administrator has not granted you that game (Admin > Users > Games). |
 | `404 server_not_found` | Wrong id, the server was deleted, or you have no access to it. |
 | `409 game_disabled` | The game was disabled by an administrator (creation, or start when *block start* is on). |
+| `400 bluemap_db_unreachable` / `bluemap_db_privileges` / `bluemap_eula_required` | BlueMap setup: the database host is `localhost` (set the BlueMap database address in Admin > Settings), the panel's database user lacks `CREATEROLE`/`CREATE`, or `acceptDownload: true` was missing. |
+| `409 server_running` | The action (delete or reset BlueMap data) needs the server stopped. |
 | `409 not_running` | Console commands need a running server. Start it and wait for `running`. |
 | `409 no_free_ports` / `400 quota_exceeded` | Port pool exhausted / your quota or the host limits are used up. Delete a server or ask an admin. |
 | `400 validation_error` | Read `message` (first problem) and `error.details` (all issues). Common: `memoryMb` below 512 (or the game's minimum), missing `eula: true`. |

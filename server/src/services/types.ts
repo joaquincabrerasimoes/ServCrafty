@@ -1,4 +1,5 @@
 import type { ServerType } from '../lib/validation.js';
+import { BLUEMAP_UI_ID, bluemapKind, type BluemapPublic } from '../lib/bluemap.js';
 import type { MinecraftConfig } from '../lib/minecraftConfig.js';
 import { gameOf, type Game } from '../lib/games.js';
 import type { TerrariaConfig } from '../lib/terrariaConfig.js';
@@ -122,7 +123,20 @@ export interface ServerRow {
   /** Announce this (Java) server on the LAN while it runs. */
   lan_announce: boolean;
   rcon_password: string;
+  /** BlueMap integration (Java servers; see services/bluemap.ts). Null/absent = never enabled. */
+  bluemap?: BluemapState | null;
   created_at: Date;
+}
+
+/** Stored in `servers.bluemap`. The role/schema are kept while disabled so re-enabling reuses the map data. */
+export interface BluemapState {
+  enabled: boolean;
+  /** PostgreSQL schema and role name (`bluemap_<uuid>`). */
+  schema: string;
+  role: string;
+  /** Role password, encrypted with SECRET_KEY. */
+  passwordEnc: string;
+  enabledAt: string;
 }
 
 export interface PublicServer {
@@ -158,6 +172,8 @@ export interface PublicServer {
   gameDisabled: boolean;
   /** The game is disabled with blockStart: this server cannot be started. */
   gameBlocked: boolean;
+  /** BlueMap web map (Java servers). */
+  bluemap: BluemapPublic;
 }
 
 export interface SteamGameInfo {
@@ -240,6 +256,11 @@ export function toPublicServer(s: ServerRow, access: Access, ownerName: string |
     createdAt: s.created_at.toISOString(),
     access,
     ...serverGameState(s),
+    bluemap: {
+      supported: bluemapKind(s.type) !== null,
+      enabled: !!s.bluemap?.enabled && bluemapKind(s.type) !== null,
+      url: s.bluemap?.enabled && bluemapKind(s.type) ? `/api/servers/${s.id}/webui/${BLUEMAP_UI_ID}/` : null,
+    },
   };
 }
 

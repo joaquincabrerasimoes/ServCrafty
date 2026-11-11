@@ -62,11 +62,15 @@ export default function ServerLayout() {
   const parts = pathname.split('/').filter(Boolean);
   const sub = parts[2];
   const unknownWebui = sub === 'webui' && settled && !webuis.some((w) => w.id === decodeURIComponent(parts[3] ?? ''));
+  // BlueMap: viewers only see the tab once it is on; managers also see it to turn it on.
+  const showMap = !!server.bluemap?.supported && (!!server.bluemap.enabled || canManage(server.access));
+  if (sub === 'map' && !showMap) return <Navigate to={`/servers/${encodeURIComponent(id)}`} replace />;
   if (sub && settled && (hidden.includes(sub) || unknownWebui)) return <Navigate to={`/servers/${encodeURIComponent(id)}`} replace />;
   const tabs = TABS.filter((tab) => tab.need(server.access) && !hidden.includes(tab.path)).map((tab) => ({ path: tab.path, label: t(tab.key) }));
   // One tab per web UI of the game, after Files.
   const at = tabs.findIndex((tab) => tab.path === 'files');
   tabs.splice(at >= 0 ? at + 1 : tabs.length, 0, ...webuis.map((w) => ({ path: `webui/${encodeURIComponent(w.id)}`, label: w.label || w.id })));
+  if (showMap) tabs.splice(at >= 0 ? at + 1 : tabs.length, 0, { path: 'map', label: t('tab.map') });
 
   return (
     <div>

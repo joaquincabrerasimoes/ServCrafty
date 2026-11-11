@@ -5,6 +5,7 @@ import { WebSocket, type RawData } from 'ws';
 import { requireUser } from '../auth/plugin.js';
 import { AppError, forbidden, notFound } from '../lib/errors.js';
 import type { GameWebui } from '../lib/gameDefinition.js';
+import { BLUEMAP_PORT, BLUEMAP_UI_ID, bluemapKind } from '../lib/bluemap.js';
 import { isSteamType } from '../lib/games.js';
 import { renderWebuiAuth, resolvePorts } from '../lib/steamPlan.js';
 import {
@@ -112,9 +113,33 @@ export interface WebuiDeps {
     serverId: string,
     uiId: string,
     userId: string,
-  ): Promise<{ ui: GameWebui; upstream: () => Promise<WebuiUpstream> }>;
+  ): Promise<{ ui: GameWebui; upstream: () => Promise<WebuiUpstream>; headHtml?: string }>;
   /** Origins of the panel itself (for the WebSocket Origin check). */
   panelOrigins(req: FastifyRequest): Promise<string[]>;
+}
+
+/** BlueMap's page as a web UI: viewers may open it; its scripts are the webapp's own (relative URLs), so no rewriting. */
+const BLUEMAP_WEBUI: GameWebui = {
+  id: BLUEMAP_UI_ID,
+  label: 'Map',
+  portId: 'bluemap',
+  path: '/',
+  auth: { type: 'none' },
+  minAccess: 'viewer',
+  rewrite: false,
+  websocket: false,
+};
+
+/**
+ * The proxied page runs in an opaque origin (CSP sandbox), where `localStorage` throws. Pages that
+ * keep settings there get an in-memory stand-in so they do not crash.
+ */
+const STORAGE_SHIM =
+  '<script>(function(){try{window.localStorage.getItem("x")}catch(e){var m={};var s={getItem:function(k){return Object.prototype.hasOwnProperty.call(m,k)?m[k]:null},setItem:function(k,v){m[k]=String(v)},removeItem:function(k){delete m[k]},clear:function(){m={}},key:function(i){return Object.keys(m)[i]||null},get length(){return Object.keys(m).length}};["localStorage","sessionStorage"].forEach(function(n){try{Object.defineProperty(window,n,{value:s,configurable:true})}catch(e2){}})}})();</script>';
+
+function injectHead(html: string, snippet: string): string {
+  const m = /<head[^>]*>/i.exec(html);
+  return m ? `${html.slice(0, m.index + m[0].length)}${snippet}${html.slice(m.index + m[0].length)}` : snippet + html;
 }
 
 const realDeps: WebuiDeps = {
@@ -123,6 +148,21 @@ const realDeps: WebuiDeps = {
     const user = await getUser(userId);
     if (user.disabled || (await blockedForRemote(req, user, 'session'))) throw forbidden();
     const { server, access } = await loadServerFor(user, serverId, 'viewer');
+    if (uiId === BLUEMAP_UI_ID) {
+      // The BlueMap web server inside a Java server's container (not part of any game definition).
+      if (!bluemapKind(server.type) || !server.bluemap?.enabled) throw notFound('Web UI not found', 'webui_not_found');
+      return {
+        ui: BLUEMAP_WEBUI,
+        headHtml: STORAGE_SHIM,
+        upstream: async () => {
+          const status = runtime.getStatus(server.id);
+          if (!['running', 'starting'].includes(status) || !server.container_id) throw unreachable('The map is not reachable: is the server running?');
+          const ip = await containerIp(server.container_id).catch(() => null);
+          if (!ip) throw unreachable('The map is not reachable: is the server running?');
+          return { host: ip, port: BLUEMAP_PORT, basicAuth: null };
+        },
+      };
+    }
     if (!isSteamType(server.type) || !server.steam) throw notFound('Web UI not found', 'webui_not_found');
     const def = getDefinition(server.steam.gameId);
     const ui = def?.webui.find((w) => w.id === uiId);
@@ -226,7 +266,7 @@ function httpHandler(deps: WebuiDeps) {
 
     // 2) Tokenized request.
     const { sess, prefix, target } = ctx;
-    const { ui, upstream: getUpstream } = await deps.resolve(req, id, uiId, sess.userId);
+    const { ui, upstream: getUpstream, headHtml } = await deps.resolve(req, id, uiId, sess.userId);
     const { host: ip, port, basicAuth } = await getUpstream();
     const body = Buffer.isBuffer(req.body) ? req.body : null;
     const upstreamHost = `${ip}:${port}`;
@@ -267,6 +307,9 @@ function httpHandler(deps: WebuiDeps) {
     const out = filterResponseHeaders(upstream.headers);
     if (typeof out.location === 'string') out.location = rewriteLocation(out.location, prefix, `http://${upstreamHost}`);
     out['content-security-policy'] = responseCsp(upstream.headers['content-security-policy']);
+    // The sandboxed page has an opaque origin: its own module scripts and fetches need CORS to load. Safe: the
+    // URL carries the secret proxy token and no cookies or credentials are involved.
+    out['access-control-allow-origin'] = '*';
     out['referrer-policy'] = 'no-referrer';
     out['x-content-type-options'] = 'nosniff';
     if (!out['cache-control']) out['cache-control'] = 'private, no-cache';
@@ -276,6 +319,10 @@ function httpHandler(deps: WebuiDeps) {
     if (kind && payload.length) {
       const enc = charsetOf(upstream.headers['content-type']);
       payload = Buffer.from(rewriteBody(payload.toString(enc), kind, prefix, absoluteRewrite(req, upstreamHost)), enc);
+    }
+    if (headHtml && textKindOf(upstream.headers['content-type']) === 'html' && payload.length) {
+      const enc = charsetOf(upstream.headers['content-type']);
+      payload = Buffer.from(injectHead(payload.toString(enc), headHtml), enc);
     }
     reply.code(upstream.status);
     for (const [k, v] of Object.entries(out)) reply.header(k, v);

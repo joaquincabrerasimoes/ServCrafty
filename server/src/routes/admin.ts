@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { APP_VERSION, config } from '../config.js';
 import { query, queryOne } from '../db/pool.js';
 import { requireAdmin, requireUser } from '../auth/plugin.js';
+import { parseHostPort } from '../lib/bluemap.js';
 import { badRequest } from '../lib/errors.js';
 import { formatPortPool, parsePortPool } from '../lib/ports.js';
 import { intQuery, parse } from '../lib/validation.js';
@@ -16,6 +17,7 @@ import { isRemoteRequest, parseNetworks } from '../lib/network.js';
 import {
   deleteSetting,
   getCurseforgeKey,
+  getBluemapDbHost,
   getDefaultJavaArgs,
   getPortPoolSpec,
   getPublicServersHost,
@@ -37,6 +39,7 @@ async function settingsPayload() {
     defaultJavaArgs: await getDefaultJavaArgs(),
     publicUrl: await getPublicUrl(),
     publicServersHost: await getPublicServersHost(),
+    bluemapDbHost: await getBluemapDbHost(),
   };
 }
 
@@ -68,6 +71,7 @@ export default async function adminRoutes(app: FastifyInstance): Promise<void> {
           publicUrl: z.string().url().or(z.literal('')),
           lanNetworks: z.string().max(1000),
           publicServersHost: z.string().max(255),
+          bluemapDbHost: z.string().max(300),
           globalLimits: z.object({
             maxServers: z.number().int().min(1).nullable(),
             maxRamMb: z.number().int().min(256).nullable(),
@@ -126,6 +130,13 @@ export default async function adminRoutes(app: FastifyInstance): Promise<void> {
       if (host) await setSetting(SettingKeys.publicServersHost, host);
       else await deleteSetting(SettingKeys.publicServersHost);
       changed.push('publicServersHost');
+    }
+    if (body.bluemapDbHost !== undefined) {
+      const spec = body.bluemapDbHost.trim();
+      if (spec && !parseHostPort(spec)) throw badRequest('Enter a host name or IP address, optionally with a port (db.lan:5432)', 'invalid_bluemap_db_host');
+      if (spec) await setSetting(SettingKeys.bluemapDbHost, spec);
+      else await deleteSetting(SettingKeys.bluemapDbHost);
+      changed.push('bluemapDbHost');
     }
     if (body.lanNetworks !== undefined) {
       const spec = body.lanNetworks.trim();

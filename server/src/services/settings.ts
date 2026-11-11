@@ -15,6 +15,8 @@ export const SettingKeys = {
   steamApiKey: 'steam_api_key',
   /** `{ "<gameKey>": { blockStart, disabledAt, by } }` (v0.3.2 disabled games; see services/gameAccess.ts). */
   disabledGames: 'disabled_games',
+  /** `host[:port]` game containers use to reach PostgreSQL for BlueMap when DATABASE_URL's host is not reachable from them. */
+  bluemapDbHost: 'bluemap_db_host',
 } as const;
 
 const cache = new Map<string, unknown>();
@@ -93,6 +95,11 @@ export async function getPublicUrl(): Promise<string> {
 /** Host name players use to reach game servers from outside (not the panel URL); '' when not set. */
 export async function getPublicServersHost(): Promise<string> {
   return (await getSetting<string>(SettingKeys.publicServersHost)) ?? '';
+}
+
+/** Database host:port override for BlueMap (see SettingKeys.bluemapDbHost); '' when not set. */
+export async function getBluemapDbHost(): Promise<string> {
+  return (await getSetting<string>(SettingKeys.bluemapDbHost)) ?? '';
 }
 
 /** Reduce what an admin typed ("https://play.example.com:25565/") to a bare host name or IP. */

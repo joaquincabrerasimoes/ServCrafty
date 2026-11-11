@@ -35,6 +35,7 @@ import {
   rconAddress,
   serverDir,
 } from './docker.js';
+import { prepareBluemap, watchBluemapMaps } from './bluemap.js';
 import { bus } from './events.js';
 import { getDefinition } from './gameDefinitions.js';
 import { assertServerCanStart } from './gameAccess.js';
@@ -967,6 +968,7 @@ export function start(serverId: string): Promise<void> {
       // The previous container (if still alive) is force-removed when the new one is created. Its
       // `die` event (exit 137) must not be mistaken for a crash that triggers an auto-restart.
       if (server.container_id) retiredContainers.add(server.container_id);
+      await prepareBluemap(server, (l) => systemLog(serverId, l));
       const container = await createServerContainer(server, await getCurseforgeKey(), (l) => systemLog(serverId, l));
       await query('UPDATE servers SET container_id = $2 WHERE id = $1', [serverId, container.id]);
       await container.start();
@@ -991,6 +993,9 @@ export function start(serverId: string): Promise<void> {
         );
       }
       systemLog(serverId, `[servcrafty] container ${containerName(serverId)} started`);
+      if (server.bluemap?.enabled) {
+        watchBluemapMaps(server, { status: () => getStatus(serverId), command: (c) => sendCommand(serverId, c), log: (l) => systemLog(serverId, l) });
+      }
     } catch (err) {
       systemLog(serverId, `[servcrafty] failed to start: ${errorMessage(err)}`);
       await setStatus(serverId, 'stopped');
