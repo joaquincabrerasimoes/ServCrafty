@@ -4110,7 +4110,7 @@
             "name": "snapshots",
             "in": "query",
             "required": false,
-            "description": "Include snapshots.",
+            "description": "Also list snapshots, pre-releases, release candidates and old betas/alphas (Vanilla; snapshots and pre-releases for Paper, Folia, Fabric, Quilt).",
             "schema": {
               "type": "string",
               "enum": [

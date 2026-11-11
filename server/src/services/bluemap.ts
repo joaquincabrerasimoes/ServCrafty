@@ -13,6 +13,9 @@ import {
   isBluemapJar,
   isManaged,
   jdbcUrl,
+  CONTAINER_DATA,
+  PG_DRIVER_FILE,
+  PG_DRIVER_URL,
   renderCoreConf,
   renderSqlConf,
   renderWebserverConf,
@@ -260,7 +263,7 @@ async function readText(file: string): Promise<string | null> {
   }
 }
 
-async function writeAtomic(file: string, text: string, mode: number): Promise<void> {
+async function writeAtomic(file: string, text: string | Buffer, mode: number): Promise<void> {
   await fsp.mkdir(path.dirname(file), { recursive: true });
   const tmp = `${file}.${process.pid}.tmp`;
   await fsp.writeFile(tmp, text, { mode });
@@ -304,6 +307,38 @@ export async function patchMapStorage(server: Pick<ServerRow, 'id' | 'type'>): P
   return changed;
 }
 
+/** Downloads the PostgreSQL JDBC driver once (checked against Maven's SHA-1) and keeps a copy in the data dir. */
+async function cachedDriver(log: (line: string) => void): Promise<string> {
+  const cache = path.join(config().dataDir, 'cache', 'bluemap', PG_DRIVER_FILE);
+  if (await fsp.stat(cache).then((s) => s.size > 0, () => false)) return cache;
+  log('[servcrafty] BlueMap: downloading the PostgreSQL JDBC driver');
+  const get = async (url: string) => {
+    const res = await fetch(url, { signal: AbortSignal.timeout(60_000) });
+    if (!res.ok) throw new Error(`${url} answered ${res.status}`);
+    return res;
+  };
+  const jar = Buffer.from(await (await get(PG_DRIVER_URL)).arrayBuffer());
+  const expected = (await (await get(`${PG_DRIVER_URL}.sha1`)).text()).trim().split(/\s+/)[0]?.toLowerCase();
+  const actual = crypto.createHash('sha1').update(jar).digest('hex');
+  if (!expected || expected !== actual) throw new Error('the downloaded PostgreSQL driver does not match its checksum');
+  await fsp.mkdir(path.dirname(cache), { recursive: true });
+  await writeAtomic(cache, jar, 0o644);
+  return cache;
+}
+
+async function installDriver(dest: string, log: (line: string) => void): Promise<void> {
+  if (await fsp.stat(dest).then((s) => s.size > 0, () => false)) return;
+  let src: string;
+  try {
+    src = await cachedDriver(log);
+  } catch (err) {
+    throw upstream(`BlueMap needs the PostgreSQL JDBC driver and it could not be downloaded: ${errorMessage(err)}`, 'bluemap_driver_download');
+  }
+  await fsp.mkdir(path.dirname(dest), { recursive: true });
+  await fsp.copyFile(src, dest);
+  await fsp.chmod(dest, 0o644).catch(() => undefined);
+}
+
 /** Remove the files ServCrafty wrote (and BlueMap's jar) from a server that does not use BlueMap. */
 async function cleanupManaged(server: ServerRow): Promise<void> {
   const root = serverDir(server.id);
@@ -319,6 +354,7 @@ async function cleanupManaged(server: ServerRow): Promise<void> {
     }
   }
   if (!removed) return;
+  for (const rel of CONFIG_DIRS) await fsp.rm(path.join(root, rel, PG_DRIVER_FILE), { force: true });
   // The managed config is gone, so the jar would only run BlueMap with defaults: remove it with the config.
   for (const sub of ['plugins', 'mods']) {
     const dir = path.join(root, sub);
@@ -353,7 +389,13 @@ export async function prepareBluemap(server: ServerRow, log: (line: string) => v
   await writeManaged(path.join(dir, 'webserver.conf'), renderWebserverConf());
   // Always rewritten: it carries the credentials. World-readable on purpose: the game process may run as
   // another user than the panel, and the role can only reach this server's own schema.
-  const sql = renderSqlConf({ url: jdbcUrl(target, server.bluemap.schema), user: server.bluemap.role, password });
+  await installDriver(path.join(dir, PG_DRIVER_FILE), log);
+  const sql = renderSqlConf({
+    url: jdbcUrl(target, server.bluemap.schema),
+    user: server.bluemap.role,
+    password,
+    driverJar: `${CONTAINER_DATA}/${rel}/${PG_DRIVER_FILE}`,
+  });
   await writeAtomic(path.join(dir, 'storages', 'sql.conf'), sql, 0o644);
   // BlueMap generates its default maps with `storage: "file"` and refuses to load when no storage of that
   // name exists. Defining "file" as the same PostgreSQL storage makes those maps use the database from the

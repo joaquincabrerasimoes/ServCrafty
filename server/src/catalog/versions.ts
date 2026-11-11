@@ -8,18 +8,19 @@ async function vanilla(includeSnapshots: boolean): Promise<string[]> {
   const r = await fetchJson<{ versions: { id: string; type: string }[] }>(
     'https://piston-meta.mojang.com/mc/game/version_manifest_v2.json',
   );
-  return r.versions.filter((v) => v.type === 'release' || (includeSnapshots && v.type === 'snapshot')).map((v) => v.id);
+  // Mojang types: release; snapshot (also pre-releases and release candidates); old_beta; old_alpha.
+  return r.versions.filter((v) => v.type === 'release' || includeSnapshots).map((v) => v.id);
 }
 
-async function paperLike(project: 'paper' | 'folia'): Promise<string[]> {
+async function paperLike(project: 'paper' | 'folia', includePre: boolean): Promise<string[]> {
   try {
     const r = await fetchJson<{ versions: Record<string, string[]> }>(`https://fill.papermc.io/v3/projects/${project}`);
     return Object.values(r.versions)
       .flat()
-      .filter((v) => !/-(pre|rc)/i.test(v));
+      .filter((v) => includePre || !/-(pre|rc)/i.test(v));
   } catch {
     const r = await fetchJson<{ versions: string[] }>(`https://api.papermc.io/v2/projects/${project}`);
-    return [...r.versions].reverse();
+    return [...r.versions].reverse().filter((v) => includePre || !/-(pre|rc)/i.test(v));
   }
 }
 
@@ -51,16 +52,17 @@ export async function minecraftVersions(type: ServerType, includeSnapshots = fal
   return cache.get(`${type}:${includeSnapshots}`, async () => {
     switch (type) {
       case 'VANILLA':
+        return vanilla(includeSnapshots);
       // Spigot and CraftBukkit are built for release versions of Minecraft.
       case 'SPIGOT':
       case 'BUKKIT':
       case 'CURSEFORGE':
       case 'MODRINTH':
-        return vanilla(includeSnapshots);
+        return vanilla(false);
       case 'PAPER':
-        return paperLike('paper');
+        return paperLike('paper', includeSnapshots);
       case 'FOLIA':
-        return paperLike('folia');
+        return paperLike('folia', includeSnapshots);
       case 'PURPUR': {
         const r = await fetchJson<{ versions: string[] }>('https://api.purpurmc.org/v2/purpur');
         return [...r.versions].reverse();

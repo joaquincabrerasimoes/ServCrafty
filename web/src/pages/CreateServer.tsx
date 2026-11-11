@@ -134,11 +134,27 @@ function Stepper({ steps, step }: { steps: StepId[]; step: number }) {
   );
 }
 
-function VersionPicker({ type, value, onChange }: { type: ServerType; value: string; onChange: (v: string) => void }) {
+/** Server types whose version list changes with the "snapshots and other versions" switch. */
+const HAS_SNAPSHOTS: ServerType[] = ['VANILLA', 'PAPER', 'FOLIA', 'FABRIC', 'QUILT'];
+
+function VersionPicker({
+  type,
+  value,
+  onChange,
+  all,
+  onAll,
+}: {
+  type: ServerType;
+  value: string;
+  onChange: (v: string) => void;
+  all: boolean;
+  onAll: (v: boolean) => void;
+}) {
   const t = useT();
+  const withAll = all && HAS_SNAPSHOTS.includes(type);
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ['mc-versions', type],
-    queryFn: () => catalogApi.minecraftVersions(type),
+    queryKey: ['mc-versions', type, withAll],
+    queryFn: () => catalogApi.minecraftVersions(type, withAll),
     staleTime: 10 * 60_000,
   });
   // A version kept from another server type may not exist for this one; the <select> would show
@@ -149,7 +165,7 @@ function VersionPicker({ type, value, onChange }: { type: ServerType; value: str
   if (isLoading) return <Spinner />;
   if (error) return <ErrorState error={error} onRetry={() => void refetch()} />;
   return (
-    <Field label={t('server.mcVersion')}>
+    <Field label={t('server.mcVersion')} hint={withAll ? t('wizard.otherVersionsHint') : undefined}>
       <select className="input" value={value} onChange={(e) => onChange(e.target.value)}>
         <option value="LATEST">{t('wizard.latest')}</option>
         {data?.map((v) => (
@@ -158,6 +174,12 @@ function VersionPicker({ type, value, onChange }: { type: ServerType; value: str
           </option>
         ))}
       </select>
+      {HAS_SNAPSHOTS.includes(type) && (
+        <label className="mt-2 flex items-center gap-2 text-sm">
+          <input type="checkbox" className="h-4 w-4 accent-[rgb(var(--accent))]" checked={all} onChange={(e) => onAll(e.target.checked)} />
+          {t('wizard.otherVersions')}
+        </label>
+      )}
     </Field>
   );
 }
@@ -239,6 +261,7 @@ export default function CreateServer() {
   const [game, setGame] = useState<Game>('minecraft');
   const [type, setType] = useState<ServerType>('PAPER');
   const [mcVersion, setMcVersion] = useState('LATEST');
+  const [allVersions, setAllVersions] = useState(false);
   const [loaderVersion, setLoaderVersion] = useState('');
   // A loader build only fits one Minecraft version of one loader: forget it when either changes.
   useEffect(() => setLoaderVersion(''), [type, mcVersion]);
@@ -670,7 +693,7 @@ export default function CreateServer() {
             </>
           ) : (
             <>
-              <VersionPicker type={type} value={mcVersion} onChange={setMcVersion} />
+              <VersionPicker type={type} value={mcVersion} onChange={setMcVersion} all={allVersions} onAll={setAllVersions} />
               {hasLoader(type) && (
                 <LoaderPicker type={type} mcVersion={mcVersion} value={loaderVersion} onChange={setLoaderVersion} />
               )}

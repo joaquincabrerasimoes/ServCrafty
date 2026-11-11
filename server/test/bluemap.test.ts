@@ -77,6 +77,10 @@ test('config files: marker first, credentials quoted, SSE off', () => {
   const sql = lib.renderSqlConf({ url: 'jdbc:postgresql://db/x?currentSchema=s', user: 'u"ser', password: 'pa"ss\\w' });
   assert.ok(sql.startsWith(lib.BLUEMAP_MARKER));
   assert.match(sql, /storage-type: sql/);
+  assert.ok(!/driver-jar/.test(sql));
+  const withDriver = lib.renderSqlConf({ url: 'jdbc:postgresql://db/x', user: 'u', password: 'p', driverJar: '/data/config/bluemap/postgresql-42.7.4.jar' });
+  assert.match(withDriver, /driver-jar: "\/data\/config\/bluemap\/postgresql-42\.7\.4\.jar"/);
+  assert.match(withDriver, /driver-class: "org\.postgresql\.Driver"/);
   assert.match(sql, /password: "pa\\"ss\\\\w"/);
   assert.match(sql, /user: "u\\"ser"/);
   assert.match(lib.renderCoreConf(), /accept-download: true/);

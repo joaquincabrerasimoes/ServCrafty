@@ -155,16 +155,26 @@ additional-headers: {
 `;
 }
 
+/** BlueMap does not ship a PostgreSQL driver: the panel downloads this one (Maven Central) for it. */
+export const PG_DRIVER_VERSION = '42.7.4';
+export const PG_DRIVER_FILE = `postgresql-${PG_DRIVER_VERSION}.jar`;
+export const PG_DRIVER_URL = `https://repo1.maven.org/maven2/org/postgresql/postgresql/${PG_DRIVER_VERSION}/${PG_DRIVER_FILE}`;
+export const PG_DRIVER_CLASS = 'org.postgresql.Driver';
+/** Where the server's data directory is mounted inside the game container (itzg). */
+export const CONTAINER_DATA = '/data';
+
 export interface SqlConf {
   url: string;
   user: string;
   password: string;
+  /** Path of the JDBC driver jar as the game container sees it. */
+  driverJar?: string;
 }
 
 export function renderSqlConf(c: SqlConf): string {
   return `${BLUEMAP_MARKER}
 storage-type: sql
-connection-url: ${q(c.url)}
+${c.driverJar ? `driver-jar: ${q(c.driverJar)}\ndriver-class: ${q(PG_DRIVER_CLASS)}\n` : ''}connection-url: ${q(c.url)}
 connection-properties: {
   user: ${q(c.user)}
   password: ${q(c.password)}

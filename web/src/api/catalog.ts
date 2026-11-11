@@ -57,8 +57,9 @@ export const catalogApi = {
       'versions',
       'files',
     ).map(normalizeVersion),
-  minecraftVersions: async (type: ServerType) => {
-    const r = await api.get<unknown>('/catalog/minecraft/versions', { type });
+  /** `snapshots` also lists snapshots, pre-releases, release candidates and old betas/alphas where the type has them. */
+  minecraftVersions: async (type: ServerType, snapshots = false) => {
+    const r = await api.get<unknown>('/catalog/minecraft/versions', snapshots ? { type, snapshots: 'true' } : { type });
     return asList<unknown>(r, 'versions').map((v) =>
       typeof v === 'string' ? v : String((v as Raw).id ?? (v as Raw).version ?? (v as Raw).name),
     );

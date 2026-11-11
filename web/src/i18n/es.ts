@@ -174,6 +174,8 @@ export const es: Record<keyof typeof en, string> = {
   'wizard.groupHint.modpacks': 'Instala un modpack completo de Modrinth o CurseForge.',
   'wizard.groupHint.bedrock': 'Para jugadores de Bedrock en móvil, consola y Windows.',
   'wizard.latest': 'Última',
+  'wizard.otherVersions': 'Mostrar snapshots, pre-releases, release candidates y versiones antiguas',
+  'wizard.otherVersionsHint': 'Estas versiones no son estables. «Última» sigue siendo la última versión estable. Volver a una versión anterior puede dañar los mundos.',
   'wizard.loaderHint': 'Elige una versión o busca; «Última» usa el loader más reciente para esa versión de Minecraft. También puedes escribir una versión que no esté en la lista.',
   'wizard.loaderNone': 'Todavía no hay versiones de loader listadas para esta versión de Minecraft.',
   'wizard.badgeRecommended': 'recomendada',

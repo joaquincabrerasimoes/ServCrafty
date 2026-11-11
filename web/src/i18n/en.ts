@@ -180,6 +180,8 @@ export const en = {
   'wizard.groupHint.modpacks': 'Install a complete modpack from Modrinth or CurseForge.',
   'wizard.groupHint.bedrock': 'For phones, consoles and Windows Bedrock players.',
   'wizard.latest': 'Latest',
+  'wizard.otherVersions': 'Show snapshots, pre-releases, release candidates and old versions',
+  'wizard.otherVersionsHint': 'These versions are not stable. "Latest" still means the newest release. Worlds can be broken by going back to an older version.',
   'wizard.loaderHint': 'Pick a build or search; "Latest" uses the newest loader for that Minecraft version. You can also type a build that is not listed.',
   'wizard.loaderNone': 'No loader builds are listed for this Minecraft version yet.',
   'wizard.badgeRecommended': 'recommended',
