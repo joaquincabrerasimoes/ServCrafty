@@ -544,7 +544,7 @@ export default function CreateServer() {
   const locked = createdId !== null; // the server exists; only the world upload is left
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col">
       <PageHeader title={t('wizard.title')} subtitle={t('wizard.subtitle')} />
       <Stepper steps={steps} step={step} />
       <h2 ref={headingRef} tabIndex={-1} className="sr-only">
@@ -893,8 +893,9 @@ export default function CreateServer() {
         </p>
       )}
 
+      <div className="h-8 shrink-0" />
       {/* Pinned to the bottom of the scrolling page so Back/Next stay reachable on short (landscape) screens. */}
-      <div className="sticky bottom-0 z-10 -mx-4 mt-8 flex justify-between gap-2 border-t border-line bg-bg px-4 py-3 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+      <div className="sticky bottom-0 z-10 -mx-4 -mb-6 mt-auto flex justify-between gap-2 border-t border-line bg-bg px-4 py-3 sm:-mx-6 sm:px-6 lg:-mx-8 lg:-mb-8 lg:px-8">
         <Button
           variant="ghost"
           disabled={locked}
