@@ -870,7 +870,8 @@ export default function CreateServer() {
         </p>
       )}
 
-      <div className="mt-8 flex justify-between gap-2 border-t border-line pt-5">
+      {/* Pinned to the bottom of the scrolling page so Back/Next stay reachable on short (landscape) screens. */}
+      <div className="sticky bottom-0 z-10 -mx-4 mt-8 flex justify-between gap-2 border-t border-line bg-bg px-4 py-3 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
         <Button
           variant="ghost"
           disabled={locked}

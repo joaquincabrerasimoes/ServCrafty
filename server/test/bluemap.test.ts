@@ -148,6 +148,7 @@ test('patchMapStorage rewrites BlueMap\'s generated map configs in place', async
 
 test('a server without BlueMap loses the managed files and jar (clone/restore never keeps the original\'s credentials)', async () => {
   write('plugins/BlueMap/storages/sql.conf', `${lib.BLUEMAP_MARKER}\nstorage-type: sql\npassword: "secret"\n`);
+  write('plugins/BlueMap/storages/file.conf', `${lib.BLUEMAP_MARKER}\nstorage-type: sql\n`);
   write('plugins/BlueMap/core.conf', lib.renderCoreConf());
   write('plugins/BlueMap/webserver.conf', 'enabled: true\n'); // the user's own file, no marker
   write('plugins/BlueMap-5.4-paper.jar', 'jar');
@@ -155,6 +156,7 @@ test('a server without BlueMap loses the managed files and jar (clone/restore ne
   const logs: string[] = [];
   await svc.prepareBluemap(row({ bluemap: null }), (l) => logs.push(l));
   assert.ok(!fs.existsSync(path.join(serverFiles(), 'plugins/BlueMap/storages/sql.conf')));
+  assert.ok(!fs.existsSync(path.join(serverFiles(), 'plugins/BlueMap/storages/file.conf')));
   assert.ok(!fs.existsSync(path.join(serverFiles(), 'plugins/BlueMap/core.conf')));
   assert.ok(!fs.existsSync(path.join(serverFiles(), 'plugins/BlueMap-5.4-paper.jar')));
   assert.ok(fs.existsSync(path.join(serverFiles(), 'plugins/BlueMap/webserver.conf')), 'user files stay');

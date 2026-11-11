@@ -310,7 +310,7 @@ async function cleanupManaged(server: ServerRow): Promise<void> {
   let removed = 0;
   for (const rel of CONFIG_DIRS) {
     const dir = path.join(root, rel);
-    for (const file of [path.join(dir, 'core.conf'), path.join(dir, 'webserver.conf'), path.join(dir, 'storages', 'sql.conf')]) {
+    for (const file of [path.join(dir, 'core.conf'), path.join(dir, 'webserver.conf'), path.join(dir, 'storages', 'sql.conf'), path.join(dir, 'storages', 'file.conf')]) {
       const cur = await readText(file);
       if (cur !== null && isManaged(cur)) {
         await fsp.rm(file, { force: true });
@@ -353,11 +353,12 @@ export async function prepareBluemap(server: ServerRow, log: (line: string) => v
   await writeManaged(path.join(dir, 'webserver.conf'), renderWebserverConf());
   // Always rewritten: it carries the credentials. World-readable on purpose: the game process may run as
   // another user than the panel, and the role can only reach this server's own schema.
-  await writeAtomic(
-    path.join(dir, 'storages', 'sql.conf'),
-    renderSqlConf({ url: jdbcUrl(target, server.bluemap.schema), user: server.bluemap.role, password }),
-    0o644,
-  );
+  const sql = renderSqlConf({ url: jdbcUrl(target, server.bluemap.schema), user: server.bluemap.role, password });
+  await writeAtomic(path.join(dir, 'storages', 'sql.conf'), sql, 0o644);
+  // BlueMap generates its default maps with `storage: "file"` and refuses to load when no storage of that
+  // name exists. Defining "file" as the same PostgreSQL storage makes those maps use the database from the
+  // very first load (the map-config patch below then only normalises the name).
+  await writeAtomic(path.join(dir, 'storages', 'file.conf'), sql, 0o644);
   const patched = await patchMapStorage(server);
   if (patched) log(`[servcrafty] BlueMap: ${patched} map config(s) switched to the PostgreSQL storage`);
 }
