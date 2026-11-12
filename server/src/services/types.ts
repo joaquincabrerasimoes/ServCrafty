@@ -138,6 +138,8 @@ export interface BluemapState {
   /** Role password, encrypted with SECRET_KEY. */
   passwordEnc: string;
   enabledAt: string;
+  /** Public map link: the secret path token (encrypted with SECRET_KEY); absent/null = link off. */
+  publicTokenEnc?: string | null;
 }
 
 export interface PublicServer {

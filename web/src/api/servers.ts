@@ -202,6 +202,7 @@ export const serversApi = {
   setBluemap: (id: string, body: { enabled: boolean; acceptDownload?: boolean; deleteData?: boolean }) =>
     api.put<BluemapStatus>(`${s(id)}/bluemap`, body),
   resetBluemap: (id: string) => api.post<BluemapStatus>(`${s(id)}/bluemap/reset`),
+  setBluemapPublic: (id: string, body: { enabled: boolean; regenerate?: boolean }) => api.put<BluemapStatus>(`${s(id)}/bluemap/public`, body),
 
   // Clone / templates / export / import
   clone: (id: string, name: string) => api.post<Server>(`${s(id)}/clone`, { name }),

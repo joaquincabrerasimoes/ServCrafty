@@ -5209,6 +5209,67 @@
           }
         }
       }
+    },
+    "/servers/{id}/bluemap/public": {
+      "put": {
+        "tags": [
+          "BlueMap"
+        ],
+        "summary": "Turn the public map link on or off",
+        "operationId": "put_servers_id_bluemap_public",
+        "description": "Requires **owner** (or admin) access and BlueMap enabled. Anyone with the link views the live map without signing in (read-only, GET only). `regenerate: true` creates a new link and cancels the old one. The link also stops working when BlueMap is turned off.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "enabled"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "regenerate": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BluemapStatus"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -8447,6 +8508,15 @@
             "type": "string",
             "nullable": true,
             "description": "Browser URL of the proxied map (needs a signed-in browser session); null when not enabled."
+          },
+          "publicEnabled": {
+            "type": "boolean",
+            "description": "The public (no sign-in) map link is on."
+          },
+          "publicUrl": {
+            "type": "string",
+            "nullable": true,
+            "description": "The public map link. Only the server owner and admins receive it (it is a secret); absolute when the panel public URL is set, otherwise a path on the panel."
           }
         }
       },

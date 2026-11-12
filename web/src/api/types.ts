@@ -211,6 +211,10 @@ export interface BluemapStatus {
   dbIssue: 'loopback' | 'invalid_database_url' | null;
   restartRequired: boolean;
   url: string | null;
+  /** The public (no sign-in) map link is on. */
+  publicEnabled: boolean;
+  /** The public link itself; only the owner (and admins) get it. Absolute, or a path on this panel. */
+  publicUrl: string | null;
 }
 
 export interface CreateServerBody {

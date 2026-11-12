@@ -172,6 +172,8 @@ export interface BluemapStatus {
   dbIssue: DbIssue | null;
   /** The running server must restart for the last change to apply. */
   restartRequired: boolean;
+  /** The public (no sign-in) map link is on. The URL itself is only given to the owner. */
+  publicEnabled: boolean;
 }
 
 export async function schemaUsage(schema: string): Promise<{ bytes: number; tables: number } | null> {
@@ -186,6 +188,52 @@ export async function schemaUsage(schema: string): Promise<{ bytes: number; tabl
   return { bytes: Number(r?.bytes ?? 0), tables: r?.tables ?? 0 };
 }
 
+// ---------------------------------------------------------------------------------------------
+// Public link (anyone with the URL can view the live map, no sign-in)
+
+/** The secret path token of the public map link, or null when the link is off (or cannot be decrypted). */
+export function publicTokenOf(server: Pick<ServerRow, 'bluemap'>): string | null {
+  const enc = server.bluemap?.publicTokenEnc;
+  return enc ? safeDecrypt(enc) : null;
+}
+
+export const publicPathFor = (serverId: string, token: string) => `/api/servers/${serverId}/webui/bluemap/~t/${token}/`;
+
+/** Turn the public link on (new token if there is none), regenerate it (the old URL stops working) or turn it off. */
+export async function setPublicLink(server: ServerRow, mode: 'enable' | 'regenerate' | 'disable'): Promise<ServerRow> {
+  assertSupported(server);
+  if (!server.bluemap) throw badRequest('BlueMap is not enabled for this server', 'bluemap_not_enabled');
+  let publicTokenEnc: string | null = null;
+  if (mode !== 'disable') {
+    if (!server.bluemap.enabled) throw badRequest('BlueMap is not enabled for this server', 'bluemap_not_enabled');
+    const keep = mode === 'enable' && publicTokenOf(server) ? (server.bluemap.publicTokenEnc ?? null) : null;
+    publicTokenEnc = keep ?? encrypt(crypto.randomBytes(24).toString('base64url'));
+  }
+  const row = await queryOne<ServerRow>('UPDATE servers SET bluemap = $2 WHERE id = $1 RETURNING *', [
+    server.id,
+    JSON.stringify({ ...server.bluemap, publicTokenEnc }),
+  ]);
+  publicCache.clear();
+  return row ?? server;
+}
+
+const publicCache = new Map<string, { ok: boolean; at: number }>();
+const sha = (s: string) => crypto.createHash('sha256').update(s).digest();
+
+/** Is `token` the current public-link token of this server's map? Cached for a few seconds (a map page is many requests). */
+export async function verifyPublicToken(serverId: string, token: string): Promise<boolean> {
+  if (!/^[0-9a-f-]{36}$/i.test(serverId) || !/^[\w-]{16,128}$/.test(token)) return false;
+  const key = `${serverId}:${token}`;
+  const hit = publicCache.get(key);
+  if (hit && Date.now() - hit.at < 5_000) return hit.ok;
+  const row = await queryOne<ServerRow>('SELECT * FROM servers WHERE id = $1', [serverId]);
+  const current = row && bluemapKind(row.type) && row.bluemap?.enabled ? publicTokenOf(row) : null;
+  const ok = !!current && crypto.timingSafeEqual(sha(current), sha(token));
+  if (publicCache.size > 2000) publicCache.clear();
+  publicCache.set(key, { ok, at: Date.now() });
+  return ok;
+}
+
 export async function bluemapStatus(server: ServerRow, restartRequired = false): Promise<BluemapStatus> {
   const kind = bluemapKind(server.type);
   const usage = server.bluemap ? await schemaUsage(server.bluemap.schema).catch(() => null) : null;
@@ -198,6 +246,7 @@ export async function bluemapStatus(server: ServerRow, restartRequired = false):
     tables: usage?.tables ?? null,
     dbIssue: db && 'issue' in db ? db.issue : null,
     restartRequired,
+    publicEnabled: !!publicTokenOf(server) && !!server.bluemap?.enabled,
   };
 }
 
@@ -231,7 +280,7 @@ export async function disableBluemap(server: ServerRow, deleteData: boolean, run
   }
   const row = await queryOne<ServerRow>('UPDATE servers SET bluemap = $2 WHERE id = $1 RETURNING *', [
     server.id,
-    JSON.stringify({ ...server.bluemap, enabled: false }),
+    JSON.stringify({ ...server.bluemap, enabled: false, publicTokenEnc: null }),
   ]);
   return row ?? server;
 }

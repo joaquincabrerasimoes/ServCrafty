@@ -394,6 +394,12 @@ curl -s -X PUT "$BASE/servers/$SID/bluemap" -H "$AUTH" -H "Content-Type: applica
 curl -s -X PUT "$BASE/servers/$SID/bluemap" -H "$AUTH" -H "Content-Type: application/json" -d '{"enabled":false}'
 curl -s -X PUT "$BASE/servers/$SID/bluemap" -H "$AUTH" -H "Content-Type: application/json" -d '{"enabled":false,"deleteData":true}'
 
+# owner only: public link, anyone with the URL views the live map without signing in
+curl -s -X PUT "$BASE/servers/$SID/bluemap/public" -H "$AUTH" -H "Content-Type: application/json" -d '{"enabled":true}' | jq .publicUrl
+# new link (the old one stops working) / turn it off
+curl -s -X PUT "$BASE/servers/$SID/bluemap/public" -H "$AUTH" -H "Content-Type: application/json" -d '{"enabled":true,"regenerate":true}'
+curl -s -X PUT "$BASE/servers/$SID/bluemap/public" -H "$AUTH" -H "Content-Type: application/json" -d '{"enabled":false}'
+
 # discard the rendered map so it renders again (server must be stopped)
 curl -s -X POST -H "$AUTH" "$BASE/servers/$SID/bluemap/reset"
 ```

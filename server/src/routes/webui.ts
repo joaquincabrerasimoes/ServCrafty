@@ -37,7 +37,9 @@ import { getDefinition } from '../services/gameDefinitions.js';
 import { blockedForRemote } from '../services/lanOnly.js';
 import * as runtime from '../services/runtime.js';
 import { getPublicUrl } from '../services/settings.js';
-import type { ServerStatus } from '../services/types.js';
+import { verifyPublicToken } from '../services/bluemap.js';
+import { getServerRow } from '../services/servers.js';
+import type { ServerRow, ServerStatus } from '../services/types.js';
 import { getUser } from '../services/users.js';
 
 /**
@@ -73,6 +75,12 @@ interface ProxySession {
 }
 
 const sessions = new Map<string, ProxySession>();
+
+/** Session user of a public (no sign-in) BlueMap link visitor. Never a real user id. */
+const PUBLIC_USER = '*public*';
+/** Upstream requests a public link may have in flight per server, so anonymous traffic cannot starve the game. */
+const PUBLIC_MAX_INFLIGHT = 24;
+const publicInflight = new Map<string, number>();
 
 function sweep(now = Date.now()): void {
   for (const [t, s] of sessions) if (now - s.lastUsed > TOKEN_IDLE_MS || now - s.createdAt > TOKEN_MAX_MS) sessions.delete(t);
@@ -116,6 +124,8 @@ export interface WebuiDeps {
   ): Promise<{ ui: GameWebui; upstream: () => Promise<WebuiUpstream>; headHtml?: string }>;
   /** Origins of the panel itself (for the WebSocket Origin check). */
   panelOrigins(req: FastifyRequest): Promise<string[]>;
+  /** Is `token` a server's current public link token (BlueMap only)? No sign-in is involved. */
+  publicAccess?(serverId: string, uiId: string, token: string): Promise<boolean>;
 }
 
 /** BlueMap's page as a web UI: viewers may open it; its scripts are the webapp's own (relative URLs), so no rewriting. */
@@ -142,27 +152,36 @@ function injectHead(html: string, snippet: string): string {
   return m ? `${html.slice(0, m.index + m[0].length)}${snippet}${html.slice(m.index + m[0].length)}` : snippet + html;
 }
 
+/** The BlueMap web server inside a Java server's container (not part of any game definition). */
+function bluemapWebui(server: ServerRow) {
+  if (!bluemapKind(server.type) || !server.bluemap?.enabled) throw notFound('Web UI not found', 'webui_not_found');
+  return {
+    ui: BLUEMAP_WEBUI,
+    headHtml: STORAGE_SHIM,
+    upstream: async () => {
+      const status = runtime.getStatus(server.id);
+      if (!['running', 'starting'].includes(status) || !server.container_id) throw unreachable('The map is not reachable: is the server running?');
+      const ip = await containerIp(server.container_id).catch(() => null);
+      if (!ip) throw unreachable('The map is not reachable: is the server running?');
+      return { host: ip, port: BLUEMAP_PORT, basicAuth: null };
+    },
+  };
+}
+
 const realDeps: WebuiDeps = {
   currentUserId: (req) => requireUser(req).id,
+  publicAccess: (serverId, uiId, token) => (uiId === BLUEMAP_UI_ID ? verifyPublicToken(serverId, token) : Promise.resolve(false)),
   async resolve(req, serverId, uiId, userId) {
+    if (userId === PUBLIC_USER) {
+      // Public link: the token was verified for this server; only the BlueMap page is reachable this way.
+      const server = uiId === BLUEMAP_UI_ID ? await getServerRow(serverId) : null;
+      if (!server) throw notFound('Web UI not found', 'webui_not_found');
+      return bluemapWebui(server);
+    }
     const user = await getUser(userId);
     if (user.disabled || (await blockedForRemote(req, user, 'session'))) throw forbidden();
     const { server, access } = await loadServerFor(user, serverId, 'viewer');
-    if (uiId === BLUEMAP_UI_ID) {
-      // The BlueMap web server inside a Java server's container (not part of any game definition).
-      if (!bluemapKind(server.type) || !server.bluemap?.enabled) throw notFound('Web UI not found', 'webui_not_found');
-      return {
-        ui: BLUEMAP_WEBUI,
-        headHtml: STORAGE_SHIM,
-        upstream: async () => {
-          const status = runtime.getStatus(server.id);
-          if (!['running', 'starting'].includes(status) || !server.container_id) throw unreachable('The map is not reachable: is the server running?');
-          const ip = await containerIp(server.container_id).catch(() => null);
-          if (!ip) throw unreachable('The map is not reachable: is the server running?');
-          return { host: ip, port: BLUEMAP_PORT, basicAuth: null };
-        },
-      };
-    }
+    if (uiId === BLUEMAP_UI_ID) return bluemapWebui(server);
     if (!isSteamType(server.type) || !server.steam) throw notFound('Web UI not found', 'webui_not_found');
     const def = getDefinition(server.steam.gameId);
     const ui = def?.webui.find((w) => w.id === uiId);
@@ -207,7 +226,7 @@ interface TokenContext {
 }
 
 /** Validate a tokenized URL; null when the URL is not tokenized. Throws on expired/invalid tokens. */
-function tokenContext(req: FastifyRequest<{ Params: Params }>): TokenContext | null | 'expired' {
+async function tokenContext(req: FastifyRequest<{ Params: Params }>, deps: WebuiDeps): Promise<TokenContext | null | 'expired'> {
   const { id, uiId } = req.params;
   const tokenPrefix = `${basePath(id, uiId)}/${TOKEN_SEGMENT}/`;
   const rawUrl = req.raw.url ?? '';
@@ -215,12 +234,17 @@ function tokenContext(req: FastifyRequest<{ Params: Params }>): TokenContext | n
   const afterPrefix = rawUrl.slice(tokenPrefix.length);
   const slash = afterPrefix.search(/[/?]/);
   const token = slash >= 0 ? afterPrefix.slice(0, slash) : afterPrefix;
-  const sess = sessions.get(token);
+  let sess = sessions.get(token);
   const now = Date.now();
-  if (!sess || sess.serverId !== id || sess.uiId !== uiId || now - sess.lastUsed > TOKEN_IDLE_MS || now - sess.createdAt > TOKEN_MAX_MS) {
-    if (sess) sessions.delete(token);
-    return 'expired';
+  if (sess && (sess.serverId !== id || sess.uiId !== uiId || now - sess.lastUsed > TOKEN_IDLE_MS || now - sess.createdAt > TOKEN_MAX_MS)) {
+    sessions.delete(token);
+    sess = undefined;
   }
+  if (!sess && deps.publicAccess && (await deps.publicAccess(id, uiId, token))) {
+    // A public link: a throw-away session (own empty cookie jar) that is re-verified on every request.
+    sess = { userId: PUBLIC_USER, serverId: id, uiId, createdAt: now, lastUsed: now, jar: new CookieJar() };
+  }
+  if (!sess) return 'expired';
   sess.lastUsed = now;
   const prefix = `${tokenPrefix}${token}`;
   const target = upstreamTarget(rawUrl, prefix);
@@ -245,7 +269,7 @@ function httpHandler(deps: WebuiDeps) {
     const { id, uiId } = req.params;
     const base = basePath(id, uiId);
     const rawUrl = req.raw.url ?? '';
-    const ctx = tokenContext(req);
+    const ctx = await tokenContext(req, deps);
 
     // 1) Cookie-authenticated entry: mint a proxy token and redirect into the tokenized URL space.
     if (ctx === null) {
@@ -266,8 +290,15 @@ function httpHandler(deps: WebuiDeps) {
 
     // 2) Tokenized request.
     const { sess, prefix, target } = ctx;
+    const isPublic = sess.userId === PUBLIC_USER;
+    if (isPublic && req.method !== 'GET' && req.method !== 'HEAD') throw new AppError(405, 'method_not_allowed', 'The public map is read-only');
     const { ui, upstream: getUpstream, headHtml } = await deps.resolve(req, id, uiId, sess.userId);
     const { host: ip, port, basicAuth } = await getUpstream();
+    if (isPublic) {
+      const n = publicInflight.get(id) ?? 0;
+      if (n >= PUBLIC_MAX_INFLIGHT) throw new AppError(429, 'too_many_requests', 'The public map is busy, try again in a moment');
+      publicInflight.set(id, n + 1);
+    }
     const body = Buffer.isBuffer(req.body) ? req.body : null;
     const upstreamHost = `${ip}:${port}`;
     const headers = upstreamRequestHeaders(req.headers, {
@@ -301,6 +332,8 @@ function httpHandler(deps: WebuiDeps) {
       r.on('close', () => clearTimeout(deadline));
       if (body && body.length) r.end(body);
       else r.end();
+    }).finally(() => {
+      if (isPublic) publicInflight.set(id, Math.max(0, (publicInflight.get(id) ?? 1) - 1));
     });
 
     sess.jar.setAll(upstream.headers['set-cookie']);
@@ -447,7 +480,7 @@ function wsPrepare(deps: WebuiDeps) {
   return async function prepare(req: FastifyRequest<{ Params: Params }>): Promise<void> {
     if (!req.ws) return;
     const { id, uiId } = req.params;
-    const ctx = tokenContext(req);
+    const ctx = await tokenContext(req, deps);
     if (ctx === null) throw new AppError(400, 'webui_session_required', 'WebSocket connections need the web UI session URL');
     if (ctx === 'expired') throw forbidden('The web UI session expired; reload it', 'webui_session_expired');
     const { ui, upstream: getUpstream } = await deps.resolve(req, id, uiId, ctx.sess.userId);

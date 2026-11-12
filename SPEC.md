@@ -288,3 +288,13 @@ A live 3D map of Java servers (BlueMap), stored in the panel's PostgreSQL databa
 - `GET /servers/:id/icon` (viewer) returns the PNG (404 without one); `PUT /servers/:id/icon` (manager, multipart `file`) validates PNG signature, 64x64 and at most 256 KB (400 `invalid_icon`), audit `server.icon_set`; `DELETE` removes it, audit `server.icon_removed`. Both answer `{icon, restartRequired}`: Minecraft reads the icon when the server starts.
 - Server JSON gains `icon`: the file's mtime in ms or null, used as `?v=` for cache busting.
 - UI: Settings page card "Server icon" (any image is centre-cropped and scaled to 64x64 in the browser, with preview, then saved), and the icon is shown on the dashboard rows. Viewers see the card only when an icon exists.
+
+## BlueMap public link (v0.4.5)
+The owner of a server (or an admin) can publish the live BlueMap so that anyone with the URL can view it **without signing in**.
+
+- **Link.** `.../api/servers/<id>/webui/bluemap/~t/<token>/` (same shape as a proxy session URL). The token is 24 random bytes (base64url), stored encrypted with SECRET_KEY in `servers.bluemap.publicTokenEnc`, so the owner can read the link again. The URL fragment (`#world:x:y:z...`) stays in the browser, so a link can point at a map position.
+- **API.** `PUT /servers/:id/bluemap/public` `{enabled, regenerate?}` (owner/admin only, BlueMap must be on) returns the BlueMap status, whose `publicEnabled` is visible to every viewer but whose `publicUrl` (a secret) is only given to the owner/admin. Audit `server.bluemap_public_enable|regenerate|disable`.
+- **Revoking.** Turning the link off, regenerating it, or turning BlueMap off (or deleting its data) cancels the old URL. Checks are cached for 5 seconds, so a revoked link may work for a few more seconds.
+- **What a visitor can do.** Only `GET`/`HEAD` of the BlueMap page of that one server (405 otherwise); nothing else of the panel, no API, no other web UI. The visitor gets a throw-away proxy session (own empty cookie jar). At most 24 upstream requests per server are in flight for public visitors (429 beyond), so anonymous traffic cannot starve the game server. Public requests are not subject to LAN-only restrictions: that is the point of the link.
+- **Privacy.** The live map shows where online players are. The UI warns about this.
+- **UI.** Map tab, card "Public link" for the owner/admin: create, copy, regenerate, turn off.

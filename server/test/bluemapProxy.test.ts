@@ -13,6 +13,8 @@ const SERVER_ID = 'srv-map-test';
 const MAP_UI: GameWebui = { id: 'bluemap', label: 'Map', portId: 'bluemap', path: '/', auth: { type: 'none' }, minAccess: 'viewer', rewrite: false, websocket: false };
 const SHIM = '<script>/*shim*/</script>';
 
+const PUBLIC_TOKEN = 'public-link-token-0123456789abcdef';
+
 let upstream: http.Server;
 let panel: FastifyInstance;
 let panelPort = 0;
@@ -32,6 +34,7 @@ const deps: WebuiDeps = {
     };
   },
   panelOrigins: async () => [],
+  publicAccess: async (_serverId, uiId, token) => uiId === 'bluemap' && token === PUBLIC_TOKEN,
 };
 
 before(async () => {
@@ -108,4 +111,20 @@ test('browser cookies and tokens never reach BlueMap', async () => {
   const h = requests[0]!.headers;
   assert.equal(h.cookie, undefined);
   assert.equal(h.authorization, undefined);
+});
+
+test('a public link token opens the map with no session, read-only', async () => {
+  const page = await get(PUBLIC_TOKEN, '/');
+  assert.equal(page.status, 200);
+  assert.match(await page.text(), /BlueMap/);
+  const tile = await get(PUBLIC_TOKEN, '/maps/world/tiles/0/x0/z0.json');
+  assert.equal(tile.status, 200);
+  const post = await fetch(`http://127.0.0.1:${panelPort}/api/servers/${SERVER_ID}/webui/bluemap/~t/${PUBLIC_TOKEN}/`, { method: 'POST', body: 'x' });
+  assert.equal(post.status, 405);
+});
+
+test('a wrong or revoked token is not a public link', async () => {
+  const res = await fetch(`http://127.0.0.1:${panelPort}/api/servers/${SERVER_ID}/webui/bluemap/~t/not-the-token-0123456789abcdef/`, { redirect: 'manual' });
+  assert.equal(res.status, 302, 'sent back to the sign-in entry, never served');
+  assert.equal(res.headers.get('location'), `/api/servers/${SERVER_ID}/webui/bluemap`);
 });
