@@ -192,6 +192,11 @@ export const serversApi = {
   /** Replaces a generated variable (definition `generate`) with a new random value; applies on the next start. */
   steamRegenerate: (id: string, key: string) => api.post<{ value: string }>(`${s(id)}/steam/regenerate`, { key }),
 
+  // Multiplayer-list icon (Java)
+  iconUrl: (id: string, version: number) => `/api${s(id)}/icon?v=${version}`,
+  setIcon: (id: string, form: FormData) => api.put<{ icon: number | null; restartRequired: boolean }>(`${s(id)}/icon`, form),
+  removeIcon: (id: string) => api.del<{ icon: number | null; restartRequired: boolean }>(`${s(id)}/icon`),
+
   // BlueMap
   bluemap: (id: string) => api.get<BluemapStatus>(`${s(id)}/bluemap`),
   setBluemap: (id: string, body: { enabled: boolean; acceptDownload?: boolean; deleteData?: boolean }) =>

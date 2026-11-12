@@ -12,8 +12,8 @@ type LimitKey = 'maxServers' | 'maxRamMb' | 'maxCpu' | 'maxDiskMb';
 const LIMIT_FIELDS: Array<{ key: LimitKey; label: 'quota.servers' | 'quota.ram' | 'quota.cpu' | 'quota.disk'; unit: string; step: number; min: number }> = [
   { key: 'maxServers', label: 'quota.servers', unit: '', step: 1, min: 1 },
   { key: 'maxRamMb', label: 'quota.ram', unit: 'MB', step: 256, min: 256 },
-  { key: 'maxCpu', label: 'quota.cpu', unit: '', step: 0.5, min: 0.1 },
-  { key: 'maxDiskMb', label: 'quota.disk', unit: 'MB', step: 1024, min: 1 },
+  { key: 'maxCpu', label: 'quota.cpu', unit: '', step: 0.1, min: 0.1 },
+  { key: 'maxDiskMb', label: 'quota.disk', unit: 'MB', step: 1, min: 1 },
 ];
 
 const POOL_RE = /^\s*\d{1,5}(\s*-\s*\d{1,5})?(\s*,\s*\d{1,5}(\s*-\s*\d{1,5})?)*\s*$/;

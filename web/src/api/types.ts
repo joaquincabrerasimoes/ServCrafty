@@ -195,6 +195,8 @@ export interface Server {
   gameBlocked?: boolean;
   /** BlueMap web map (Java servers). `url` redirects into the proxy session. */
   bluemap?: { supported: boolean; enabled: boolean; url: string | null };
+  /** Multiplayer-list icon of a Java server: file version for `?v=`, null = no icon. */
+  icon?: number | null;
 }
 
 /** GET/PUT /servers/:id/bluemap. */

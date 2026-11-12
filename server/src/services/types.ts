@@ -1,4 +1,5 @@
 import type { ServerType } from '../lib/validation.js';
+import { iconVersion } from './serverIcon.js';
 import { BLUEMAP_UI_ID, bluemapKind, type BluemapPublic } from '../lib/bluemap.js';
 import type { MinecraftConfig } from '../lib/minecraftConfig.js';
 import { gameOf, type Game } from '../lib/games.js';
@@ -174,6 +175,8 @@ export interface PublicServer {
   gameBlocked: boolean;
   /** BlueMap web map (Java servers). */
   bluemap: BluemapPublic;
+  /** Version (file mtime, ms) of the multiplayer-list icon of a Java server; null = no icon. Use as `?v=` on `/servers/:id/icon`. */
+  icon: number | null;
 }
 
 export interface SteamGameInfo {
@@ -256,6 +259,7 @@ export function toPublicServer(s: ServerRow, access: Access, ownerName: string |
     createdAt: s.created_at.toISOString(),
     access,
     ...serverGameState(s),
+    icon: iconVersion(s.id, s.type),
     bluemap: {
       supported: bluemapKind(s.type) !== null,
       enabled: !!s.bluemap?.enabled && bluemapKind(s.type) !== null,

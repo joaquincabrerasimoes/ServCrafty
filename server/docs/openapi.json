@@ -5070,6 +5070,145 @@
           }
         }
       }
+    },
+    "/servers/{id}/icon": {
+      "get": {
+        "tags": [
+          "Servers"
+        ],
+        "summary": "Multiplayer-list icon of a Java server",
+        "operationId": "get_servers_id_icon",
+        "description": "Requires **viewer** access. Returns the 64x64 PNG `server-icon.png`; 404 when the server has none or is not a Minecraft Java server.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "PNG image",
+            "content": {
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Servers"
+        ],
+        "summary": "Set the server icon",
+        "operationId": "put_servers_id_icon",
+        "description": "Requires **manager** access. Multipart upload of one PNG that is exactly 64x64 pixels and at most 256 KB (`400 invalid_icon` otherwise). Minecraft reads the icon at startup (`restartRequired`).",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "icon": {
+                      "type": "integer",
+                      "nullable": true
+                    },
+                    "restartRequired": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Servers"
+        ],
+        "summary": "Remove the server icon",
+        "operationId": "delete_servers_id_icon",
+        "description": "Requires **manager** access.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "icon": {
+                      "type": "integer",
+                      "nullable": true
+                    },
+                    "restartRequired": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -6356,6 +6495,11 @@
                 "nullable": true
               }
             }
+          },
+          "icon": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Version (file mtime, ms) of the Java server icon, used as `?v=` on `/servers/{id}/icon`; null = no icon."
           }
         },
         "required": [

@@ -19,6 +19,7 @@ import { cleanVariables, diffSteamVars, isGenerated, steamFromVars, validateStea
 import { SteamVariablesForm } from '../create/SteamVariablesForm';
 import { Note } from '../create/TerrariaConfigStep';
 import { SteamPorts } from './SteamPorts';
+import { ServerIconCard } from './ServerIconCard';
 import { useServerCtx } from './ServerLayout';
 
 export default function ServerSettings() {
@@ -247,6 +248,8 @@ export default function ServerSettings() {
           )}
         </div>
       </Section>
+
+      {caps.hasJava && server.type !== 'BEDROCK' && <ServerIconCard />}
 
       {caps.hasTerrariaConfig && (
         <section aria-labelledby="tr-settings" className="space-y-3">

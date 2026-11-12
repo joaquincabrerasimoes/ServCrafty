@@ -282,3 +282,9 @@ A live 3D map of Java servers (BlueMap), stored in the panel's PostgreSQL databa
 ## BlueMap JDBC driver and other Minecraft versions (v0.4.2)
 - BlueMap ships no PostgreSQL driver. Before each start `prepareBluemap` copies `postgresql-42.7.4.jar` (downloaded once from Maven Central, SHA-1 checked, cached in `<data>/cache/bluemap/`) into the BlueMap config directory and `storages/sql.conf` / `file.conf` set `driver-jar` (`/data/<config dir>/postgresql-42.7.4.jar`) and `driver-class: org.postgresql.Driver`. A failed download answers 502 `bluemap_driver_download`. The jar is removed with the other managed files when BlueMap is off.
 - Create wizard: a switch under the version picker (Vanilla, Paper, Folia, Fabric, Quilt) calls `GET /catalog/minecraft/versions?snapshots=true`, which also lists snapshots, pre-releases, release candidates and (Vanilla) old betas/alphas. "Latest" still means the newest release.
+
+## Server icon (v0.4.4)
+- Minecraft Java servers (not Bedrock) can have a multiplayer-list icon: `server-icon.png` in the server's data directory, a PNG of exactly 64x64 pixels. The panel reads and writes that file, so one placed through the file manager works too.
+- `GET /servers/:id/icon` (viewer) returns the PNG (404 without one); `PUT /servers/:id/icon` (manager, multipart `file`) validates PNG signature, 64x64 and at most 256 KB (400 `invalid_icon`), audit `server.icon_set`; `DELETE` removes it, audit `server.icon_removed`. Both answer `{icon, restartRequired}`: Minecraft reads the icon when the server starts.
+- Server JSON gains `icon`: the file's mtime in ms or null, used as `?v=` for cache busting.
+- UI: Settings page card "Server icon" (any image is centre-cropped and scaled to 64x64 in the browser, with preview, then saved), and the icon is shown on the dashboard rows. Viewers see the card only when an icon exists.

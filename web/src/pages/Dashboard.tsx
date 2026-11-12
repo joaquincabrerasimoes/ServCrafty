@@ -14,6 +14,7 @@ import { formatMb, formatNumber } from '@/lib/format';
 import { quotaRows } from '@/lib/quota';
 import { Badge, Button, EmptyState, ErrorState, LinkButton, Loading, Meter, PageHeader } from '@/components/ui';
 import { StatusBadge } from '@/components/StatusBadge';
+import { ServerIcon as ServerPicture } from '@/components/ServerIcon';
 import { PowerButtons } from '@/components/PowerButtons';
 import { CopyAddress } from '@/components/CopyAddress';
 import { ImportDialog } from '@/components/ImportDialog';
@@ -55,7 +56,9 @@ function ServerRow({ server }: { server: Server }) {
   return (
     <div className="group relative flex flex-col gap-3 overflow-hidden rounded-md border border-line bg-surface p-4 pl-5 sm:flex-row sm:items-center sm:gap-6">
       <span className={clsx('absolute inset-y-0 left-0 w-1.5', stripe[server.status] ?? 'bg-line')} />
-      <Link to={`/servers/${server.id}`} className="min-w-0 flex-1 after:absolute after:inset-0 after:content-['']">
+      <Link to={`/servers/${server.id}`} className="flex min-w-0 flex-1 items-center gap-3 after:absolute after:inset-0 after:content-['']">
+        <ServerPicture server={server} className="h-12 w-12" />
+        <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <h2 className="truncate text-lg font-semibold group-hover:text-accent">{server.name}</h2>
           {server.access !== 'owner' && server.access !== 'admin' && <Badge>{t(`access.${server.access}`)}</Badge>}
@@ -70,6 +73,7 @@ function ServerRow({ server }: { server: Server }) {
           <span>{variantLabel(server, t, false)}</span>
           {server.modpack?.name && <span className="truncate">{server.modpack.name}</span>}
           <span className="font-mono text-xs">:{server.port}</span>
+        </div>
         </div>
       </Link>
       <div className="flex items-center gap-5 text-sm text-muted">
