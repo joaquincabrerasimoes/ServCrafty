@@ -69,6 +69,7 @@ const TOKEN_MAX_MS = 12 * 60 * 60_000;
 const TOKEN_SEGMENT = '~t';
 /** Requests under this path (below the token URL) are answered by the panel, not forwarded to BlueMap. */
 const MARKER_API_PREFIX = '/__servcrafty/markers';
+const SSE_RE = /^\/maps\/[^/?]+\/live\/sse(?:\?|$)/;
 const MAP_MARKERS_RE = /^\/maps\/([^/?]+)\/live\/markers\.json(?:\?|$)/;
 const MARKER_BODY_MAX = 64 * 1024;
 
@@ -335,6 +336,11 @@ function httpHandler(deps: WebuiDeps) {
     if (deps.markers && uiId === BLUEMAP_UI_ID && target.startsWith(MARKER_API_PREFIX)) {
       const actor = isPublic ? (sess.link ? linkActor(sess.link.linkId) : null) : userActor(sess.userId);
       return markerApi(deps.markers, reply, req, id, !!canEditMarkers && !!actor, actor, target);
+    }
+    // BlueMap's live event stream (SSE) cannot go through this buffering proxy (it never ends), and it would also stop the
+    // web app polling for markers. Refusing it makes the web app fall back to polling (players, markers) at once.
+    if (uiId === BLUEMAP_UI_ID && SSE_RE.test(target)) {
+      return reply.code(404).headers({ 'cache-control': 'no-store', 'access-control-allow-origin': '*' }).send('');
     }
     if (isPublic && req.method !== 'GET' && req.method !== 'HEAD') throw new AppError(405, 'method_not_allowed', 'The public map is read-only');
     const { host: ip, port, basicAuth } = await getUpstream();

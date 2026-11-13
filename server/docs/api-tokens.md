@@ -405,6 +405,10 @@ curl -s -X DELETE -H "$AUTH" "$BASE/servers/$SID/bluemap/links/$LINK_ID"
 # markers (stored by ServCrafty, shown on the web map within ~15 s). types: poi, html, line, shape, extrude
 curl -s -X POST "$BASE/servers/$SID/bluemap/markers" -H "$AUTH" -H "Content-Type: application/json"   -d '{"mapId":"world","type":"poi","label":"Home","detail":"Our base","position":{"x":120,"y":70,"z":-45}}'
 curl -s -X POST "$BASE/servers/$SID/bluemap/markers" -H "$AUTH" -H "Content-Type: application/json"   -d '{"mapId":"world","type":"shape","label":"Farm","y":64,"color":"#44cc66","points":[{"x":0,"z":0},{"x":30,"z":0},{"x":30,"z":20},{"x":0,"z":20}]}'
+# every BlueMap option: icon/anchor/classes (poi), holes + lineColor/fillColor/opacity/lineWidth/depthTest/link (areas), minDistance/maxDistance/listed/sorting
+curl -s -X POST "$BASE/servers/$SID/bluemap/markers" -H "$AUTH" -H "Content-Type: application/json" \
+  -d '{"mapId":"world","type":"extrude","label":"Tower","minY":60,"maxY":110,"lineColor":"#ff0000","fillColor":"#ffaa00","fillOpacity":0.4,"points":[{"x":50,"z":30},{"x":70,"z":30},{"x":70,"z":50}],"link":"https://example.com"}'
+curl -s -X PATCH "$BASE/servers/$SID/bluemap/markers/$MARKER_ID" -H "$AUTH" -H "Content-Type: application/json" -d '{"link":null,"fillOpacity":0.2}'   # null clears an option
 curl -s -H "$AUTH" "$BASE/servers/$SID/bluemap/markers?mapId=world" | jq '.markers[] | {id,type,label}'
 curl -s -X PATCH "$BASE/servers/$SID/bluemap/markers/$MARKER_ID" -H "$AUTH" -H "Content-Type: application/json" -d '{"label":"New name"}'
 curl -s -X DELETE -H "$AUTH" "$BASE/servers/$SID/bluemap/markers/$MARKER_ID"
