@@ -5,7 +5,7 @@ import pg from 'pg';
 import { config } from '../config.js';
 import { query, queryOne } from '../db/pool.js';
 import { decrypt, encrypt } from '../lib/crypto.js';
-import { AppError, badRequest, conflict, errorMessage, upstream } from '../lib/errors.js';
+import { AppError, badRequest, conflict, errorMessage, notFound, upstream } from '../lib/errors.js';
 import {
   bluemapConfigDir,
   bluemapKind,
@@ -172,8 +172,8 @@ export interface BluemapStatus {
   dbIssue: DbIssue | null;
   /** The running server must restart for the last change to apply. */
   restartRequired: boolean;
-  /** The public (no sign-in) map link is on. The URL itself is only given to the owner. */
-  publicEnabled: boolean;
+  /** Number of public (no sign-in) map links. The URLs themselves are only given to the owner. */
+  publicLinks: number;
 }
 
 export async function schemaUsage(schema: string): Promise<{ bytes: number; tables: number } | null> {
@@ -189,49 +189,121 @@ export async function schemaUsage(schema: string): Promise<{ bytes: number; tabl
 }
 
 // ---------------------------------------------------------------------------------------------
-// Public link (anyone with the URL can view the live map, no sign-in)
+// Public links (anyone with a URL can view the live map, no sign-in; some links may also edit markers)
 
-/** The secret path token of the public map link, or null when the link is off (or cannot be decrypted). */
-export function publicTokenOf(server: Pick<ServerRow, 'bluemap'>): string | null {
-  const enc = server.bluemap?.publicTokenEnc;
-  return enc ? safeDecrypt(enc) : null;
+export const MAX_PUBLIC_LINKS = 20;
+
+interface LinkRow {
+  id: string;
+  server_id: string;
+  name: string;
+  token_enc: string;
+  can_edit: boolean;
+  created_at: Date;
+}
+
+export interface PublicLink {
+  id: string;
+  name: string;
+  /** The link may create markers (and change the ones it created). */
+  canEdit: boolean;
+  createdAt: string;
+  /** Path of the link; the secret, so only given to the owner/admin. */
+  path: string | null;
 }
 
 export const publicPathFor = (serverId: string, token: string) => `/api/servers/${serverId}/webui/bluemap/~t/${token}/`;
 
-/** Turn the public link on (new token if there is none), regenerate it (the old URL stops working) or turn it off. */
-export async function setPublicLink(server: ServerRow, mode: 'enable' | 'regenerate' | 'disable'): Promise<ServerRow> {
-  assertSupported(server);
-  if (!server.bluemap) throw badRequest('BlueMap is not enabled for this server', 'bluemap_not_enabled');
-  let publicTokenEnc: string | null = null;
-  if (mode !== 'disable') {
-    if (!server.bluemap.enabled) throw badRequest('BlueMap is not enabled for this server', 'bluemap_not_enabled');
-    const keep = mode === 'enable' && publicTokenOf(server) ? (server.bluemap.publicTokenEnc ?? null) : null;
-    publicTokenEnc = keep ?? encrypt(crypto.randomBytes(24).toString('base64url'));
-  }
-  const row = await queryOne<ServerRow>('UPDATE servers SET bluemap = $2 WHERE id = $1 RETURNING *', [
-    server.id,
-    JSON.stringify({ ...server.bluemap, publicTokenEnc }),
-  ]);
-  publicCache.clear();
-  return row ?? server;
+const linkOf = (serverId: string, r: LinkRow): PublicLink => {
+  const token = safeDecrypt(r.token_enc);
+  return { id: r.id, name: r.name, canEdit: r.can_edit, createdAt: new Date(r.created_at).toISOString(), path: token ? publicPathFor(serverId, token) : null };
+};
+
+export async function listPublicLinks(serverId: string): Promise<PublicLink[]> {
+  const rows = await query<LinkRow>('SELECT * FROM bluemap_public_links WHERE server_id = $1 ORDER BY created_at', [serverId]);
+  return rows.map((r) => linkOf(serverId, r));
 }
 
-const publicCache = new Map<string, { ok: boolean; at: number }>();
+export async function countPublicLinks(serverId: string): Promise<number> {
+  const r = await queryOne<{ n: number }>('SELECT count(*)::int AS n FROM bluemap_public_links WHERE server_id = $1', [serverId]);
+  return r?.n ?? 0;
+}
+
+function requireEnabled(server: ServerRow): void {
+  assertSupported(server);
+  if (!server.bluemap?.enabled) throw badRequest('BlueMap is not enabled for this server', 'bluemap_not_enabled');
+}
+
+export async function createPublicLink(server: ServerRow, input: { name: string; canEdit: boolean }, userId: string | null): Promise<PublicLink> {
+  requireEnabled(server);
+  if ((await countPublicLinks(server.id)) >= MAX_PUBLIC_LINKS) throw conflict(`At most ${MAX_PUBLIC_LINKS} public links per server`, 'too_many_links');
+  const row = await queryOne<LinkRow>(
+    'INSERT INTO bluemap_public_links (server_id, name, token_enc, can_edit, created_by) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+    [server.id, input.name, encrypt(crypto.randomBytes(24).toString('base64url')), input.canEdit, userId],
+  );
+  publicCache.clear();
+  return linkOf(server.id, row!);
+}
+
+async function linkRow(server: ServerRow, id: string): Promise<LinkRow> {
+  const row = /^[0-9a-f-]{36}$/i.test(id) ? await queryOne<LinkRow>('SELECT * FROM bluemap_public_links WHERE id = $1 AND server_id = $2', [id, server.id]) : null;
+  if (!row) throw notFound('Public link not found', 'public_link_not_found');
+  return row;
+}
+
+/** Rename a link, change whether it may edit markers, or give it a new URL (the old one stops working). */
+export async function updatePublicLink(server: ServerRow, id: string, patch: { name?: string; canEdit?: boolean; regenerate?: boolean }): Promise<PublicLink> {
+  await linkRow(server, id);
+  const row = await queryOne<LinkRow>(
+    `UPDATE bluemap_public_links
+        SET name = coalesce($3, name), can_edit = coalesce($4, can_edit), token_enc = coalesce($5, token_enc)
+      WHERE id = $1 AND server_id = $2 RETURNING *`,
+    [id, server.id, patch.name ?? null, patch.canEdit ?? null, patch.regenerate ? encrypt(crypto.randomBytes(24).toString('base64url')) : null],
+  );
+  publicCache.clear();
+  return linkOf(server.id, row!);
+}
+
+export async function deletePublicLink(server: ServerRow, id: string): Promise<void> {
+  await linkRow(server, id);
+  await query('DELETE FROM bluemap_public_links WHERE id = $1 AND server_id = $2', [id, server.id]);
+  publicCache.clear();
+}
+
+export async function deleteAllPublicLinks(serverId: string): Promise<void> {
+  await query('DELETE FROM bluemap_public_links WHERE server_id = $1', [serverId]);
+  publicCache.clear();
+}
+
+export interface PublicAccess {
+  linkId: string;
+  name: string;
+  canEdit: boolean;
+}
+
+const publicCache = new Map<string, { link: PublicAccess | null; at: number }>();
 const sha = (s: string) => crypto.createHash('sha256').update(s).digest();
 
-/** Is `token` the current public-link token of this server's map? Cached for a few seconds (a map page is many requests). */
-export async function verifyPublicToken(serverId: string, token: string): Promise<boolean> {
-  if (!/^[0-9a-f-]{36}$/i.test(serverId) || !/^[\w-]{16,128}$/.test(token)) return false;
+/** The link whose token this is (BlueMap must still be on), or null. Cached a few seconds (a map page is many requests). */
+export async function verifyPublicToken(serverId: string, token: string): Promise<PublicAccess | null> {
+  if (!/^[0-9a-f-]{36}$/i.test(serverId) || !/^[\w-]{16,128}$/.test(token)) return null;
   const key = `${serverId}:${token}`;
   const hit = publicCache.get(key);
-  if (hit && Date.now() - hit.at < 5_000) return hit.ok;
-  const row = await queryOne<ServerRow>('SELECT * FROM servers WHERE id = $1', [serverId]);
-  const current = row && bluemapKind(row.type) && row.bluemap?.enabled ? publicTokenOf(row) : null;
-  const ok = !!current && crypto.timingSafeEqual(sha(current), sha(token));
+  if (hit && Date.now() - hit.at < 5_000) return hit.link;
+  const rows = await query<LinkRow & { type: ServerRow['type']; bluemap: ServerRow['bluemap'] }>(
+    `SELECT l.*, s.type, s.bluemap FROM bluemap_public_links l JOIN servers s ON s.id = l.server_id WHERE l.server_id = $1`,
+    [serverId],
+  );
+  let link: PublicAccess | null = null;
+  for (const r of rows) {
+    if (!bluemapKind(r.type) || !r.bluemap?.enabled) continue;
+    const t = safeDecrypt(r.token_enc);
+    // Compare every row (no early exit on the secret), constant time per comparison.
+    if (t && crypto.timingSafeEqual(sha(t), sha(token)) && !link) link = { linkId: r.id, name: r.name, canEdit: r.can_edit };
+  }
   if (publicCache.size > 2000) publicCache.clear();
-  publicCache.set(key, { ok, at: Date.now() });
-  return ok;
+  publicCache.set(key, { link, at: Date.now() });
+  return link;
 }
 
 export async function bluemapStatus(server: ServerRow, restartRequired = false): Promise<BluemapStatus> {
@@ -246,7 +318,7 @@ export async function bluemapStatus(server: ServerRow, restartRequired = false):
     tables: usage?.tables ?? null,
     dbIssue: db && 'issue' in db ? db.issue : null,
     restartRequired,
-    publicEnabled: !!publicTokenOf(server) && !!server.bluemap?.enabled,
+    publicLinks: server.bluemap?.enabled ? await countPublicLinks(server.id) : 0,
   };
 }
 
@@ -276,12 +348,14 @@ export async function disableBluemap(server: ServerRow, deleteData: boolean, run
       throw privilegeError(err);
     });
     const row = await queryOne<ServerRow>('UPDATE servers SET bluemap = NULL WHERE id = $1 RETURNING *', [server.id]);
+    await deleteAllPublicLinks(server.id);
     return row ?? server;
   }
   const row = await queryOne<ServerRow>('UPDATE servers SET bluemap = $2 WHERE id = $1 RETURNING *', [
     server.id,
-    JSON.stringify({ ...server.bluemap, enabled: false, publicTokenEnc: null }),
+    JSON.stringify({ ...server.bluemap, enabled: false }),
   ]);
+  await deleteAllPublicLinks(server.id);
   return row ?? server;
 }
 

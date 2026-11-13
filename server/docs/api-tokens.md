@@ -394,11 +394,22 @@ curl -s -X PUT "$BASE/servers/$SID/bluemap" -H "$AUTH" -H "Content-Type: applica
 curl -s -X PUT "$BASE/servers/$SID/bluemap" -H "$AUTH" -H "Content-Type: application/json" -d '{"enabled":false}'
 curl -s -X PUT "$BASE/servers/$SID/bluemap" -H "$AUTH" -H "Content-Type: application/json" -d '{"enabled":false,"deleteData":true}'
 
-# owner only: public link, anyone with the URL views the live map without signing in
-curl -s -X PUT "$BASE/servers/$SID/bluemap/public" -H "$AUTH" -H "Content-Type: application/json" -d '{"enabled":true}' | jq .publicUrl
-# new link (the old one stops working) / turn it off
-curl -s -X PUT "$BASE/servers/$SID/bluemap/public" -H "$AUTH" -H "Content-Type: application/json" -d '{"enabled":true,"regenerate":true}'
-curl -s -X PUT "$BASE/servers/$SID/bluemap/public" -H "$AUTH" -H "Content-Type: application/json" -d '{"enabled":false}'
+# owner only: public links (anyone with the URL views the live map without signing in).
+# canEdit=true lets the visitors also add markers (and change the ones that link created).
+curl -s -X POST "$BASE/servers/$SID/bluemap/links" -H "$AUTH" -H "Content-Type: application/json" -d '{"name":"Friends","canEdit":true}' | jq .url
+curl -s -H "$AUTH" "$BASE/servers/$SID/bluemap/links" | jq '.links[] | {id,name,canEdit,url}'
+# rename / change the edit right / new URL (the old one stops working)
+curl -s -X PATCH "$BASE/servers/$SID/bluemap/links/$LINK_ID" -H "$AUTH" -H "Content-Type: application/json" -d '{"canEdit":false,"regenerate":true}'
+curl -s -X DELETE -H "$AUTH" "$BASE/servers/$SID/bluemap/links/$LINK_ID"
+
+# markers (stored by ServCrafty, shown on the web map within ~15 s). types: poi, html, line, shape, extrude
+curl -s -X POST "$BASE/servers/$SID/bluemap/markers" -H "$AUTH" -H "Content-Type: application/json"   -d '{"mapId":"world","type":"poi","label":"Home","detail":"Our base","position":{"x":120,"y":70,"z":-45}}'
+curl -s -X POST "$BASE/servers/$SID/bluemap/markers" -H "$AUTH" -H "Content-Type: application/json"   -d '{"mapId":"world","type":"shape","label":"Farm","y":64,"color":"#44cc66","points":[{"x":0,"z":0},{"x":30,"z":0},{"x":30,"z":20},{"x":0,"z":20}]}'
+curl -s -H "$AUTH" "$BASE/servers/$SID/bluemap/markers?mapId=world" | jq '.markers[] | {id,type,label}'
+curl -s -X PATCH "$BASE/servers/$SID/bluemap/markers/$MARKER_ID" -H "$AUTH" -H "Content-Type: application/json" -d '{"label":"New name"}'
+curl -s -X DELETE -H "$AUTH" "$BASE/servers/$SID/bluemap/markers/$MARKER_ID"
+# marker sets (groups, one toggle each in the map menu)
+curl -s -X POST "$BASE/servers/$SID/bluemap/marker-sets" -H "$AUTH" -H "Content-Type: application/json" -d '{"mapId":"world","label":"Bases"}'
 
 # discard the rendered map so it renders again (server must be stopped)
 curl -s -X POST -H "$AUTH" "$BASE/servers/$SID/bluemap/reset"

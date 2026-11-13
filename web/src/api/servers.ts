@@ -1,6 +1,9 @@
 import { api, asList, downloadUrl, uploadWithProgress } from './client';
 import type {
   Backup,
+  BluemapMarker,
+  BluemapMarkerSet,
+  BluemapPublicLink,
   BluemapStatus,
   CatalogSource,
   CreateServerBody,
@@ -202,7 +205,14 @@ export const serversApi = {
   setBluemap: (id: string, body: { enabled: boolean; acceptDownload?: boolean; deleteData?: boolean }) =>
     api.put<BluemapStatus>(`${s(id)}/bluemap`, body),
   resetBluemap: (id: string) => api.post<BluemapStatus>(`${s(id)}/bluemap/reset`),
-  setBluemapPublic: (id: string, body: { enabled: boolean; regenerate?: boolean }) => api.put<BluemapStatus>(`${s(id)}/bluemap/public`, body),
+  bluemapLinks: (id: string) => api.get<{ links: BluemapPublicLink[] }>(`${s(id)}/bluemap/links`),
+  createBluemapLink: (id: string, body: { name: string; canEdit: boolean }) => api.post<BluemapPublicLink>(`${s(id)}/bluemap/links`, body),
+  updateBluemapLink: (id: string, linkId: string, body: { name?: string; canEdit?: boolean; regenerate?: boolean }) =>
+    api.patch<BluemapPublicLink>(`${s(id)}/bluemap/links/${encodeURIComponent(linkId)}`, body),
+  deleteBluemapLink: (id: string, linkId: string) => api.del<void>(`${s(id)}/bluemap/links/${encodeURIComponent(linkId)}`),
+  bluemapMarkers: (id: string) => api.get<{ markers: BluemapMarker[] }>(`${s(id)}/bluemap/markers`),
+  bluemapMarkerSets: (id: string) => api.get<{ sets: BluemapMarkerSet[] }>(`${s(id)}/bluemap/marker-sets`),
+  deleteBluemapMarker: (id: string, markerId: string) => api.del<void>(`${s(id)}/bluemap/markers/${encodeURIComponent(markerId)}`),
 
   // Clone / templates / export / import
   clone: (id: string, name: string) => api.post<Server>(`${s(id)}/clone`, { name }),

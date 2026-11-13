@@ -211,10 +211,42 @@ export interface BluemapStatus {
   dbIssue: 'loopback' | 'invalid_database_url' | null;
   restartRequired: boolean;
   url: string | null;
-  /** The public (no sign-in) map link is on. */
-  publicEnabled: boolean;
-  /** The public link itself; only the owner (and admins) get it. Absolute, or a path on this panel. */
-  publicUrl: string | null;
+  /** Number of public (no sign-in) map links. */
+  publicLinks: number;
+}
+
+/** A public map link (owner/admin only see the URL). `canEdit`: visitors may add markers. */
+export interface BluemapPublicLink {
+  id: string;
+  name: string;
+  canEdit: boolean;
+  createdAt: string;
+  /** Absolute when the panel public URL is set, otherwise a path on this panel. */
+  url: string | null;
+}
+
+export type BluemapMarkerType = 'poi' | 'html' | 'line' | 'shape' | 'extrude';
+
+export interface BluemapMarkerSet {
+  id: string;
+  mapId: string;
+  label: string;
+  toggleable: boolean;
+  defaultHidden: boolean;
+  sorting: number;
+}
+
+/** A marker kept by ServCrafty and shown on the web map. `createdBy` is `user:<id>` or `link:<id>`. */
+export interface BluemapMarker {
+  id: string;
+  setId: string;
+  type: BluemapMarkerType;
+  label: string;
+  detail?: string;
+  position?: { x: number; y: number; z: number };
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface CreateServerBody {
