@@ -11,7 +11,7 @@
  *
  * It talks to the panel under the page's own token URL (`__servcrafty/markers`, see routes/webui.ts), uses only GET and
  * POST (no CORS preflight from the sandboxed page) and builds the interface with `textContent`, never `innerHTML` with
- * data. The source below must not contain backticks or `${` (it lives in a template literal) nor `</script`.
+ * data. Keys typed inside the editor never reach BlueMap (it would move the camera). The source below must not contain backticks or `${` (it lives in a template literal) nor `</script`.
  */
 const SOURCE = String.raw`
 (function () {
@@ -92,8 +92,14 @@ const SOURCE = String.raw`
     var h = (location.hash || '').slice(1).split(':')[0];
     return h || null;
   }
+  // The camera target's height is not the ground (it can sit at the bottom of the world), so the height of a point comes
+  // from the map itself: BlueMap ray-traces the terrain surface at that spot (false while no tile is loaded there).
+  function groundY(x, z, fallback) {
+    try { var h = app().mapViewer.map.terrainHeightAt(x, z); if (typeof h === 'number' && isFinite(h)) return Math.round(h * 10) / 10; } catch (e) {}
+    return fallback;
+  }
   function center() {
-    try { var p = app().mapViewer.controlsManager.position; if (isFinite(p.x) && isFinite(p.z)) return { x: p.x, y: p.y, z: p.z }; } catch (e) {}
+    try { var p = app().mapViewer.controlsManager.position; if (isFinite(p.x) && isFinite(p.z)) return { x: p.x, y: groundY(p.x, p.z, p.y), z: p.z }; } catch (e) {}
     var v = (location.hash || '').slice(1).split(':');
     if (v.length >= 4 && isFinite(+v[1]) && isFinite(+v[3])) return { x: +v[1], y: +v[2], z: +v[3] };
     return null;
@@ -521,6 +527,10 @@ const SOURCE = String.raw`
     cross = el('div', 'scx-cross'); cross.innerHTML = CROSS;
     bar = el('div', 'scx-bar');
     [css, fab, panel, cross, bar].forEach(function (n) { root.appendChild(n); });
+    // BlueMap moves the camera with WASD, arrows, Q/E ... from keydown listeners on window that also call preventDefault,
+    // which would eat what is typed in our fields. Keys pressed inside the editor stop here (bubble phase, below window);
+    // the Escape handler further down listens in the capture phase and is not affected.
+    ['keydown', 'keyup', 'keypress'].forEach(function (type) { root.addEventListener(type, function (e) { e.stopPropagation(); }); });
     document.body.appendChild(root);
     render();
     document.addEventListener('keydown', function (e) {

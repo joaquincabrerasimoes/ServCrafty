@@ -107,6 +107,7 @@ test('editor script: valid JavaScript, flag substituted, safe inside a script ta
     assert.ok(!body.includes('__CAN_EDIT__'));
     assert.match(body, new RegExp(`var CAN_EDIT = ${canEdit};`));
     assert.doesNotThrow(() => new Function(body));
+    if (canEdit) assert.match(body, /\['keydown', 'keyup', 'keypress'\]\.forEach\(function \(type\) \{ root\.addEventListener\(type, function \(e\) \{ e\.stopPropagation/, 'keys typed in the editor must not reach BlueMap');
   }
 });
 
