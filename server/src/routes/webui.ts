@@ -38,6 +38,9 @@ import { blockedForRemote } from '../services/lanOnly.js';
 import * as runtime from '../services/runtime.js';
 import { getPublicUrl } from '../services/settings.js';
 import { verifyPublicToken } from '../services/bluemap.js';
+import * as markerService from '../services/bluemapMarkers.js';
+import { linkActor, userActor, type MarkerActor } from '../services/bluemapMarkers.js';
+import { renderEditorScript } from '../lib/bluemapEditor.js';
 import { getServerRow } from '../services/servers.js';
 import type { ServerRow, ServerStatus } from '../services/types.js';
 import { getUser } from '../services/users.js';
@@ -64,6 +67,10 @@ const MAX_REQUEST_BYTES = 16 * 1024 * 1024;
 const TOKEN_IDLE_MS = 2 * 60 * 60_000;
 const TOKEN_MAX_MS = 12 * 60 * 60_000;
 const TOKEN_SEGMENT = '~t';
+/** Requests under this path (below the token URL) are answered by the panel, not forwarded to BlueMap. */
+const MARKER_API_PREFIX = '/__servcrafty/markers';
+const MAP_MARKERS_RE = /^\/maps\/([^/?]+)\/live\/markers\.json(?:\?|$)/;
+const MARKER_BODY_MAX = 64 * 1024;
 
 interface ProxySession {
   userId: string;
@@ -72,6 +79,23 @@ interface ProxySession {
   createdAt: number;
   lastUsed: number;
   jar: CookieJar;
+  /** Set for public-link visitors: which link, and whether it may edit markers. */
+  link?: PublicLinkInfo;
+}
+
+export interface PublicLinkInfo {
+  linkId: string;
+  canEdit: boolean;
+}
+
+/** The marker operations the BlueMap page can reach through the proxy (see `markerApi`). */
+export interface WebuiMarkers {
+  /** Our markers of a map merged into BlueMap's own `live/markers.json` (`upstream`: its parsed JSON or anything). */
+  mapJson(serverId: string, mapId: string, upstream: unknown): Promise<unknown>;
+  overview(serverId: string, mapId: string): Promise<unknown>;
+  create(serverId: string, actor: MarkerActor, body: unknown): Promise<unknown>;
+  update(serverId: string, actor: MarkerActor, id: string, body: unknown): Promise<unknown>;
+  remove(serverId: string, actor: MarkerActor, id: string): Promise<void>;
 }
 
 const sessions = new Map<string, ProxySession>();
@@ -121,11 +145,14 @@ export interface WebuiDeps {
     serverId: string,
     uiId: string,
     userId: string,
-  ): Promise<{ ui: GameWebui; upstream: () => Promise<WebuiUpstream>; headHtml?: string }>;
+    link?: PublicLinkInfo,
+  ): Promise<{ ui: GameWebui; upstream: () => Promise<WebuiUpstream>; headHtml?: string; canEditMarkers?: boolean }>;
   /** Origins of the panel itself (for the WebSocket Origin check). */
   panelOrigins(req: FastifyRequest): Promise<string[]>;
   /** Is `token` a server's current public link token (BlueMap only)? No sign-in is involved. */
-  publicAccess?(serverId: string, uiId: string, token: string): Promise<boolean>;
+  publicAccess?(serverId: string, uiId: string, token: string): Promise<PublicLinkInfo | null>;
+  /** Marker storage; without it the page is proxied as is. */
+  markers?: WebuiMarkers;
 }
 
 /** BlueMap's page as a web UI: viewers may open it; its scripts are the webapp's own (relative URLs), so no rewriting. */
@@ -153,11 +180,12 @@ function injectHead(html: string, snippet: string): string {
 }
 
 /** The BlueMap web server inside a Java server's container (not part of any game definition). */
-function bluemapWebui(server: ServerRow) {
+function bluemapWebui(server: ServerRow, canEditMarkers: boolean) {
   if (!bluemapKind(server.type) || !server.bluemap?.enabled) throw notFound('Web UI not found', 'webui_not_found');
   return {
     ui: BLUEMAP_WEBUI,
-    headHtml: STORAGE_SHIM,
+    headHtml: STORAGE_SHIM + renderEditorScript({ canEdit: canEditMarkers }),
+    canEditMarkers,
     upstream: async () => {
       const status = runtime.getStatus(server.id);
       if (!['running', 'starting'].includes(status) || !server.container_id) throw unreachable('The map is not reachable: is the server running?');
@@ -170,18 +198,28 @@ function bluemapWebui(server: ServerRow) {
 
 const realDeps: WebuiDeps = {
   currentUserId: (req) => requireUser(req).id,
-  publicAccess: (serverId, uiId, token) => (uiId === BLUEMAP_UI_ID ? verifyPublicToken(serverId, token) : Promise.resolve(false)),
-  async resolve(req, serverId, uiId, userId) {
+  publicAccess: async (serverId, uiId, token) => {
+    const link = uiId === BLUEMAP_UI_ID ? await verifyPublicToken(serverId, token) : null;
+    return link ? { linkId: link.linkId, canEdit: link.canEdit } : null;
+  },
+  markers: {
+    mapJson: markerService.mapMarkersJson,
+    overview: markerService.mapOverview,
+    create: async (serverId, actor, body) => markerService.publicMarker(await markerService.createMarker(serverId, actor, body)),
+    update: async (serverId, actor, id, body) => markerService.publicMarker(await markerService.updateMarker(serverId, actor, id, body)),
+    remove: (serverId, actor, id) => markerService.deleteMarker(serverId, actor, id),
+  },
+  async resolve(req, serverId, uiId, userId, link) {
     if (userId === PUBLIC_USER) {
       // Public link: the token was verified for this server; only the BlueMap page is reachable this way.
       const server = uiId === BLUEMAP_UI_ID ? await getServerRow(serverId) : null;
       if (!server) throw notFound('Web UI not found', 'webui_not_found');
-      return bluemapWebui(server);
+      return bluemapWebui(server, !!link?.canEdit);
     }
     const user = await getUser(userId);
     if (user.disabled || (await blockedForRemote(req, user, 'session'))) throw forbidden();
     const { server, access } = await loadServerFor(user, serverId, 'viewer');
-    if (uiId === BLUEMAP_UI_ID) return bluemapWebui(server);
+    if (uiId === BLUEMAP_UI_ID) return bluemapWebui(server, hasAccess(access, 'operator'));
     if (!isSteamType(server.type) || !server.steam) throw notFound('Web UI not found', 'webui_not_found');
     const def = getDefinition(server.steam.gameId);
     const ui = def?.webui.find((w) => w.id === uiId);
@@ -240,9 +278,10 @@ async function tokenContext(req: FastifyRequest<{ Params: Params }>, deps: Webui
     sessions.delete(token);
     sess = undefined;
   }
-  if (!sess && deps.publicAccess && (await deps.publicAccess(id, uiId, token))) {
+  const link = !sess && deps.publicAccess ? await deps.publicAccess(id, uiId, token) : null;
+  if (link) {
     // A public link: a throw-away session (own empty cookie jar) that is re-verified on every request.
-    sess = { userId: PUBLIC_USER, serverId: id, uiId, createdAt: now, lastUsed: now, jar: new CookieJar() };
+    sess = { userId: PUBLIC_USER, serverId: id, uiId, createdAt: now, lastUsed: now, jar: new CookieJar(), link };
   }
   if (!sess) return 'expired';
   sess.lastUsed = now;
@@ -291,8 +330,13 @@ function httpHandler(deps: WebuiDeps) {
     // 2) Tokenized request.
     const { sess, prefix, target } = ctx;
     const isPublic = sess.userId === PUBLIC_USER;
+    const { ui, upstream: getUpstream, headHtml, canEditMarkers } = await deps.resolve(req, id, uiId, sess.userId, sess.link);
+    // The map page's own marker editor talks to the panel through the same token URL (never to the game).
+    if (deps.markers && uiId === BLUEMAP_UI_ID && target.startsWith(MARKER_API_PREFIX)) {
+      const actor = isPublic ? (sess.link ? linkActor(sess.link.linkId) : null) : userActor(sess.userId);
+      return markerApi(deps.markers, reply, req, id, !!canEditMarkers && !!actor, actor, target);
+    }
     if (isPublic && req.method !== 'GET' && req.method !== 'HEAD') throw new AppError(405, 'method_not_allowed', 'The public map is read-only');
-    const { ui, upstream: getUpstream, headHtml } = await deps.resolve(req, id, uiId, sess.userId);
     const { host: ip, port, basicAuth } = await getUpstream();
     if (isPublic) {
       const n = publicInflight.get(id) ?? 0;
@@ -348,6 +392,29 @@ function httpHandler(deps: WebuiDeps) {
     if (!out['cache-control']) out['cache-control'] = 'private, no-cache';
 
     let payload = upstream.body;
+    // BlueMap's own live markers get ours merged in (markers are persisted by the panel, not by BlueMap).
+    const mapMarkers = deps.markers && uiId === BLUEMAP_UI_ID && req.method === 'GET' ? MAP_MARKERS_RE.exec(target) : null;
+    if (mapMarkers && deps.markers) {
+      let theirs: unknown = {};
+      try {
+        if (upstream.status === 200) theirs = JSON.parse(payload.toString('utf8'));
+      } catch {
+        theirs = {};
+      }
+      let mapId = '';
+      try {
+        mapId = decodeURIComponent(mapMarkers[1]!);
+      } catch {
+        mapId = '';
+      }
+      const merged = await deps.markers.mapJson(id, mapId, theirs).catch(() => theirs);
+      payload = Buffer.from(JSON.stringify(merged), 'utf8');
+      upstream.status = 200;
+      out['content-type'] = 'application/json';
+      out['cache-control'] = 'no-store';
+      delete out.etag;
+      delete out['last-modified'];
+    }
     const kind = ui.rewrite ? textKindOf(upstream.headers['content-type']) : null;
     if (kind && payload.length) {
       const enc = charsetOf(upstream.headers['content-type']);
@@ -361,6 +428,65 @@ function httpHandler(deps: WebuiDeps) {
     for (const [k, v] of Object.entries(out)) reply.header(k, v);
     return reply.send(req.method === 'HEAD' ? undefined : payload);
   };
+}
+
+/**
+ * The marker editor injected into the BlueMap page (lib/bluemapEditor.ts) calls this. Only POST/GET are used so the
+ * browser never sends a CORS preflight from the sandboxed page. Writes need an edit right; a public link only changes
+ * the markers that same link created.
+ *   GET  markers?mapId=<id>          the sets and markers of a map
+ *   POST markers                     create (`setId` or `mapId`)
+ *   POST markers/<id>                change fields of a marker
+ *   POST markers/<id>/delete         delete a marker
+ */
+async function markerApi(
+  markers: WebuiMarkers,
+  reply: FastifyReply,
+  req: FastifyRequest<{ Params: Params }>,
+  serverId: string,
+  canEdit: boolean,
+  actor: MarkerActor | null,
+  target: string,
+): Promise<unknown> {
+  const send = (status: number, body: unknown) => {
+    reply.code(status).headers({ 'content-type': 'application/json', 'cache-control': 'no-store', 'access-control-allow-origin': '*', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer', 'content-security-policy': 'sandbox' });
+    return reply.send(body === undefined ? undefined : JSON.stringify(body));
+  };
+  try {
+    const url = new URL(target, 'http://x');
+    const parts = url.pathname.slice('/__servcrafty/'.length).split('/').filter(Boolean);
+    const mutate = req.method === 'POST';
+    if (req.method !== 'GET' && !mutate) throw new AppError(405, 'method_not_allowed', 'Use GET or POST');
+    if (parts[0] !== 'markers' || parts.length > 3) throw notFound('Not found');
+    if (req.method === 'GET') {
+      if (parts.length !== 1) throw notFound('Not found');
+      const mapId = url.searchParams.get('mapId') ?? '';
+      if (!/^[\w.\- ]{1,100}$/.test(mapId)) throw new AppError(400, 'invalid_map', 'Invalid map id');
+      return send(200, { canEdit, actor: actor?.id ?? null, all: actor?.all ?? false, ...((await markers.overview(serverId, mapId)) as object) });
+    }
+    if (!canEdit || !actor) throw forbidden('This link cannot edit markers', 'markers_read_only');
+    const raw = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+    if (raw.length > MARKER_BODY_MAX) throw new AppError(413, 'payload_too_large', 'Marker too large');
+    let body: unknown = {};
+    if (raw.length) {
+      try {
+        body = JSON.parse(raw.toString('utf8'));
+      } catch {
+        throw new AppError(400, 'invalid_json', 'The body is not valid JSON');
+      }
+    }
+    if (parts.length === 1) return send(201, await markers.create(serverId, actor, body));
+    const markerId = parts[1]!;
+    if (parts.length === 3) {
+      if (parts[2] !== 'delete') throw notFound('Not found');
+      await markers.remove(serverId, actor, markerId);
+      return send(200, { ok: true });
+    }
+    return send(200, await markers.update(serverId, actor, markerId, body));
+  } catch (err) {
+    if (err instanceof AppError) return send(err.status, { error: { code: err.code, message: err.message } });
+    throw err;
+  }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -483,7 +609,7 @@ function wsPrepare(deps: WebuiDeps) {
     const ctx = await tokenContext(req, deps);
     if (ctx === null) throw new AppError(400, 'webui_session_required', 'WebSocket connections need the web UI session URL');
     if (ctx === 'expired') throw forbidden('The web UI session expired; reload it', 'webui_session_expired');
-    const { ui, upstream: getUpstream } = await deps.resolve(req, id, uiId, ctx.sess.userId);
+    const { ui, upstream: getUpstream } = await deps.resolve(req, id, uiId, ctx.sess.userId, ctx.sess.link);
     if (!ui.websocket) throw new AppError(400, 'webui_websocket_disabled', 'This web UI does not allow WebSocket connections');
     const origin = typeof req.headers.origin === 'string' ? req.headers.origin : undefined;
     if (!wsOriginAllowed(origin, await deps.panelOrigins(req))) throw forbidden('Origin not allowed', 'origin_not_allowed');

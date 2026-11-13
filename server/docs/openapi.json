@@ -5210,14 +5210,56 @@
         }
       }
     },
-    "/servers/{id}/bluemap/public": {
-      "put": {
+    "/servers/{id}/bluemap/links": {
+      "get": {
         "tags": [
           "BlueMap"
         ],
-        "summary": "Turn the public map link on or off",
-        "operationId": "put_servers_id_bluemap_public",
-        "description": "Requires **owner** (or admin) access and BlueMap enabled. Anyone with the link views the live map without signing in (read-only, GET only). `regenerate: true` creates a new link and cancels the old one. The link also stops working when BlueMap is turned off.",
+        "summary": "List the public map links",
+        "operationId": "get_servers_id_bluemap_links",
+        "description": "Requires **owner** (or admin) access. A public link lets anyone with the URL view the live map without signing in (read-only); a link created with `canEdit` also lets visitors add markers.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "links": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/BluemapPublicLink"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "BlueMap"
+        ],
+        "summary": "Create a public map link",
+        "operationId": "post_servers_id_bluemap_links",
+        "description": "Requires **owner** (or admin) access and BlueMap enabled. Up to 20 links per server. Decide `canEdit` now; it can be changed later. Links stop working when BlueMap is turned off.",
         "parameters": [
           {
             "$ref": "#/components/parameters/ServerId"
@@ -5230,15 +5272,92 @@
               "schema": {
                 "type": "object",
                 "required": [
-                  "enabled"
+                  "name"
                 ],
                 "additionalProperties": false,
                 "properties": {
-                  "enabled": {
+                  "name": {
+                    "type": "string",
+                    "maxLength": 60
+                  },
+                  "canEdit": {
+                    "type": "boolean",
+                    "default": false
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BluemapPublicLink"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/servers/{id}/bluemap/links/{linkId}": {
+      "patch": {
+        "tags": [
+          "BlueMap"
+        ],
+        "summary": "Rename a public link, change its edit right or give it a new URL",
+        "operationId": "patch_servers_id_bluemap_links_linkId",
+        "description": "Requires **owner** (or admin) access.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          },
+          {
+            "name": "linkId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "maxLength": 60
+                  },
+                  "canEdit": {
                     "type": "boolean"
                   },
                   "regenerate": {
-                    "type": "boolean"
+                    "type": "boolean",
+                    "description": "New URL; the old one stops working."
                   }
                 }
               }
@@ -5251,13 +5370,497 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/BluemapStatus"
+                  "$ref": "#/components/schemas/BluemapPublicLink"
                 }
               }
             }
           },
           "400": {
             "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "BlueMap"
+        ],
+        "summary": "Delete a public link",
+        "operationId": "delete_servers_id_bluemap_links_linkId",
+        "description": "Requires **owner** (or admin) access. The URL stops working within a few seconds.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          },
+          {
+            "name": "linkId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Done"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/servers/{id}/bluemap/marker-sets": {
+      "get": {
+        "tags": [
+          "BlueMap"
+        ],
+        "summary": "List marker sets",
+        "operationId": "get_servers_id_bluemap_marker_sets",
+        "description": "Requires **viewer** access. Marker sets group markers per map (a toggle in the map menu). Markers are stored by ServCrafty in its own database and shown on the web map.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          },
+          {
+            "name": "mapId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Only this map."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "sets": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/BluemapMarkerSet"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "BlueMap"
+        ],
+        "summary": "Create a marker set",
+        "operationId": "post_servers_id_bluemap_marker_sets",
+        "description": "Requires **operator** access. At most 50 sets per server.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "mapId",
+                  "label"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "mapId": {
+                    "type": "string"
+                  },
+                  "label": {
+                    "type": "string",
+                    "maxLength": 80
+                  },
+                  "toggleable": {
+                    "type": "boolean",
+                    "default": true
+                  },
+                  "defaultHidden": {
+                    "type": "boolean",
+                    "default": false
+                  },
+                  "sorting": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BluemapMarkerSet"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/servers/{id}/bluemap/marker-sets/{setId}": {
+      "patch": {
+        "tags": [
+          "BlueMap"
+        ],
+        "summary": "Change a marker set",
+        "operationId": "patch_servers_id_bluemap_marker_sets_setId",
+        "description": "Requires **manager** access.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          },
+          {
+            "name": "setId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "maxLength": 80
+                  },
+                  "toggleable": {
+                    "type": "boolean",
+                    "default": true
+                  },
+                  "defaultHidden": {
+                    "type": "boolean",
+                    "default": false
+                  },
+                  "sorting": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BluemapMarkerSet"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "BlueMap"
+        ],
+        "summary": "Delete a marker set and its markers",
+        "operationId": "delete_servers_id_bluemap_marker_sets_setId",
+        "description": "Requires **manager** access.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          },
+          {
+            "name": "setId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Done"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/servers/{id}/bluemap/markers": {
+      "get": {
+        "tags": [
+          "BlueMap"
+        ],
+        "summary": "List markers",
+        "operationId": "get_servers_id_bluemap_markers",
+        "description": "Requires **viewer** access.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          },
+          {
+            "name": "mapId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Only this map."
+          },
+          {
+            "name": "setId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Only this set."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "markers": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/BluemapMarker"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "BlueMap"
+        ],
+        "summary": "Create a marker",
+        "operationId": "post_servers_id_bluemap_markers",
+        "description": "Requires **operator** access. Give `setId`, or `mapId` to use (and create on first use) the default set of that map. At most 2000 markers per server. The web map picks the marker up within about 15 seconds (open pages refresh on their own).",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BluemapMarkerInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BluemapMarker"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/servers/{id}/bluemap/markers/{markerId}": {
+      "patch": {
+        "tags": [
+          "BlueMap"
+        ],
+        "summary": "Change a marker",
+        "operationId": "patch_servers_id_bluemap_markers_markerId",
+        "description": "Requires **operator** access. Any subset of the fields of the marker's own type (the type cannot change); `setId` moves it to another set of the same map.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          },
+          {
+            "name": "markerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BluemapMarker"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "BlueMap"
+        ],
+        "summary": "Delete a marker",
+        "operationId": "delete_servers_id_bluemap_markers_markerId",
+        "description": "Requires **operator** access.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          },
+          {
+            "name": "markerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Done"
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
@@ -8509,14 +9112,9 @@
             "nullable": true,
             "description": "Browser URL of the proxied map (needs a signed-in browser session); null when not enabled."
           },
-          "publicEnabled": {
-            "type": "boolean",
-            "description": "The public (no sign-in) map link is on."
-          },
-          "publicUrl": {
-            "type": "string",
-            "nullable": true,
-            "description": "The public map link. Only the server owner and admins receive it (it is a secret); absolute when the panel public URL is set, otherwise a path on the panel."
+          "publicLinks": {
+            "type": "integer",
+            "description": "Number of public (no sign-in) map links. The URLs are only given to the owner (see /bluemap/links)."
           }
         }
       },
@@ -8537,6 +9135,242 @@
           "deleteData": {
             "type": "boolean",
             "description": "When disabling: also delete the server's map data (its schema and role). The server must be stopped."
+          }
+        }
+      },
+      "BluemapMarkerInput": {
+        "type": "object",
+        "required": [
+          "type",
+          "label"
+        ],
+        "description": "A marker as the BlueMap API models it. Free text (`label`, `detail`, `text`) is plain text: the panel escapes it, never passes HTML through. `setId` (or `mapId` for the default set of a map) says where a new marker goes.",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "poi",
+              "html",
+              "line",
+              "shape",
+              "extrude"
+            ],
+            "description": "`poi` = pin with a popup, `html` = a text label on the map, `line` = a polyline, `shape` = a flat polygon at height `y`, `extrude` = a polygon between `minY` and `maxY`."
+          },
+          "setId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "mapId": {
+            "type": "string",
+            "description": "Map id (`world`, `world_nether`, ...); used when `setId` is not given."
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "detail": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Shown when the marker is clicked."
+          },
+          "position": {
+            "type": "object",
+            "required": [
+              "x",
+              "y",
+              "z"
+            ],
+            "properties": {
+              "x": {
+                "type": "number"
+              },
+              "y": {
+                "type": "number"
+              },
+              "z": {
+                "type": "number"
+              }
+            },
+            "description": "poi and html."
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "html: the text shown (defaults to the label)."
+          },
+          "points": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 200,
+            "items": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "required": [
+                    "x",
+                    "y",
+                    "z"
+                  ],
+                  "properties": {
+                    "x": {
+                      "type": "number"
+                    },
+                    "y": {
+                      "type": "number"
+                    },
+                    "z": {
+                      "type": "number"
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "x",
+                    "z"
+                  ],
+                  "properties": {
+                    "x": {
+                      "type": "number"
+                    },
+                    "z": {
+                      "type": "number"
+                    }
+                  }
+                }
+              ]
+            },
+            "description": "line: {x,y,z} points. shape/extrude: {x,z} points (at least 3)."
+          },
+          "y": {
+            "type": "number",
+            "description": "shape: height."
+          },
+          "minY": {
+            "type": "number",
+            "description": "extrude."
+          },
+          "maxY": {
+            "type": "number",
+            "description": "extrude."
+          },
+          "color": {
+            "type": "string",
+            "example": "#ff5555"
+          },
+          "fillOpacity": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "lineWidth": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 30
+          },
+          "depthTest": {
+            "type": "boolean"
+          },
+          "listed": {
+            "type": "boolean"
+          },
+          "sorting": {
+            "type": "integer"
+          },
+          "minDistance": {
+            "type": "number"
+          },
+          "maxDistance": {
+            "type": "number"
+          }
+        }
+      },
+      "BluemapMarker": {
+        "type": "object",
+        "description": "A stored marker: the input fields plus `id`, `createdBy` (`user:<id>` or `link:<id>`) and timestamps.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "setId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "poi",
+              "html",
+              "line",
+              "shape",
+              "extrude"
+            ]
+          },
+          "label": {
+            "type": "string"
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": true
+      },
+      "BluemapMarkerSet": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "mapId": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "toggleable": {
+            "type": "boolean"
+          },
+          "defaultHidden": {
+            "type": "boolean"
+          },
+          "sorting": {
+            "type": "integer"
+          }
+        }
+      },
+      "BluemapPublicLink": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "canEdit": {
+            "type": "boolean",
+            "description": "Visitors with this link may create markers and change the ones created through the same link."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "url": {
+            "type": "string",
+            "nullable": true,
+            "description": "The link itself (a secret). Absolute when the panel public URL is set, otherwise a path on the panel."
           }
         }
       }

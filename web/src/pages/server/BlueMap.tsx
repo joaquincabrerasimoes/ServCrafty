@@ -1,16 +1,16 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, Copy, DatabaseZap, Globe, Map as MapIcon, RefreshCw, Trash2 } from 'lucide-react';
+import { AlertTriangle, Copy, DatabaseZap, Globe, MapPin, Map as MapIcon, RefreshCw, Trash2 } from 'lucide-react';
 import { serversApi } from '@/api';
-import type { BluemapStatus } from '@/api/types';
+import type { BluemapMarker, BluemapPublicLink, BluemapStatus } from '@/api/types';
 import { useT } from '@/i18n';
-import { canManage } from '@/lib/access';
+import { canManage, canOperate } from '@/lib/access';
 import { formatBytes } from '@/lib/format';
 import { qk } from '@/lib/queries';
 import { toast } from '@/stores/toast';
 import { confirm } from '@/components/feedback';
-import { Button, EmptyState, ErrorState, Loading, Section } from '@/components/ui';
+import { Badge, Button, EmptyState, ErrorState, Field, Loading, Section } from '@/components/ui';
 import { WebFrame } from '@/components/WebFrame';
 import { useIsAdmin } from '@/stores/auth';
 import { useServerCtx } from './ServerLayout';
@@ -152,7 +152,8 @@ export default function BlueMap() {
         notRunning={{ title: t('bluemap.notRunningTitle'), body: t('bluemap.notRunningBody') }}
         unreachable={{ title: t('bluemap.startingTitle'), body: t('bluemap.startingBody') }}
       />
-      {(server.access === 'owner' || server.access === 'admin') && <PublicLink status={st} onChange={refresh} />}
+      <MarkersList />
+      {(server.access === 'owner' || server.access === 'admin') && <PublicLinks onChange={() => refresh()} />}
       {manage && (
         <Section title={t('bluemap.manage')}>
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -178,54 +179,161 @@ export default function BlueMap() {
   );
 }
 
-/** Public link: anyone with the URL sees the live map without signing in. Owner (and admins) only. */
-function PublicLink({ status, onChange }: { status: BluemapStatus; onChange: (s: BluemapStatus) => void }) {
+const absolute = (url: string) => (url.startsWith('/') ? `${window.location.origin}${url}` : url);
+
+/** Public links: anyone with a URL views the live map without signing in; a link may also be allowed to edit markers. */
+function PublicLinks({ onChange }: { onChange: () => void }) {
   const t = useT();
   const { server } = useServerCtx();
-  const set = useMutation({
-    mutationFn: (body: { enabled: boolean; regenerate?: boolean }) => serversApi.setBluemapPublic(server.id, body),
-    onSuccess: onChange,
+  const qc = useQueryClient();
+  const key = ['servers', server.id, 'bluemap', 'links'];
+  const q = useQuery({ queryKey: key, queryFn: () => serversApi.bluemapLinks(server.id) });
+  const [name, setName] = useState('');
+  const [canEdit, setCanEdit] = useState(false);
+  const done = () => {
+    void qc.invalidateQueries({ queryKey: key });
+    onChange();
+  };
+  const create = useMutation({
+    mutationFn: () => serversApi.createBluemapLink(server.id, { name: name.trim(), canEdit }),
+    onSuccess: () => {
+      setName('');
+      setCanEdit(false);
+      done();
+    },
     onError: (err) => toast.error(err),
   });
-  const url = status.publicUrl ? (status.publicUrl.startsWith('/') ? `${window.location.origin}${status.publicUrl}` : status.publicUrl) : null;
-  const copy = () => {
-    if (!url) return;
-    navigator.clipboard.writeText(url).then(
+  const update = useMutation({
+    mutationFn: (v: { id: string; body: { name?: string; canEdit?: boolean; regenerate?: boolean } }) => serversApi.updateBluemapLink(server.id, v.id, v.body),
+    onSuccess: done,
+    onError: (err) => toast.error(err),
+  });
+  const remove = useMutation({
+    mutationFn: (id: string) => serversApi.deleteBluemapLink(server.id, id),
+    onSuccess: done,
+    onError: (err) => toast.error(err),
+  });
+  const copy = (l: BluemapPublicLink) => {
+    if (!l.url) return;
+    navigator.clipboard.writeText(absolute(l.url)).then(
       () => toast.success(t('bluemap.publicCopied')),
       () => toast.error(t('bluemap.publicCopyFailed')),
     );
   };
-  const regenerate = async () => {
+  const regenerate = async (l: BluemapPublicLink) => {
     const ok = await confirm({ title: t('bluemap.publicRegenTitle'), body: t('bluemap.publicRegenBody'), confirmLabel: t('bluemap.publicRegen'), danger: true });
-    if (ok) set.mutate({ enabled: true, regenerate: true });
+    if (ok) update.mutate({ id: l.id, body: { regenerate: true } });
   };
+  const del = async (l: BluemapPublicLink) => {
+    const ok = await confirm({ title: t('bluemap.linkDeleteTitle', { name: l.name }), body: t('bluemap.linkDeleteBody'), confirmLabel: t('common.delete'), danger: true });
+    if (ok) remove.mutate(l.id);
+  };
+  const links = q.data?.links ?? [];
   return (
     <Section title={t('bluemap.publicTitle')} description={t('bluemap.publicDescription')}>
-      {status.publicEnabled && url ? (
-        <div className="space-y-3">
-          <div className="flex items-center gap-2">
-            <input readOnly className="input font-mono text-xs" value={url} onFocus={(e) => e.currentTarget.select()} aria-label={t('bluemap.publicTitle')} />
-            <Button size="sm" onClick={copy} icon={<Copy className="h-4 w-4" />}>
-              {t('common.copy')}
-            </Button>
-          </div>
+      <div className="space-y-4">
+        {links.length > 0 && (
+          <ul className="space-y-3">
+            {links.map((l) => (
+              <li key={l.id} className="space-y-2 rounded-md border border-line p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="min-w-0 flex-1 truncate font-medium">{l.name}</span>
+                  <Badge tone={l.canEdit ? 'warn' : 'neutral'}>{t(l.canEdit ? 'bluemap.linkCanEdit' : 'bluemap.linkViewOnly')}</Badge>
+                </div>
+                {l.url && (
+                  <div className="flex items-center gap-2">
+                    <input readOnly className="input font-mono text-xs" value={absolute(l.url)} onFocus={(e) => e.currentTarget.select()} aria-label={l.name} />
+                    <Button size="sm" onClick={() => copy(l)} icon={<Copy className="h-4 w-4" />}>
+                      {t('common.copy')}
+                    </Button>
+                  </div>
+                )}
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" onClick={() => update.mutate({ id: l.id, body: { canEdit: !l.canEdit } })} loading={update.isPending}>
+                    {t(l.canEdit ? 'bluemap.linkMakeViewOnly' : 'bluemap.linkAllowEdit')}
+                  </Button>
+                  <Button size="sm" onClick={() => void regenerate(l)} loading={update.isPending} icon={<RefreshCw className="h-4 w-4" />}>
+                    {t('bluemap.publicRegen')}
+                  </Button>
+                  <Button size="sm" variant="danger" onClick={() => void del(l)} loading={remove.isPending} icon={<Trash2 className="h-4 w-4" />}>
+                    {t('common.delete')}
+                  </Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+        <form
+          className="space-y-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (name.trim()) create.mutate();
+          }}
+        >
+          <Field label={t('bluemap.linkName')}>
+            <input className="input" value={name} onChange={(e) => setName(e.target.value)} maxLength={60} placeholder={t('bluemap.linkNamePlaceholder')} />
+          </Field>
+          <label className="flex items-start gap-3 text-sm">
+            <input type="checkbox" className="mt-1" checked={canEdit} onChange={(e) => setCanEdit(e.target.checked)} />
+            <span>{t('bluemap.linkEditOption')}</span>
+          </label>
           <p className="flex items-start gap-2 text-sm text-muted">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-            {t('bluemap.publicWarning')}
+            {t(canEdit ? 'bluemap.publicWarningEdit' : 'bluemap.publicWarning')}
           </p>
-          <div className="flex flex-wrap gap-2">
-            <Button size="sm" onClick={() => void regenerate()} loading={set.isPending} icon={<RefreshCw className="h-4 w-4" />}>
-              {t('bluemap.publicRegen')}
-            </Button>
-            <Button size="sm" variant="danger" onClick={() => set.mutate({ enabled: false })} loading={set.isPending}>
-              {t('bluemap.publicOff')}
-            </Button>
-          </div>
-        </div>
+          <Button type="submit" variant="primary" disabled={!name.trim()} loading={create.isPending} icon={<Globe className="h-4 w-4" />}>
+            {t('bluemap.publicOn')}
+          </Button>
+        </form>
+      </div>
+    </Section>
+  );
+}
+
+/** The markers of this server (added from the pin button on the map, or through the API); operators can delete them. */
+function MarkersList() {
+  const t = useT();
+  const { server } = useServerCtx();
+  const qc = useQueryClient();
+  const operate = canOperate(server.access);
+  const key = ['servers', server.id, 'bluemap', 'markers'];
+  const q = useQuery({ queryKey: key, queryFn: () => serversApi.bluemapMarkers(server.id), refetchInterval: 20_000 });
+  const sets = useQuery({ queryKey: [...key, 'sets'], queryFn: () => serversApi.bluemapMarkerSets(server.id) });
+  const remove = useMutation({
+    mutationFn: (id: string) => serversApi.deleteBluemapMarker(server.id, id),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: key }),
+    onError: (err) => toast.error(err),
+  });
+  const markers = q.data?.markers ?? [];
+  const setName = (m: BluemapMarker) => sets.data?.sets.find((x) => x.id === m.setId);
+  const who = (m: BluemapMarker) => (m.createdBy.startsWith('link:') ? t('bluemap.markerByLink') : t('bluemap.markerByUser'));
+  const del = async (m: BluemapMarker) => {
+    const ok = await confirm({ title: t('bluemap.markerDeleteTitle', { name: m.label }), body: t('bluemap.markerDeleteBody'), confirmLabel: t('common.delete'), danger: true });
+    if (ok) remove.mutate(m.id);
+  };
+  return (
+    <Section title={t('bluemap.markersTitle')} description={operate ? t('bluemap.markersHelp') : undefined}>
+      {markers.length === 0 ? (
+        <p className="text-sm text-muted">{t('bluemap.markersNone')}</p>
       ) : (
-        <Button onClick={() => set.mutate({ enabled: true })} loading={set.isPending} icon={<Globe className="h-4 w-4" />}>
-          {t('bluemap.publicOn')}
-        </Button>
+        <ul className="divide-y divide-line">
+          {markers.map((m) => (
+            <li key={m.id} className="flex items-center gap-3 py-2">
+              <MapPin className="h-4 w-4 shrink-0 text-muted" aria-hidden="true" />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium">{m.label}</p>
+                <p className="truncate text-xs text-muted">
+                  {[t(`bluemap.markerType.${m.type}`), setName(m) ? `${setName(m)!.label} (${setName(m)!.mapId})` : null, m.position ? `${Math.round(m.position.x)}, ${Math.round(m.position.y)}, ${Math.round(m.position.z)}` : null, who(m)]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </p>
+              </div>
+              {operate && (
+                <Button size="sm" variant="danger" onClick={() => void del(m)} loading={remove.isPending} aria-label={`${t('common.delete')}: ${m.label}`} icon={<Trash2 className="h-4 w-4" />} />
+              )}
+            </li>
+          ))}
+        </ul>
       )}
     </Section>
   );
