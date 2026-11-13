@@ -7,6 +7,7 @@ import {
   mergeMarkerSets,
   renderMapMarkers,
   renderMarker,
+  restrictedFieldsUsed,
   setInputSchema,
   SET_PREFIX,
   splitMarker,
@@ -108,3 +109,54 @@ test('editor script: valid JavaScript, flag substituted, safe inside a script ta
     assert.doesNotThrow(() => new Function(body));
   }
 });
+
+test('markers: the web app needs classes and anchor on pins and labels (without them it drops the marker)', () => {
+  const pin = renderMarker({ type: 'poi', label: 'P', data: { position: poi.position } }) as Json;
+  assert.deepEqual(pin.classes, []);
+  assert.deepEqual(pin.anchor, { x: 25, y: 45 });
+  assert.equal(pin.icon, 'assets/poi.svg');
+  const label = renderMarker({ type: 'html', label: 'L', data: { position: poi.position } }) as Json;
+  assert.deepEqual(label.classes, []);
+  assert.deepEqual(label.anchor, { x: 0, y: 0 });
+});
+
+test('markers: every BlueMap option is accepted and rendered', () => {
+  const pin = markerInputSchema.parse({ type: 'poi', label: 'P', position: poi.position, icon: 'https://x.test/i.png', anchor: { x: 8, y: 8 }, classes: ['a', 'b-c'], detail: '<b>x</b>', detailHtml: true, minDistance: 1, maxDistance: 900, sorting: 3, listed: false });
+  const r = renderMarker(splitMarkerInput(pin)) as Json;
+  assert.equal(r.icon, 'https://x.test/i.png');
+  assert.deepEqual(r.anchor, { x: 8, y: 8 });
+  assert.deepEqual(r.classes, ['a', 'b-c']);
+  assert.equal(r.detail, '<b>x</b>', 'trusted HTML detail is kept');
+  assert.equal(r.minDistance, 1);
+  assert.equal(r.maxDistance, 900);
+  assert.equal(r.listed, false);
+  const area = markerInputSchema.parse({
+    type: 'extrude', label: 'A', minY: 10, maxY: 50, lineColor: '#112233', lineOpacity: 0.5, fillColor: '#445566', fillOpacity: 0.7, lineWidth: 4, depthTest: true,
+    link: 'https://example.com', newTab: false, detail: 'd',
+    points: [{ x: 0, z: 0 }, { x: 9, z: 0 }, { x: 9, z: 9 }], holes: [[{ x: 1, z: 1 }, { x: 2, z: 1 }, { x: 2, z: 2 }]],
+  });
+  const a = renderMarker(splitMarkerInput(area)) as Json;
+  assert.deepEqual(a.lineColor, { r: 17, g: 34, b: 51, a: 0.5 });
+  assert.deepEqual(a.fillColor, { r: 68, g: 85, b: 102, a: 0.7 });
+  assert.equal(a.holes.length, 1);
+  assert.equal(a.link, 'https://example.com');
+  assert.equal(a.newTab, false);
+  assert.equal(a.depthTest, true);
+  assert.equal(a.shapeMinY, 10);
+  assert.equal(a.shapeMaxY, 50);
+  assert.equal(markerInputSchema.safeParse({ ...area, link: 'javascript:alert(1)' }).success, false);
+  assert.equal(markerInputSchema.safeParse({ ...pin, icon: 'javascript:alert(1)' }).success, false);
+  assert.equal(markerInputSchema.safeParse({ ...pin, classes: ['bad class'] }).success, false);
+  assert.equal(markerInputSchema.safeParse({ ...area, holes: [[{ x: 1, z: 1 }]] }).success, false);
+});
+
+test('markers: options that load or run something are restricted to trusted callers', () => {
+  assert.deepEqual(restrictedFieldsUsed({ label: 'x', detail: 'plain', icon: 'assets/poi.svg' }), []);
+  assert.deepEqual(restrictedFieldsUsed({ icon: 'https://x.test/a.png', link: 'https://a.b', html: '<b>', detailHtml: true }).sort(), ['detailHtml', 'html', 'icon', 'link']);
+  assert.deepEqual(restrictedFieldsUsed({ link: null, detailHtml: false }), []);
+});
+
+function splitMarkerInput(v: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
+  const { label, data } = splitMarker(v);
+  return { type: v.type, label, data };
+}

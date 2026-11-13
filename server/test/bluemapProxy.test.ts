@@ -218,3 +218,10 @@ test('editor API: update, delete (POST only), errors come back as JSON with CORS
   const del = await fetch(`http://127.0.0.1:${panelPort}/api/servers/${SERVER_ID}/webui/bluemap/~t/${EDIT_TOKEN}/__servcrafty/markers/abc`, { method: 'DELETE' });
   assert.equal(del.status, 405);
 });
+
+test('BlueMap live event stream is refused at once, so the web app polls for markers instead', async () => {
+  requests.length = 0;
+  const res = await get(PUBLIC_TOKEN, '/maps/world/live/sse');
+  assert.equal(res.status, 404);
+  assert.equal(requests.length, 0, 'never forwarded (it would hang the buffering proxy)');
+});

@@ -10,6 +10,7 @@ import {
   publicMarker,
   publicSet,
   renderMapMarkers,
+  restrictedFieldsUsed,
   setInputSchema,
   setPatchSchema,
   splitMarker,
@@ -108,6 +109,13 @@ async function getMarker(serverId: string, id: string): Promise<MarkerRow> {
   return row;
 }
 
+/** Options that load or run something chosen by the editor are for panel users only (see lib/bluemapMarkers.ts). */
+function assertAllowedOptions(actor: MarkerActor, body: Record<string, unknown>): void {
+  if (actor.all) return;
+  const bad = restrictedFieldsUsed(body);
+  if (bad.length) throw forbidden(`Public edit links cannot set: ${bad.join(', ')}`, 'marker_option_restricted');
+}
+
 function assertMayChange(actor: MarkerActor, m: MarkerRow): void {
   if (!actor.all && m.created_by !== actor.id) throw forbidden('This link can only change the markers it created', 'marker_not_yours');
 }
@@ -119,6 +127,7 @@ export async function createMarker(serverId: string, actor: MarkerActor, body: u
   const mapId = typeof raw.mapId === 'string' ? raw.mapId : null;
   delete raw.setId;
   delete raw.mapId;
+  assertAllowedOptions(actor, raw);
   const input: MarkerInput = parse(markerInputSchema, raw);
   let set: MarkerSetRow;
   if (setId) set = await getSet(serverId, setId);
@@ -144,6 +153,10 @@ export async function updateMarker(serverId: string, actor: MarkerActor, id: str
   const setId = typeof raw.setId === 'string' ? raw.setId : null;
   delete raw.setId;
   delete raw.type;
+  // `null` clears an optional field (back to its default).
+  const clear = Object.keys(raw).filter((k) => raw[k] === null && k !== 'label');
+  for (const k of clear) delete raw[k];
+  assertAllowedOptions(actor, raw);
   const patch = parse(markerPatchSchemaFor(current.type), raw) as Record<string, unknown>;
   let nextSet = current.set_id;
   if (setId && setId !== current.set_id) {
@@ -153,11 +166,13 @@ export async function updateMarker(serverId: string, actor: MarkerActor, id: str
   }
   const { label, ...rest } = patch;
   // Re-validate the merged result so a partial update can never leave a marker the web map cannot draw.
-  const merged = { type: current.type, label: (label as string | undefined) ?? current.label, ...current.data, ...rest };
+  const nextData: Record<string, unknown> = { ...current.data, ...rest };
+  for (const k of clear) delete nextData[k];
+  const merged = { type: current.type, label: (label as string | undefined) ?? current.label, ...nextData };
   parse(markerInputSchema, merged);
   const row = await queryOne<MarkerRow>(
     'UPDATE bluemap_markers SET set_id = $3, label = $4, data = $5, updated_at = now() WHERE id = $1 AND server_id = $2 RETURNING *',
-    [id, serverId, nextSet, merged.label, JSON.stringify({ ...current.data, ...rest })],
+    [id, serverId, nextSet, merged.label, JSON.stringify(nextData)],
   );
   return row!;
 }

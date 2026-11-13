@@ -9144,7 +9144,7 @@
           "type",
           "label"
         ],
-        "description": "A marker as the BlueMap API models it. Free text (`label`, `detail`, `text`) is plain text: the panel escapes it, never passes HTML through. `setId` (or `mapId` for the default set of a map) says where a new marker goes.",
+        "description": "A marker with every option of the BlueMap API. `setId` (or `mapId` for the default set of a map) says where a new marker goes. `detail` and `text` are plain text (escaped). `icon`, `link`, `html` and `detailHtml` load or run something chosen by the editor, so they are only accepted from panel users with operator access (public edit links get 403 `marker_option_restricted`). On PATCH, `null` clears an optional field.",
         "properties": {
           "type": {
             "type": "string",
@@ -9155,7 +9155,7 @@
               "shape",
               "extrude"
             ],
-            "description": "`poi` = pin with a popup, `html` = a text label on the map, `line` = a polyline, `shape` = a flat polygon at height `y`, `extrude` = a polygon between `minY` and `maxY`."
+            "description": "`poi` = pin with a popup, `html` = a label on the map, `line` = polyline, `shape` = flat polygon at `y`, `extrude` = polygon between `minY` and `maxY`."
           },
           "setId": {
             "type": "string",
@@ -9163,7 +9163,7 @@
           },
           "mapId": {
             "type": "string",
-            "description": "Map id (`world`, `world_nether`, ...); used when `setId` is not given."
+            "description": "Map id (`world`, ...); used when `setId` is not given."
           },
           "label": {
             "type": "string",
@@ -9171,8 +9171,27 @@
           },
           "detail": {
             "type": "string",
-            "maxLength": 500,
+            "maxLength": 2000,
             "description": "Shown when the marker is clicked."
+          },
+          "detailHtml": {
+            "type": "boolean",
+            "description": "Treat `detail` as HTML (operator access)."
+          },
+          "listed": {
+            "type": "boolean",
+            "description": "Show in the markers list (default true)."
+          },
+          "sorting": {
+            "type": "integer"
+          },
+          "minDistance": {
+            "type": "number",
+            "description": "Visible from this camera distance."
+          },
+          "maxDistance": {
+            "type": "number",
+            "description": "Visible up to this camera distance."
           },
           "position": {
             "type": "object",
@@ -9194,10 +9213,44 @@
             },
             "description": "poi and html."
           },
+          "icon": {
+            "type": "string",
+            "description": "poi: `assets/...` or an http(s) image (operator access). Default `assets/poi.svg`."
+          },
+          "anchor": {
+            "type": "object",
+            "properties": {
+              "x": {
+                "type": "integer"
+              },
+              "y": {
+                "type": "integer"
+              }
+            },
+            "description": "poi/html: pixel of the icon or element placed at the position (default 25,45 for pins)."
+          },
+          "classes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 10,
+            "description": "poi/html: CSS classes."
+          },
           "text": {
             "type": "string",
             "maxLength": 120,
             "description": "html: the text shown (defaults to the label)."
+          },
+          "color": {
+            "type": "string",
+            "example": "#ff5555",
+            "description": "html: text color. line/shape/extrude: shorthand for lineColor and fillColor."
+          },
+          "html": {
+            "type": "string",
+            "maxLength": 4000,
+            "description": "html: raw HTML (operator access); replaces `text`."
           },
           "points": {
             "type": "array",
@@ -9241,7 +9294,32 @@
                 }
               ]
             },
-            "description": "line: {x,y,z} points. shape/extrude: {x,z} points (at least 3)."
+            "description": "line: {x,y,z} points. shape/extrude: the {x,z} outline (at least 3)."
+          },
+          "holes": {
+            "type": "array",
+            "maxItems": 16,
+            "items": {
+              "type": "array",
+              "minItems": 3,
+              "maxItems": 200,
+              "items": {
+                "type": "object",
+                "required": [
+                  "x",
+                  "z"
+                ],
+                "properties": {
+                  "x": {
+                    "type": "number"
+                  },
+                  "z": {
+                    "type": "number"
+                  }
+                }
+              }
+            },
+            "description": "shape/extrude: rings cut out of the outline."
           },
           "y": {
             "type": "number",
@@ -9255,7 +9333,16 @@
             "type": "number",
             "description": "extrude."
           },
-          "color": {
+          "lineColor": {
+            "type": "string",
+            "example": "#ff5555"
+          },
+          "lineOpacity": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "fillColor": {
             "type": "string",
             "example": "#ff5555"
           },
@@ -9270,19 +9357,15 @@
             "maximum": 30
           },
           "depthTest": {
+            "type": "boolean",
+            "description": "true: terrain can hide it."
+          },
+          "link": {
+            "type": "string",
+            "description": "line/shape/extrude: http(s) address opened on click (operator access)."
+          },
+          "newTab": {
             "type": "boolean"
-          },
-          "listed": {
-            "type": "boolean"
-          },
-          "sorting": {
-            "type": "integer"
-          },
-          "minDistance": {
-            "type": "number"
-          },
-          "maxDistance": {
-            "type": "number"
           }
         }
       },
