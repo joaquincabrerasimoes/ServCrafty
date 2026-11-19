@@ -41,8 +41,16 @@ test('raw details are normalized defensively', () => {
     sizeBytes: 5000,
     updatedAt: new Date(1700000000 * 1000).toISOString(),
     appId: 232090,
+    isCollection: false,
   });
   assert.equal(toWorkshopItem({ publishedfileid: 'x' }), null);
+  assert.equal(toWorkshopItem({ publishedfileid: '7', file_type: 2 })?.isCollection, true);
+});
+
+test('QueryFiles URL takes an optional required tag', () => {
+  const u = new URL(queryFilesUrl('KEY', 550, '', 1, 'popular', ' Campaigns '));
+  assert.equal(u.searchParams.get('requiredtags[0]'), 'Campaigns');
+  assert.equal(new URL(queryFilesUrl('KEY', 550, '', 1, 'popular')).searchParams.has('requiredtags[0]'), false);
 });
 
 test('QueryFiles URL and sort mapping', () => {

@@ -58,7 +58,8 @@ function validatePlan(raw) {
     });
     if (w.install !== 'steamcmd' && w.install !== 'config-list') fail('workshop.install', 'must be "steamcmd" or "config-list"');
     if (w.install === 'steamcmd') relPath(w.dir ?? '', 'workshop.dir');
-    workshop = { appId: w.appId, ids: [...new Set(ids)], install: w.install, dir: isStr(w.dir) ? w.dir : '' };
+    if (w.legacyAs !== undefined && w.legacyAs !== null && !(isStr(w.legacyAs) && /^\.[a-z0-9]{1,8}$/.test(w.legacyAs))) fail('workshop.legacyAs', 'must be an extension like ".vpk" or null');
+    workshop = { appId: w.appId, ids: [...new Set(ids)], install: w.install, dir: isStr(w.dir) ? w.dir : '', legacyAs: isStr(w.legacyAs) ? w.legacyAs : null };
     if (w.install === 'steamcmd' && workshop.dir === '') fail('workshop.dir', 'must be a non-empty string');
   }
 

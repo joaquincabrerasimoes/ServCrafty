@@ -5,7 +5,8 @@ import clsx from 'clsx';
 import { Check, ChevronLeft, ChevronRight, ExternalLink, KeyRound, Link2, PackageSearch, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
 import { ApiError, workshopApi } from '@/api';
 import type { WorkshopItem, WorkshopRef } from '@/api/types';
-import { useT } from '@/i18n';
+import { useT, type TKey } from '@/i18n';
+import { isL4d2 } from '@/lib/gameDefs';
 import { useIsAdmin } from '@/stores/auth';
 import { formatBytes, formatCompact, formatDate } from '@/lib/format';
 import { toast } from '@/stores/toast';
@@ -68,26 +69,67 @@ function KeyMissing() {
   );
 }
 
+/** Workshop tags offered as filters, per game profile ('' = all). */
+const L4D2_TAGS: Array<{ tag: string; key: TKey }> = [
+  { tag: '', key: 'workshop.tag.all' },
+  { tag: 'Campaigns', key: 'workshop.tag.campaigns' },
+  { tag: 'Co-op', key: 'workshop.tag.coop' },
+  { tag: 'Versus', key: 'workshop.tag.versus' },
+  { tag: 'Survival', key: 'workshop.tag.survival' },
+  { tag: 'Scavenge', key: 'workshop.tag.scavenge' },
+  { tag: 'Realism', key: 'workshop.tag.realism' },
+  { tag: 'Weapons', key: 'workshop.tag.weapons' },
+  { tag: 'Survivors', key: 'workshop.tag.survivors' },
+  { tag: 'Scripts', key: 'workshop.tag.scripts' },
+  { tag: 'Miscellaneous', key: 'workshop.tag.misc' },
+];
+
+function TagChips({ tags, value, onChange }: { tags: Array<{ tag: string; key: TKey }>; value: string; onChange: (tag: string) => void }) {
+  const t = useT();
+  return (
+    <div className="flex flex-wrap gap-1.5" role="group" aria-label={t('workshop.tagFilter')}>
+      {tags.map((x) => (
+        <button
+          key={x.tag || 'all'}
+          type="button"
+          aria-pressed={value === x.tag}
+          onClick={() => onChange(x.tag)}
+          className={clsx(
+            'h-9 rounded-block border px-3 text-sm transition-colors',
+            value === x.tag ? 'border-accent bg-accent/10 font-medium text-accent' : 'border-line text-muted hover:bg-raised hover:text-ink',
+          )}
+        >
+          {t(x.key)}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function SearchResults({
   gameId,
   installed,
   onAdd,
   adding,
+  tags,
 }: {
   gameId: string;
   installed: Set<string>;
   onAdd: (item: WorkshopItem) => void;
   adding: string | null;
+  /** Tag filter chips (games with known Workshop tags). */
+  tags?: Array<{ tag: string; key: TKey }>;
 }) {
   const t = useT();
   const [q, setQ] = useState('');
   const dq = useDebounced(q.trim());
+  const [tag, setTag] = useState('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(0);
-  useEffect(() => setPage(1), [dq]);
+  useEffect(() => setPage(1), [dq, tag]);
   const query = useQuery({
-    queryKey: ['workshop-search', gameId, dq, page],
-    queryFn: ({ signal }) => workshopApi.search({ gameId, q: dq || undefined, page }, signal),
+    queryKey: ['workshop-search', gameId, dq, page, tag],
+    queryFn: ({ signal }) => workshopApi.search({ gameId, q: dq || undefined, page, tag: tag || undefined }, signal),
     placeholderData: keepPreviousData,
     staleTime: 60_000,
     retry: (n, e) => !(e instanceof ApiError && e.status === 400) && n < 2,
@@ -107,6 +149,7 @@ function SearchResults({
         <input className="input pl-9" type="search" placeholder={t('workshop.searchPlaceholder')} aria-label={t('workshop.search')} value={q} onChange={(e) => setQ(e.target.value)} />
         {query.isFetching && !query.isLoading && <Spinner className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2" />}
       </label>
+      {tags && <TagChips tags={tags} value={tag} onChange={setTag} />}
       {query.isLoading ? (
         <div className="flex justify-center py-10">
           <Spinner />
@@ -132,7 +175,10 @@ function SearchResults({
                     <ItemMeta item={it} />
                     {it.summary && <p className="line-clamp-2 text-sm text-muted">{it.summary}</p>}
                     <div className="mt-auto flex items-center justify-between gap-2 pt-2">
-                      <span className="font-mono text-xs text-muted">{it.id}</span>
+                      <span className="flex min-w-0 items-center gap-1.5">
+                        <span className="font-mono text-xs text-muted">{it.id}</span>
+                        {it.isCollection && <Badge>{t('workshop.collection')}</Badge>}
+                      </span>
                       {has ? (
                         <Badge tone="ok">
                           <Check className="h-3 w-3" aria-hidden="true" />
@@ -229,7 +275,11 @@ function AddById({ gameId, gameName, installed, onAdd, adding }: { gameId: strin
               {found.title || found.id}
             </a>
             <ItemMeta item={found} />
-            <p className="font-mono text-xs text-muted">{found.id}</p>
+            <p className="flex items-center gap-1.5 font-mono text-xs text-muted">
+              {found.id}
+              {found.isCollection && <Badge>{t('workshop.collection')}</Badge>}
+            </p>
+            {found.isCollection && <p className="mt-1 text-sm text-muted">{t('workshop.collectionHint')}</p>}
             {found.matchesGame === false && <p className="mt-1 text-sm text-danger">{t('workshop.wrongGame', { game: gameName })}</p>}
           </div>
           <div className="flex gap-2">
@@ -340,10 +390,12 @@ export default function Workshop() {
   const add = async (item: WorkshopItem) => {
     setAdding(item.id);
     try {
-      await workshopApi.add(server.id, item.id);
+      const r = await workshopApi.add(server.id, item.id);
       void qc.invalidateQueries({ queryKey: ['servers', server.id] });
       const name = item.title || item.id;
-      toast.success(running ? t('workshop.addedNextStart', { name }) : t('workshop.added', { name }));
+      const n = typeof r?.added === 'number' ? r.added : 1;
+      if (item.isCollection || r?.item?.isCollection || n > 1) toast.success(t('workshop.collectionAdded', { n }));
+      else toast.success(running ? t('workshop.addedNextStart', { name }) : t('workshop.added', { name }));
       return true;
     } catch (e) {
       if (e instanceof ApiError && e.code === 'workshop_wrong_game') toast.error(t('workshop.wrongGame', { game: def?.name ?? '' }));
@@ -388,7 +440,13 @@ export default function Workshop() {
         <AddById gameId={server.steam?.gameId ?? def?.id ?? ''} gameName={def?.name ?? ''} installed={installed} onAdd={add} adding={adding} />
       </Section>
       <Section title={t('workshop.search')} description={t('workshop.searchBody')}>
-        <SearchResults gameId={server.steam?.gameId ?? def?.id ?? ''} installed={installed} onAdd={(it) => void add(it)} adding={adding} />
+        <SearchResults
+          gameId={server.steam?.gameId ?? def?.id ?? ''}
+          installed={installed}
+          onAdd={(it) => void add(it)}
+          adding={adding}
+          tags={isL4d2(def) ? L4D2_TAGS : undefined}
+        />
       </Section>
     </div>
   );

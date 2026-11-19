@@ -182,7 +182,7 @@ test('plan: argv conditionals, templates, valueMap, files, workshop', () => {
       { section: 'Maps', key: 'Map', values: ['x', 'y', 'z'] },
     ],
   });
-  assert.deepEqual(plan.workshop, { appId: 232090, ids: ['111', '222'], install: 'config-list', dir: null });
+  assert.deepEqual(plan.workshop, { appId: 232090, ids: ['111', '222'], install: 'config-list', dir: null, legacyAs: null });
   assert.deepEqual(plan.steam, {
     appId: 123456,
     branch: null,

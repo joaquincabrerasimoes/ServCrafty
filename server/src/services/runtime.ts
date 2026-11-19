@@ -540,6 +540,33 @@ export async function sendCommand(serverId: string, command: string): Promise<st
   }
 }
 
+/**
+ * Send a console command to a server whose output only appears in the log (stdin consoles) and collect the
+ * lines printed until one matches `until` (or `timeoutMs` passes; the lines so far are returned then).
+ */
+export async function captureCommand(serverId: string, command: string, opts: { until: RegExp; timeoutMs?: number }): Promise<string[]> {
+  const lines: string[] = [];
+  let finish: () => void = () => undefined;
+  const done = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  const onLog = (id: string, line: string) => {
+    if (id !== serverId) return;
+    lines.push(line);
+    if (opts.until.test(line)) finish();
+  };
+  bus.on('log', onLog);
+  const timer = setTimeout(finish, opts.timeoutMs ?? 4000);
+  try {
+    await sendCommand(serverId, command);
+    await done;
+  } finally {
+    clearTimeout(timer);
+    bus.off('log', onLog);
+  }
+  return lines;
+}
+
 // ---------------------------------------------------------------------------
 // Console for Terraria / SteamCMD games (attached stdin, or tModLoader's `inject`)
 // ---------------------------------------------------------------------------

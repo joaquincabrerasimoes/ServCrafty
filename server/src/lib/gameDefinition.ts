@@ -18,6 +18,9 @@ const VAR_KEY_RE = /^[A-Za-z][A-Za-z0-9_]{0,47}$/;
 const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
 const UI_ID_RE = /^[a-z][a-z0-9-]{0,31}$/;
 /** Variable keys that would shadow built-in template namespaces. */
+export const PROFILES = ['l4d2'] as const;
+export type GameProfile = (typeof PROFILES)[number];
+
 const RESERVED_VAR_KEYS = new Set(['ports', 'server', 'workshop']);
 
 export const STOP_SIGNALS = ['SIGINT', 'SIGTERM', 'SIGQUIT', 'SIGHUP', 'SIGUSR1', 'SIGUSR2', 'SIGKILL'] as const;
@@ -229,11 +232,19 @@ export const gameDefinitionSchema = z
         appId: z.number().int().positive().max(2 ** 32 - 1),
         install: z.enum(['steamcmd', 'config-list']),
         dir: line(500).optional(),
+        /**
+         * Legacy Workshop items (Left 4 Dead 2 and other old Source games) download as a single
+         * "<ugc>_legacy.bin" that is really the addon; with this set the executor stores it as
+         * "<item id><legacyAs>" (".vpk").
+         */
+        legacyAs: z.string().regex(/^\.[a-z0-9]{1,8}$/, 'an extension such as ".vpk"').nullable().optional(),
       })
       .strict()
       .nullable()
       .default(null),
     webui: z.array(webuiSchema).max(8).default([]),
+    /** Built-in game integrations (extra tabs: maps, controls, plugins). Only "l4d2" exists. */
+    profile: z.enum(PROFILES).nullable().default(null),
     scripts: z
       .object({ postInstall: text(64 * 1024).optional(), preStart: text(64 * 1024).optional() })
       .strict()

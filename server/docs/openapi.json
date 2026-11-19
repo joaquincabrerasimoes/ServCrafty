@@ -96,6 +96,10 @@
     {
       "name": "Admin",
       "description": "Administrator endpoints (an admin token is needed)."
+    },
+    {
+      "name": "Left 4 Dead 2",
+      "description": "Maps, console controls and the plugin store of Left 4 Dead 2 servers (game definitions with the `l4d2` profile)."
     }
   ],
   "paths": {
@@ -3157,7 +3161,7 @@
         ],
         "summary": "Add a Workshop item",
         "operationId": "post_servers_id_workshop",
-        "description": "Requires **manager** access to the server. At most 200 items. 400 `workshop_wrong_game` when the item belongs to another game.",
+        "description": "Requires **manager** access to the server. At most 200 items. 400 `workshop_wrong_game` when the item belongs to another game. An id or URL of a Workshop **collection** adds every item of the collection that belongs to the game (`added` tells how many were new).",
         "parameters": [
           {
             "$ref": "#/components/parameters/ServerId"
@@ -3359,6 +3363,16 @@
                 "updated"
               ],
               "default": "relevance"
+            }
+          },
+          {
+            "name": "tag",
+            "in": "query",
+            "required": false,
+            "description": "Only items with this Workshop tag (for example `Campaigns` for Left 4 Dead 2).",
+            "schema": {
+              "type": "string",
+              "maxLength": 60
             }
           }
         ],
@@ -5870,6 +5884,630 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/servers/{id}/l4d2/maps": {
+      "get": {
+        "tags": [
+          "Left 4 Dead 2"
+        ],
+        "summary": "Campaigns, maps and Workshop addons of a Left 4 Dead 2 server",
+        "operationId": "get_servers_id_l4d2_maps",
+        "description": "Requires **viewer** access. Read from the game files: the official campaigns (`pak01_dir.vpk`) and every addon in `left4dead2/addons` (Workshop items are stored as `<item id>.vpk`). Until the server has started once the built-in list of official campaigns is returned and `gameInstalled` is false. 400 `unsupported_game` for other games.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/L4dMaps"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/servers/{id}/l4d2/controls": {
+      "get": {
+        "tags": [
+          "Left 4 Dead 2"
+        ],
+        "summary": "Controls overview (players with their console ids)",
+        "operationId": "get_servers_id_l4d2_controls",
+        "description": "Requires **operator** access. Runs the `status` console command (its output also appears in the server console) to list the players; `running` is false and `players` empty when the server is not running.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/L4dControls"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/servers/{id}/l4d2/controls/map": {
+      "post": {
+        "tags": [
+          "Left 4 Dead 2"
+        ],
+        "summary": "Change map or campaign",
+        "operationId": "post_servers_id_l4d2_controls_map",
+        "description": "Requires **operator** access. Sends `changelevel` (after `mp_gamemode` when `mode` is given). 409 `not_running` when the server is stopped; 400 `campaign_mode_unsupported` when the campaign has no chapters for the mode.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/L4dMapChange"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/servers/{id}/l4d2/controls/difficulty": {
+      "post": {
+        "tags": [
+          "Left 4 Dead 2"
+        ],
+        "summary": "Change the difficulty",
+        "operationId": "post_servers_id_l4d2_controls_difficulty",
+        "description": "Requires **operator** access. Sends `z_difficulty`; `persist` also stores it as the start difficulty. Values: `Easy`, `Normal`, `Hard` (Advanced), `Impossible` (Expert).",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "difficulty"
+                ],
+                "properties": {
+                  "difficulty": {
+                    "type": "string",
+                    "enum": [
+                      "Easy",
+                      "Normal",
+                      "Hard",
+                      "Impossible"
+                    ]
+                  },
+                  "persist": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/servers/{id}/l4d2/controls/kick": {
+      "post": {
+        "tags": [
+          "Left 4 Dead 2"
+        ],
+        "summary": "Kick a player",
+        "operationId": "post_servers_id_l4d2_controls_kick",
+        "description": "Requires **operator** access. `userId` comes from the controls overview. Sends `kickid`.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "userId"
+                ],
+                "properties": {
+                  "userId": {
+                    "type": "integer"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 200
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/servers/{id}/l4d2/controls/give": {
+      "post": {
+        "tags": [
+          "Left 4 Dead 2"
+        ],
+        "summary": "Give an item to a player",
+        "operationId": "post_servers_id_l4d2_controls_give",
+        "description": "Requires **operator** access. Runs the VScript `GiveItem` on the player through the `script` console command (the game may refuse it on servers that restrict script access). `item` must be an id from the controls overview.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "userId",
+                  "item"
+                ],
+                "properties": {
+                  "userId": {
+                    "type": "integer"
+                  },
+                  "item": {
+                    "type": "string",
+                    "example": "katana"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/servers/{id}/l4d2/plugins": {
+      "get": {
+        "tags": [
+          "Left 4 Dead 2"
+        ],
+        "summary": "Plugin store: available plugins and what is installed",
+        "operationId": "get_servers_id_l4d2_plugins",
+        "description": "Requires **manager** access. A fixed catalog (Metamod:Source, SourceMod, L4DToolZ, Multiplayer, Automatic lobby removal, Left4DHooks).",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/L4dPlugins"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/servers/{id}/l4d2/plugins/{pluginId}/install": {
+      "post": {
+        "tags": [
+          "Left 4 Dead 2"
+        ],
+        "summary": "Install or update a plugin",
+        "operationId": "post_servers_id_l4d2_plugins_pluginId_install",
+        "description": "Requires **manager** access. Installs the plugin and everything it needs (SourceMod needs Metamod, the multiplayer plugin needs SourceMod and L4DToolZ), downloading from AlliedModders or GitHub; this can take a minute. Installing an installed plugin updates it. Restart the server to load it. 409 `game_not_installed` before the first start, `plugin_busy` while another operation runs.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          },
+          {
+            "name": "pluginId",
+            "in": "path",
+            "required": true,
+            "description": "Plugin id from the plugin list (`metamod`, `sourcemod`, `l4dtoolz`, `l4d2_rmc`, `l4d2_unreservelobby`, `left4dhooks`).",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "settings": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "oneOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "boolean"
+                        }
+                      ]
+                    },
+                    "description": "Setting key to value."
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "installed": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "restartRequired": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/servers/{id}/l4d2/plugins/{pluginId}": {
+      "delete": {
+        "tags": [
+          "Left 4 Dead 2"
+        ],
+        "summary": "Remove a plugin",
+        "operationId": "delete_servers_id_l4d2_plugins_pluginId",
+        "description": "Requires **manager** access. Deletes the files the plugin installed (its settings in the cfg files stay). 409 `plugin_required` when another installed plugin needs it.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          },
+          {
+            "name": "pluginId",
+            "in": "path",
+            "required": true,
+            "description": "Plugin id from the plugin list (`metamod`, `sourcemod`, `l4dtoolz`, `l4d2_rmc`, `l4d2_unreservelobby`, `left4dhooks`).",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "restartRequired": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/servers/{id}/l4d2/plugins/{pluginId}/settings": {
+      "put": {
+        "tags": [
+          "Left 4 Dead 2"
+        ],
+        "summary": "Change plugin settings",
+        "operationId": "put_servers_id_l4d2_plugins_pluginId_settings",
+        "description": "Requires **manager** access. Writes the console variables into the plugin config file and applies them at once when the server runs.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          },
+          {
+            "name": "pluginId",
+            "in": "path",
+            "required": true,
+            "description": "Plugin id from the plugin list (`metamod`, `sourcemod`, `l4dtoolz`, `l4d2_rmc`, `l4d2_unreservelobby`, `left4dhooks`).",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "settings"
+                ],
+                "properties": {
+                  "settings": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "oneOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "boolean"
+                        }
+                      ]
+                    },
+                    "description": "Setting key to value."
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "settings": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "oneOf": [
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "boolean"
+                          }
+                        ]
+                      },
+                      "description": "Setting key to value."
+                    },
+                    "appliedLive": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
           }
         }
       }
@@ -8466,6 +9104,10 @@
           },
           "restartRequired": {
             "type": "boolean"
+          },
+          "added": {
+            "type": "integer",
+            "description": "Items that were new (several for a collection)."
           }
         }
       },
@@ -8485,6 +9127,10 @@
           "matchesGame": {
             "type": "boolean",
             "nullable": true
+          },
+          "isCollection": {
+            "type": "boolean",
+            "description": "A collection of items; known for search results and for the item just added."
           }
         },
         "additionalProperties": true
@@ -9454,6 +10100,512 @@
             "type": "string",
             "nullable": true,
             "description": "The link itself (a secret). Absolute when the panel public URL is set, otherwise a path on the panel."
+          }
+        }
+      },
+      "L4dChapter": {
+        "type": "object",
+        "required": [
+          "map",
+          "title"
+        ],
+        "properties": {
+          "map": {
+            "type": "string",
+            "example": "c8m1_apartment"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "L4dCampaign": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "source",
+          "modes"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "`official:c8` for the numbered Valve campaigns, `mission:<name>` for addon campaigns."
+          },
+          "title": {
+            "type": "string"
+          },
+          "author": {
+            "type": "string",
+            "nullable": true
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "official",
+              "addon"
+            ]
+          },
+          "addon": {
+            "type": "string",
+            "nullable": true,
+            "description": "File name in `left4dead2/addons` that adds it."
+          },
+          "workshopId": {
+            "type": "string",
+            "nullable": true
+          },
+          "modes": {
+            "type": "object",
+            "description": "Chapters per game mode (`coop`, `realism`, `versus`, `survival`, `scavenge`).",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/L4dChapter"
+              }
+            }
+          }
+        }
+      },
+      "L4dAddon": {
+        "type": "object",
+        "required": [
+          "file",
+          "kind"
+        ],
+        "properties": {
+          "file": {
+            "type": "string",
+            "example": "121086524.vpk"
+          },
+          "workshopId": {
+            "type": "string",
+            "nullable": true
+          },
+          "title": {
+            "type": "string"
+          },
+          "author": {
+            "type": "string",
+            "nullable": true
+          },
+          "sizeBytes": {
+            "type": "integer"
+          },
+          "modifiedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "maps": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "campaigns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "campaign",
+              "map",
+              "content"
+            ]
+          },
+          "error": {
+            "type": "string",
+            "nullable": true,
+            "description": "The VPK could not be read."
+          }
+        }
+      },
+      "L4dMaps": {
+        "type": "object",
+        "required": [
+          "campaigns",
+          "addons"
+        ],
+        "properties": {
+          "gameInstalled": {
+            "type": "boolean",
+            "description": "False until the server started once; the built-in campaign list is shown then."
+          },
+          "officialFromGame": {
+            "type": "boolean"
+          },
+          "campaigns": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/L4dCampaign"
+            }
+          },
+          "addons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/L4dAddon"
+            }
+          },
+          "maps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "map": {
+                  "type": "string"
+                },
+                "source": {
+                  "type": "string",
+                  "nullable": true
+                }
+              }
+            }
+          },
+          "workshop": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "installed": {
+                  "type": "boolean",
+                  "description": "False = in the list but downloaded at the next start."
+                }
+              }
+            }
+          },
+          "modes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "current": {
+            "type": "object",
+            "properties": {
+              "map": {
+                "type": "string",
+                "nullable": true
+              }
+            }
+          },
+          "start": {
+            "type": "object",
+            "properties": {
+              "map": {
+                "type": "string"
+              },
+              "gameMode": {
+                "type": "string"
+              },
+              "difficulty": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "L4dPlayer": {
+        "type": "object",
+        "required": [
+          "userId",
+          "name",
+          "bot"
+        ],
+        "properties": {
+          "userId": {
+            "type": "integer",
+            "description": "The id the game console uses (`status`, `kickid`)."
+          },
+          "name": {
+            "type": "string"
+          },
+          "steamId": {
+            "type": "string",
+            "nullable": true
+          },
+          "bot": {
+            "type": "boolean"
+          },
+          "state": {
+            "type": "string",
+            "nullable": true
+          },
+          "ping": {
+            "type": "integer",
+            "nullable": true
+          },
+          "connected": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "L4dControls": {
+        "type": "object",
+        "required": [
+          "running",
+          "players"
+        ],
+        "properties": {
+          "running": {
+            "type": "boolean"
+          },
+          "map": {
+            "type": "string",
+            "nullable": true
+          },
+          "players": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/L4dPlayer"
+            }
+          },
+          "difficulties": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "string",
+                  "enum": [
+                    "Easy",
+                    "Normal",
+                    "Hard",
+                    "Impossible"
+                  ]
+                },
+                "label": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "modes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "items": {
+            "type": "array",
+            "description": "Items that can be given to a player, grouped.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "label": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "start": {
+            "type": "object",
+            "properties": {
+              "gameMode": {
+                "type": "string"
+              },
+              "difficulty": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "L4dMapChange": {
+        "type": "object",
+        "description": "`map` or `campaign` is required.",
+        "properties": {
+          "map": {
+            "type": "string",
+            "description": "Map to change to (`c2m1_highway`)."
+          },
+          "campaign": {
+            "type": "string",
+            "description": "Campaign id from the maps list: its first chapter in `mode` is used."
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "coop",
+              "realism",
+              "versus",
+              "survival",
+              "scavenge"
+            ],
+            "description": "Sets `mp_gamemode` before the change."
+          },
+          "persist": {
+            "type": "boolean",
+            "description": "Also use this map and mode when the server starts."
+          }
+        },
+        "additionalProperties": false
+      },
+      "L4dPluginSetting": {
+        "type": "object",
+        "required": [
+          "key",
+          "type",
+          "value"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "The console variable written to the plugin config."
+          },
+          "label": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "number",
+              "boolean"
+            ]
+          },
+          "default": {
+            "oneOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              }
+            ]
+          },
+          "min": {
+            "type": "number"
+          },
+          "max": {
+            "type": "number"
+          },
+          "value": {
+            "oneOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              }
+            ]
+          }
+        }
+      },
+      "L4dPlugin": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "installed"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "homepage": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "base",
+              "slots",
+              "library"
+            ]
+          },
+          "requires": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "missingRequires": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "requiredBy": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Installed plugins that need this one."
+          },
+          "settings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/L4dPluginSetting"
+            }
+          },
+          "installed": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "version": {
+                "type": "string",
+                "nullable": true
+              },
+              "installedAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "files": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      },
+      "L4dPlugins": {
+        "type": "object",
+        "required": [
+          "plugins"
+        ],
+        "properties": {
+          "gameInstalled": {
+            "type": "boolean"
+          },
+          "plugins": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/L4dPlugin"
+            }
           }
         }
       }

@@ -4,7 +4,7 @@ import { requireUser } from '../auth/plugin.js';
 import { AppError, badRequest, conflict, notFound } from '../lib/errors.js';
 import { assertSteam } from '../lib/games.js';
 import { dedupeWorkshop, generateVar, MAX_WORKSHOP_ITEMS, type SteamWorkshopItem } from '../lib/steamPlan.js';
-import { getWorkshopItem, parseWorkshopRef, searchWorkshop, WORKSHOP_SORTS, type WorkshopSort } from '../lib/steamWorkshop.js';
+import { getCollectionChildren, getWorkshopItem, getWorkshopItems, parseWorkshopRef, searchWorkshop, WORKSHOP_SORTS, type WorkshopSort } from '../lib/steamWorkshop.js';
 import { intQuery, parse } from '../lib/validation.js';
 import { loadServerFor } from '../services/access.js';
 import { audit } from '../services/audit.js';
@@ -59,7 +59,7 @@ export default async function steamRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // ---- Workshop catalogue ----
-  app.get<{ Querystring: { gameId?: string; q?: string; page?: string; sort?: string } }>('/workshop/search', async (req) => {
+  app.get<{ Querystring: { gameId?: string; q?: string; page?: string; sort?: string; tag?: string } }>('/workshop/search', async (req) => {
     requireUser(req);
     const def = requireDefinition(String(req.query.gameId ?? ''));
     if (!def.workshop) throw badRequest('This game has no Steam Workshop support', 'workshop_unsupported');
@@ -67,7 +67,8 @@ export default async function steamRoutes(app: FastifyInstance): Promise<void> {
     if (!key) throw badRequest('Workshop search needs a Steam Web API key (Admin > Settings)', 'steam_key_missing');
     const sort = parse(z.enum(WORKSHOP_SORTS).default('relevance'), req.query.sort || undefined) as WorkshopSort;
     const q = String(req.query.q ?? '').slice(0, 200);
-    return searchWorkshop(key, def.workshop.appId, q, intQuery(req.query.page, 1, 1, 500), sort);
+    const tag = String(req.query.tag ?? '').slice(0, 60);
+    return searchWorkshop(key, def.workshop.appId, q, intQuery(req.query.page, 1, 1, 500), sort, tag);
   });
 
   app.get<{ Params: { id: string }; Querystring: { gameId?: string } }>('/workshop/items/:id', async (req) => {
@@ -104,15 +105,27 @@ export default async function steamRoutes(app: FastifyInstance): Promise<void> {
     if (item.appId !== workshop.appId) {
       throw new AppError(400, 'workshop_wrong_game', `Workshop item ${id} belongs to another game (app ${item.appId ?? 'unknown'})`);
     }
+    // A collection adds every item in it (items of other games are skipped).
+    let toAdd: SteamWorkshopItem[] = [{ id, title: item.title }];
+    const childIds = await getCollectionChildren(id);
+    const isCollection = childIds !== null;
+    if (childIds) {
+      const children = await getWorkshopItems(childIds);
+      toAdd = children.filter((c) => c.appId === workshop.appId).map((c) => ({ id: c.id, title: c.title }));
+      if (!toAdd.length) throw badRequest('This collection has no items for this game', 'workshop_collection_empty');
+    }
+    let added = 0;
     const row = await updateSteamConfig(server.id, (cur) => {
       const list = cur.workshop ?? [];
-      if (list.some((w) => w.id === id)) return cur;
-      if (list.length >= MAX_WORKSHOP_ITEMS) throw conflict(`At most ${MAX_WORKSHOP_ITEMS} Workshop items per server`, 'workshop_limit');
-      const next: SteamWorkshopItem[] = dedupeWorkshop([...list, { id, title: item.title }]);
+      const fresh = toAdd.filter((x) => !list.some((w) => w.id === x.id));
+      if (!fresh.length) return cur;
+      if (list.length + fresh.length > MAX_WORKSHOP_ITEMS) throw conflict(`At most ${MAX_WORKSHOP_ITEMS} Workshop items per server`, 'workshop_limit');
+      added = fresh.length;
+      const next: SteamWorkshopItem[] = dedupeWorkshop([...list, ...fresh]);
       return { ...cur, workshop: next };
     });
-    await audit(req, 'server.workshop_add', 'server', server.id, { item: id });
-    return { workshop: row.steam?.workshop ?? [], item, restartRequired: runtime.isRunning(server.id) };
+    await audit(req, 'server.workshop_add', 'server', server.id, { item: id, collection: isCollection, added });
+    return { workshop: row.steam?.workshop ?? [], item: { ...item, isCollection }, added, restartRequired: runtime.isRunning(server.id) };
   });
 
   app.delete<{ Params: { id: string; itemId: string } }>('/servers/:id/workshop/:itemId', async (req) => {

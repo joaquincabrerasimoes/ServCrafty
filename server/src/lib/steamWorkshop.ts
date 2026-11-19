@@ -41,6 +41,8 @@ export interface WorkshopItem {
   updatedAt: string | null;
   /** App the item belongs to (`consumer_app_id`). */
   appId: number | null;
+  /** A Workshop collection (a list of other items). Known for search results; item lookups never say, see `getCollectionChildren`. */
+  isCollection: boolean;
 }
 
 interface RawDetails {
@@ -59,6 +61,8 @@ interface RawDetails {
   consumer_app_id?: number;
   consumer_appid?: number;
   banned?: boolean | number;
+  /** Only present in search results (QueryFiles): 0 = item, 2 = collection. */
+  file_type?: number;
 }
 
 function cut(s: unknown, n: number): string {
@@ -95,6 +99,7 @@ export function toWorkshopItem(d: RawDetails): WorkshopItem | null {
     sizeBytes: num(d.file_size),
     updatedAt: typeof d.time_updated === 'number' && d.time_updated > 0 ? new Date(d.time_updated * 1000).toISOString() : null,
     appId: typeof appId === 'number' ? appId : null,
+    isCollection: d.file_type === 2,
   };
 }
 
@@ -133,6 +138,43 @@ export async function getWorkshopItem(id: string): Promise<WorkshopItem> {
   return item;
 }
 
+/** Keyless details of several items in one request (missing or private items are left out). */
+export async function getWorkshopItems(ids: string[]): Promise<WorkshopItem[]> {
+  const list = ids.filter((id) => WORKSHOP_ID_RE.test(id)).slice(0, 200);
+  if (!list.length) return [];
+  const body = new URLSearchParams({ itemcount: String(list.length) });
+  list.forEach((id, i) => body.set(`publishedfileids[${i}]`, id));
+  const j = (await steamFetch(`${API}/ISteamRemoteStorage/GetPublishedFileDetails/v1/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: body.toString(),
+  })) as { response?: { publishedfiledetails?: RawDetails[] } };
+  return (j.response?.publishedfiledetails ?? [])
+    .filter((d) => d.result === 1)
+    .map(toWorkshopItem)
+    .filter((x): x is WorkshopItem => !!x);
+}
+
+/**
+ * The item ids of a Workshop collection, in the collection's order (keyless). Null when `id` is a plain item
+ * (the item details API does not say what kind of file an id is, this one does).
+ */
+export async function getCollectionChildren(id: string): Promise<string[] | null> {
+  if (!WORKSHOP_ID_RE.test(id)) throw badRequest('Invalid Workshop id', 'invalid_workshop_id');
+  const body = new URLSearchParams({ collectioncount: '1', 'publishedfileids[0]': id });
+  const j = (await steamFetch(`${API}/ISteamRemoteStorage/GetCollectionDetails/v1/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: body.toString(),
+  })) as { response?: { collectiondetails?: { result?: number; children?: { publishedfileid?: string; filetype?: number }[] }[] } };
+  const c = j.response?.collectiondetails?.[0];
+  if (!c || c.result !== 1) return null;
+  return (c.children ?? [])
+    .filter((x) => x.filetype === undefined || x.filetype === 0)
+    .map((x) => String(x.publishedfileid ?? ''))
+    .filter((x) => WORKSHOP_ID_RE.test(x));
+}
+
 export const WORKSHOP_SORTS = ['relevance', 'popular', 'trend', 'recent', 'updated'] as const;
 export type WorkshopSort = (typeof WORKSHOP_SORTS)[number];
 
@@ -155,7 +197,7 @@ export function queryTypeFor(sort: WorkshopSort, hasText: boolean): number {
 export const WORKSHOP_PAGE_SIZE = 24;
 
 /** Build the QueryFiles URL (exported for tests; contains the key, never log it). */
-export function queryFilesUrl(key: string, appId: number, q: string, page: number, sort: WorkshopSort): string {
+export function queryFilesUrl(key: string, appId: number, q: string, page: number, sort: WorkshopSort, tag = ''): string {
   const p = new URLSearchParams({
     key,
     appid: String(appId),
@@ -168,6 +210,7 @@ export function queryFilesUrl(key: string, appId: number, q: string, page: numbe
     filetype: '0',
   });
   if (q.trim()) p.set('search_text', q.trim().slice(0, 200));
+  if (tag.trim()) p.set('requiredtags[0]', tag.trim().slice(0, 60));
   return `${API}/IPublishedFileService/QueryFiles/v1/?${p.toString()}`;
 }
 
@@ -177,8 +220,9 @@ export async function searchWorkshop(
   q: string,
   page: number,
   sort: WorkshopSort,
+  tag = '',
 ): Promise<{ items: WorkshopItem[]; total: number }> {
-  const j = (await steamFetch(queryFilesUrl(key, appId, q, page, sort))) as {
+  const j = (await steamFetch(queryFilesUrl(key, appId, q, page, sort, tag))) as {
     response?: { total?: number; publishedfiledetails?: RawDetails[] };
   };
   const items = (j.response?.publishedfiledetails ?? [])

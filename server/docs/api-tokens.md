@@ -129,7 +129,7 @@ There is **no general pagination**: list endpoints (`/servers`, `/backups`, `/sc
 | --- | --- |
 | `GET /admin/audit` | `limit` (1-500, default 50), `offset`, `user`, `action` (prefix). Returns `{ items, total }`. |
 | `GET /catalog/search` | `offset` (0-9950), `limit` (1-50, default 20). |
-| `GET /workshop/search` | `page` (1-500), `sort`. |
+| `GET /workshop/search` | `page` (1-500), `sort`, `tag`. |
 | `GET /servers/{id}/logs` | `tail` = number of lines (1-5000, default 500). |
 
 Rate limits, as they really are:
@@ -379,6 +379,37 @@ curl -s -X POST   -H "$AUTH" "$BASE/servers/$SID/workshop/refresh"         # re-
 ```
 
 Workshop changes apply on the next start (`restartRequired` tells you whether the server is running). An item from another game is rejected with `400 workshop_wrong_game`. At most 200 items per server.
+
+A Workshop **collection** (its id or URL) adds every item in it that belongs to the game; `added` in the answer is the number of new items. `GET /workshop/search` also takes `tag` (for example `Campaigns`).
+
+### 7.11.1 Left 4 Dead 2 (maps, controls, plugins)
+
+Servers of the Left 4 Dead 2 game definition (`profile: "l4d2"` in `GET /games`) have extra endpoints. Workshop items of this game are installed by SteamCMD as `left4dead2/addons/<item id>.vpk` at the next start.
+
+```bash
+# campaigns (official + addons), addons with their Workshop status, maps (viewer)
+curl -s -H "$AUTH" "$BASE/servers/$SID/l4d2/maps" | jq '.campaigns[] | {id, title, source}'
+
+# players with their console ids (operator; runs "status" on the server)
+curl -s -H "$AUTH" "$BASE/servers/$SID/l4d2/controls" | jq '.players'
+
+# change map / campaign / difficulty (operator, server running). persist: also the start setting
+curl -s -X POST "$BASE/servers/$SID/l4d2/controls/map" -H "$AUTH" -H "Content-Type: application/json" -d '{"map":"c2m1_highway","mode":"coop"}'
+curl -s -X POST "$BASE/servers/$SID/l4d2/controls/map" -H "$AUTH" -H "Content-Type: application/json" -d '{"campaign":"official:c8","mode":"versus","persist":true}'
+curl -s -X POST "$BASE/servers/$SID/l4d2/controls/difficulty" -H "$AUTH" -H "Content-Type: application/json" -d '{"difficulty":"Impossible"}'
+
+# kick / give an item (userId from the players list)
+curl -s -X POST "$BASE/servers/$SID/l4d2/controls/kick" -H "$AUTH" -H "Content-Type: application/json" -d '{"userId":3,"reason":"afk"}'
+curl -s -X POST "$BASE/servers/$SID/l4d2/controls/give" -H "$AUTH" -H "Content-Type: application/json" -d '{"userId":3,"item":"katana"}'
+
+# plugin store (manager): list, install (with dependencies), settings, remove
+curl -s -H "$AUTH" "$BASE/servers/$SID/l4d2/plugins" | jq '.plugins[] | {id, installed: (.installed != null)}'
+curl -s -X POST "$BASE/servers/$SID/l4d2/plugins/l4d2_rmc/install" -H "$AUTH" -H "Content-Type: application/json" -d '{"settings":{"rmc_defaultslots":8}}'
+curl -s -X PUT  "$BASE/servers/$SID/l4d2/plugins/l4dtoolz/settings" -H "$AUTH" -H "Content-Type: application/json" -d '{"settings":{"sv_setmax":31}}'
+curl -s -X DELETE -H "$AUTH" "$BASE/servers/$SID/l4d2/plugins/left4dhooks"
+```
+
+Plugins load at the next start. Installing needs the game files, so start the server once first (`409 game_not_installed`).
 
 ### 7.12 BlueMap live map (Java servers)
 

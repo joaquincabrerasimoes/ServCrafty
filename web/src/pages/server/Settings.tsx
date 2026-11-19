@@ -16,7 +16,9 @@ import { TerrariaConfigFields } from '../create/TerrariaConfigStep';
 import { toTerrariaPatch, trFromConfig, validateTr, type TrForm } from '../create/terrariaForm';
 import { TerrariaWorlds, useTerrariaWorlds } from './TerrariaWorlds';
 import { cleanVariables, diffSteamVars, isGenerated, steamFromVars, validateSteam, type SteamErrors, type SteamForm } from '../create/steamForm';
-import { SteamVariablesForm } from '../create/SteamVariablesForm';
+import { CustomVariableField, SteamVariablesForm } from '../create/SteamVariablesForm';
+import { L4d2MapPicker } from '@/components/L4d2MapPicker';
+import { isL4d2 } from '@/lib/gameDefs';
 import { Note } from '../create/TerrariaConfigStep';
 import { SteamPorts } from './SteamPorts';
 import { ServerIconCard } from './ServerIconCard';
@@ -298,6 +300,23 @@ export default function ServerSettings() {
               hiddenSecrets={hiddenSecrets}
               mode="edit"
               onRegenerate={canManage(server.access) ? (k) => void regenerate(k) : undefined}
+              renderField={
+                isL4d2(def)
+                  ? (v, f) =>
+                      v.key === 'map' ? (
+                        <CustomVariableField v={v} error={f.error}>
+                          <L4d2MapPicker
+                            serverId={server.id}
+                            value={typeof f.value === 'string' ? f.value : ''}
+                            onChange={f.onChange}
+                            mode={typeof f.values.gameMode === 'string' ? f.values.gameMode : undefined}
+                            disabled={f.disabled}
+                            invalid={!!f.error}
+                          />
+                        </CustomVariableField>
+                      ) : undefined
+                  : undefined
+              }
               footer={
                 <div className="space-y-4">
                   <div>

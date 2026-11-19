@@ -133,12 +133,15 @@ function syncWorkshop({ paths, workshop }) {
       missing.push(id);
       continue;
     }
-    const files = listFiles(src);
+    // Legacy Workshop items (Left 4 Dead 2 and other old Source games) are one "<ugc>_legacy.bin" file that
+    // is really the addon (a VPK). With `legacyAs` it is stored as "<item id><legacyAs>", which the game loads.
+    const sources = listFiles(src);
+    const files = sources.map((f) => (workshop.legacyAs && f.endsWith('_legacy.bin') && !f.includes('/') ? `${id}${workshop.legacyAs}` : f));
     let copied = 0;
-    for (const f of files) {
-      const dstRel = `${workshop.dir}/${f}`;
+    sources.forEach((f, i) => {
+      const dstRel = `${workshop.dir}/${files[i]}`;
       if (copyIfChanged(path.join(src, ...f.split('/')), safeJoin(paths.game, dstRel))) copied++;
-    }
+    });
     // Files that disappeared from a newer version of the item are cleaned up too.
     const prev = manifest.items[id];
     if (prev) {

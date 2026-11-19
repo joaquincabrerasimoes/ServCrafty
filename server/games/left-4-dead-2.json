@@ -2,7 +2,7 @@
   "schema": 1,
   "id": "left-4-dead-2",
   "name": "Left 4 Dead 2",
-  "description": "Left 4 Dead 2 dedicated server (Steam app 222860, native Linux 32-bit srcds, anonymous login; no GSLT needed). Port 27015 carries the game (UDP) and RCON (TCP) and is mirrored. The server accepts direct connections (sv_allow_lobby_connect_only 0). Workshop addons are not handled (L4D2 addons are VPK files placed in left4dead2/addons); upload them with the Files tab.",
+  "description": "Left 4 Dead 2 dedicated server (Steam app 222860, native Linux 32-bit srcds, anonymous login; no GSLT needed). Port 27015 carries the game (UDP) and RCON (TCP) and is mirrored. The server accepts direct connections (sv_allow_lobby_connect_only 0). Steam Workshop addons are downloaded by SteamCMD and installed into left4dead2/addons as <item id>.vpk; the Maps tab lists the campaigns they add, the Controls tab changes map, campaign, difficulty and kicks players or gives items, and the Plugins tab installs Metamod, SourceMod and extra-slot plugins.",
   "icon": "https://cdn.cloudflare.steamstatic.com/steam/apps/550/header.jpg",
   "steam": {
     "appId": 222860,
@@ -159,6 +159,8 @@
       "{{ports.game}}",
       "-maxplayers",
       "{{maxPlayers}}",
+      "+exec",
+      "servcrafty_plugins.cfg",
       "+map",
       "{{map}}",
       "+mp_gamemode",
@@ -184,7 +186,14 @@
     ],
     "env": {}
   },
-  "files": [],
+  "files": [
+    {
+      "type": "template",
+      "path": "left4dead2/cfg/servcrafty_plugins.cfg",
+      "when": "missing",
+      "content": "// Settings of plugins installed from the ServCrafty Plugins tab (rewritten by the panel).\n"
+    }
+  ],
   "stop": {
     "type": "stdin",
     "command": "quit",
@@ -205,7 +214,13 @@
       "portId": "game"
     }
   },
-  "workshop": null,
+  "workshop": {
+    "appId": 550,
+    "install": "steamcmd",
+    "dir": "left4dead2/addons",
+    "legacyAs": ".vpk"
+  },
+  "profile": "l4d2",
   "webui": [],
   "scripts": {}
 }

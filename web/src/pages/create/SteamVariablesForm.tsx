@@ -1,4 +1,4 @@
-import { useId, useState, type ReactNode } from 'react';
+import { Fragment, useId, useState, type ReactNode } from 'react';
 import { Copy, Eye, EyeOff, RefreshCw } from 'lucide-react';
 import type { GameVariable } from '@/api/types';
 import { useT } from '@/i18n';
@@ -6,6 +6,37 @@ import { toast } from '@/stores/toast';
 import { copy } from '@/components/CopyAddress';
 import { Button, Field, IconButton, Toggle } from '@/components/ui';
 import { groupVariables, isGenerated, type SteamErrors, type SteamForm } from './steamForm';
+
+export interface CustomFieldProps {
+  value: string | boolean | undefined;
+  onChange: (v: string | boolean) => void;
+  error?: string;
+  disabled?: boolean;
+  /** Every current form value (a field may depend on another, e.g. the map on the game mode). */
+  values: SteamForm;
+}
+
+/** Label and hint/error around a custom variable input (it may hold several controls, so no wrapping <label>). */
+export function CustomVariableField({ v, error, children }: { v: GameVariable; error?: string; children: ReactNode }) {
+  const t = useT();
+  const required = v.required && !isGenerated(v);
+  return (
+    <div className="min-w-0 sm:col-span-2" role="group" aria-label={v.label || v.key}>
+      <span className="label">
+        {v.label || v.key}
+        {required && (
+          <span className="text-danger" aria-hidden="true">
+            {' '}
+            *
+          </span>
+        )}
+        {required && <span className="sr-only"> ({t('steam.required')})</span>}
+      </span>
+      {children}
+      {error ? <span className="mt-1 block text-xs text-danger">{error}</span> : v.description ? <span className="hint block">{v.description}</span> : null}
+    </div>
+  );
+}
 
 function GroupPanel({ title, children }: { title: string; children: ReactNode }) {
   const id = useId();
@@ -213,6 +244,7 @@ export function SteamVariablesForm({
   footer,
   mode = 'create',
   onRegenerate,
+  renderField,
 }: {
   variables: GameVariable[];
   values: SteamForm;
@@ -227,6 +259,8 @@ export function SteamVariablesForm({
   mode?: 'create' | 'edit';
   /** Settings: replace a generated variable's value. */
   onRegenerate?: (key: string) => void;
+  /** Custom input for some variables (e.g. the Left 4 Dead 2 map picker); return undefined for the default field. */
+  renderField?: (v: GameVariable, field: CustomFieldProps) => ReactNode | undefined;
 }) {
   const t = useT();
   const groups = groupVariables(variables);
@@ -235,19 +269,23 @@ export function SteamVariablesForm({
       {groups.length === 0 && !footer && <p className="panel px-4 py-6 text-center text-sm text-muted">{t('steam.noVariables')}</p>}
       {groups.map((g) => (
         <GroupPanel key={g.group ?? ''} title={g.group ?? t('steam.groupGeneral')}>
-          {g.vars.map((v) => (
-            <VariableField
-              key={v.key}
-              v={v}
-              value={values[v.key]}
-              onChange={(val) => onChange(v.key, val)}
-              error={errors[v.key]}
-              hidden={(v.type === 'password' || isGenerated(v)) && hiddenSecrets?.has(v.key)}
-              disabled={disabled}
-              mode={mode}
-              onRegenerate={onRegenerate && isGenerated(v) ? () => onRegenerate(v.key) : undefined}
-            />
-          ))}
+          {g.vars.map((v) => {
+            const custom = renderField?.(v, { value: values[v.key], onChange: (val) => onChange(v.key, val), error: errors[v.key], disabled, values });
+            if (custom !== undefined) return <Fragment key={v.key}>{custom}</Fragment>;
+            return (
+              <VariableField
+                key={v.key}
+                v={v}
+                value={values[v.key]}
+                onChange={(val) => onChange(v.key, val)}
+                error={errors[v.key]}
+                hidden={(v.type === 'password' || isGenerated(v)) && hiddenSecrets?.has(v.key)}
+                disabled={disabled}
+                mode={mode}
+                onRegenerate={onRegenerate && isGenerated(v) ? () => onRegenerate(v.key) : undefined}
+              />
+            );
+          })}
         </GroupPanel>
       ))}
       {footer && (

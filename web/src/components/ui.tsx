@@ -195,6 +195,19 @@ export function ErrorState({ error, onRetry }: { error: unknown; onRetry?: () =>
   );
 }
 
+/** A warning that blocks part of a page (e.g. game files not installed yet). */
+export function WarnBanner({ title, children }: { title: ReactNode; children?: ReactNode }) {
+  return (
+    <div role="status" className="flex gap-3 rounded-md border border-warn/40 bg-warn/5 p-4 text-sm">
+      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warn" aria-hidden="true" />
+      <div className="min-w-0 space-y-1">
+        <p className="font-medium">{title}</p>
+        {children && <div className="text-muted">{children}</div>}
+      </div>
+    </div>
+  );
+}
+
 export function EmptyState({ icon, title, body, action }: { icon?: ReactNode; title: string; body?: ReactNode; action?: ReactNode }) {
   return (
     <div className="flex flex-col items-center px-6 py-14 text-center">

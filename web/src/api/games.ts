@@ -1,5 +1,5 @@
 import { ApiError, api, asList, request } from './client';
-import type { GameDefinition, GameSummary, ValidationIssue, WorkshopItem, WorkshopRef, WorkshopSearchResult } from './types';
+import type { GameDefinition, GameSummary, ValidationIssue, WorkshopAddResult, WorkshopItem, WorkshopRef, WorkshopSearchResult } from './types';
 
 const g = (id: string) => `/games/${encodeURIComponent(id)}`;
 const s = (id: string) => `/servers/${encodeURIComponent(id)}`;
@@ -40,7 +40,8 @@ export const gamesApi = {
 
 export const workshopApi = {
   /** Needs the admin Steam API key (400 steam_key_missing otherwise). `page` is 1-based. */
-  search: (params: { gameId: string; q?: string; page?: number; sort?: string }, signal?: AbortSignal) =>
+  /** `tag`: a Workshop tag of the game (e.g. "Campaigns"). */
+  search: (params: { gameId: string; q?: string; page?: number; sort?: string; tag?: string }, signal?: AbortSignal) =>
     api.get<WorkshopSearchResult>('/workshop/search', params, signal).then((r) => ({
       items: asList<WorkshopItem>(r, 'items'),
       total: typeof r?.total === 'number' ? r.total : 0,
@@ -48,9 +49,10 @@ export const workshopApi = {
   /** Resolves a Workshop id or a Workshop URL. */
   item: (idOrUrl: string, gameId?: string) => api.get<WorkshopItem>(`/workshop/items/${encodeURIComponent(idOrUrl)}`, { gameId }),
   list: async (serverId: string) => asList<WorkshopRef>(await api.get(`${s(serverId)}/workshop`), 'workshop', 'items'),
+  /** Accepts an item or a collection (every item in it is added). */
   add: (serverId: string, idOrUrl: string) =>
-    api.post<unknown>(`${s(serverId)}/workshop`, /^\d+$/.test(idOrUrl.trim()) ? { id: idOrUrl.trim() } : { url: idOrUrl.trim() }),
-  remove: (serverId: string, itemId: string) => api.del<void>(`${s(serverId)}/workshop/${encodeURIComponent(itemId)}`),
+    api.post<WorkshopAddResult>(`${s(serverId)}/workshop`, /^\d+$/.test(idOrUrl.trim()) ? { id: idOrUrl.trim() } : { url: idOrUrl.trim() }),
+  remove: (serverId: string, itemId: string) => api.del<{ workshop: WorkshopRef[]; restartRequired: boolean } | undefined>(`${s(serverId)}/workshop/${encodeURIComponent(itemId)}`),
   /** Forces a re-download of the Workshop items on the next start. */
   refresh: (serverId: string) => api.post<void>(`${s(serverId)}/workshop/refresh`),
 };

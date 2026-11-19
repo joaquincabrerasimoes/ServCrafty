@@ -103,6 +103,20 @@ test('workshop sync copies, tracks in the manifest and only removes tracked file
   assert.deepEqual(loadManifest(paths.manifest).items, {});
 });
 
+test('workshop sync: legacyAs stores the "<ugc>_legacy.bin" of a legacy item as "<id>.vpk"', () => {
+  const paths = makePaths(tmp());
+  fs.mkdirSync(paths.game, { recursive: true });
+  const item = path.join(paths.workshop, 'steamapps', 'workshop', 'content', '550', '777');
+  fs.mkdirSync(item, { recursive: true });
+  fs.writeFileSync(path.join(item, '123456_legacy.bin'), 'VPK');
+  const ws = { appId: 550, ids: ['777'], install: 'steamcmd', dir: 'left4dead2/addons', legacyAs: '.vpk' };
+  assert.deepEqual(syncWorkshop({ paths, workshop: ws }), { missing: [] });
+  assert.equal(fs.readFileSync(path.join(paths.game, 'left4dead2', 'addons', '777.vpk'), 'utf8'), 'VPK');
+  assert.deepEqual(loadManifest(paths.manifest).items['777'].files, ['777.vpk']);
+  syncWorkshop({ paths, workshop: { ...ws, ids: [] } });
+  assert.ok(!fs.existsSync(path.join(paths.game, 'left4dead2', 'addons', '777.vpk')));
+});
+
 test('workshop sync: config-list never copies; missing items are reported', () => {
   const paths = makePaths(tmp());
   fs.mkdirSync(paths.game, { recursive: true });

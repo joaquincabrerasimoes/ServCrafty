@@ -450,7 +450,7 @@ export interface SteamPlan {
     validate: boolean;
     update: boolean;
   };
-  workshop: { appId: number; ids: string[]; install: 'steamcmd' | 'config-list'; dir: string | null } | null;
+  workshop: { appId: number; ids: string[]; install: 'steamcmd' | 'config-list'; dir: string | null; legacyAs: string | null } | null;
   files: PlanFile[];
   launch: { cwd: string; argv: string[]; env: Record<string, string> };
   stop: { type: 'signal' | 'stdin'; signal: string; command: string | null; timeoutSec: number };
@@ -529,7 +529,7 @@ export function buildPlan(def: GameDefinition, input: PlanInput): { plan: SteamP
       update: validate || input.steam.updateOnStart !== false,
     },
     workshop: def.workshop
-      ? { appId: def.workshop.appId, ids: workshopIds, install: def.workshop.install, dir: def.workshop.dir ?? null }
+      ? { appId: def.workshop.appId, ids: workshopIds, install: def.workshop.install, dir: def.workshop.dir ?? null, legacyAs: def.workshop.legacyAs ?? null }
       : null,
     files,
     launch: { cwd: def.launch.cwd, argv, env },

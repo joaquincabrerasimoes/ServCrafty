@@ -12,7 +12,7 @@ export function useGameDefs(enabled = true) {
   return useQuery({ queryKey: gamesKey, queryFn: gamesApi.list, staleTime: 60_000, enabled });
 }
 
-type DefLike = Partial<Pick<GameDefinition, 'ports' | 'webui' | 'workshop' | 'console' | 'resources' | 'variables'>> & {
+type DefLike = Partial<Pick<GameDefinition, 'ports' | 'webui' | 'workshop' | 'console' | 'resources' | 'variables' | 'profile'>> & {
   hasWorkshop?: boolean;
   hasWebui?: boolean;
 };
@@ -35,6 +35,9 @@ export function mainPortOf(def: DefLike | undefined): GamePort | undefined {
 export const publishedPorts = (def: DefLike | undefined): GamePort[] => (def?.ports ?? []).filter((p) => p.publish !== false);
 
 export const hasWorkshop = (def: DefLike | undefined) => !!def && (!!def.workshop || def.hasWorkshop === true);
+
+/** Left 4 Dead 2 integration: Maps, Controls and Plugins tabs. */
+export const isL4d2 = (def: DefLike | undefined) => def?.profile === 'l4d2';
 
 /** Console commands are written to stdin only when the definition allows it (unknown = allowed, the API decides). */
 export const consoleAllowed = (def: DefLike | undefined) => def?.console?.stdin !== false;

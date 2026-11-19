@@ -82,6 +82,7 @@ The file name must be `<id>.json` for that script.
 | `query` | object or null | no | Steam A2S query. |
 | `workshop` | object or null | no | Steam Workshop support. |
 | `webui` | array (0-8) | no | Web interfaces proxied by the panel. |
+| `profile` | `"l4d2"` or null | no | Built-in integration that adds tabs to the server page (maps, controls, plugins). Only the Left 4 Dead 2 definition uses it; it needs panel code, so a custom definition cannot invent a profile. |
 | `scripts` | object | no | `postInstall` and `preStart` shell snippets. |
 
 ### `steam`
@@ -284,6 +285,7 @@ A `workshop` section adds a Workshop tab (search needs the admin Steam API key; 
 * `appId` is the **Workshop's** app id, which is often the game's app id and not the dedicated server's (Killing Floor 2: Workshop 232090, server 232130; Killing Floor 1: Workshop 1250, server 215360). An item that belongs to another app is rejected.
 * `install: "steamcmd"`: the executor downloads each item with `workshop_download_item` and copies its files into `/data/game/<dir>` (`dir` is required). Removed items are cleaned up again. This only helps if the game finds mods by file presence; it does not edit any activation setting.
 * `install: "config-list"`: the executor downloads nothing special; the game itself fetches the items, and you list the ids with an ini `list` entry whose `valuesFrom` is `"workshop"`, or with `{{workshop.ids}}` in a template or argument.
+* `legacyAs` (only with `install: "steamcmd"`): an extension such as `".vpk"`. Items of legacy Workshop games (Left 4 Dead 2 and other old Source games) download as one file named `<ugc id>_legacy.bin` that is really the addon; with `legacyAs` the executor stores it as `<item id>.vpk` (the name the game loads) and removes it again with the item.
 * Changes apply on the next start.
 
 ## 10. Web UI proxy
@@ -434,7 +436,9 @@ App 740, `./srcds_run -game csgo -usercon -strictportbind -tickrate N -maxplayer
 App 90 (HLDS) with the `cstrike` mod, `./hlds_run -game cstrike -norestart -pingboost N +maxplayers N +map X` (egg). The `quit` console command makes HLDS restart unless `-norestart` is given, so it is always passed. Install gap: a plain `app_update 90` does not deliver `cstrike`; the definition uses a `postInstall` script that runs SteamCMD itself with `+app_set_config 90 mod cstrike +app_update 90 validate` (up to 3 tries) when `cstrike/liblist.gam` is missing. LinuxGSM instead pre-seeds `appmanifest_90.acf` shared depots and the egg uses the `beta` branch, so this step is unverified; the schema cannot express SteamCMD `app_set_config`.
 
 #### Left 4 Dead 2 (`left-4-dead-2`)
-App 222860, no GSLT. Adds `+sv_allow_lobby_connect_only 0` (otherwise only lobby joins work), `mp_gamemode` and `z_difficulty` selects. Workshop addons (VPK files) are not managed.
+App 222860, no GSLT. Adds `+sv_allow_lobby_connect_only 0` (otherwise only lobby joins work), `mp_gamemode` and `z_difficulty` selects. `+exec servcrafty_plugins.cfg` runs the settings of installed plugins (a seed file is created when missing).
+
+Since v0.5.0 (`profile: "l4d2"`): **Workshop** items are installed into `left4dead2/addons/<id>.vpk` (`workshop` with `legacyAs: ".vpk"`, anonymous SteamCMD login works for app 550; players also need the addon, which they get by subscribing on the Workshop); a **Maps** tab lists the official and addon campaigns read from the VPK files; a **Controls** tab changes map, campaign and difficulty, kicks players and gives items through the console; a **Plugins** tab installs Metamod:Source, SourceMod, L4DToolZ (more than 4 players), the multiplayer plugin and Left4DHooks from a fixed catalog. Details in SPEC.md, "Left 4 Dead 2: Workshop, maps, controls and plugins (v0.5.0)". Limitations: the item-giving action uses the game's `script` command, unverified on a real dedicated server; plugins are downloaded from AlliedModders and GitHub, so those hosts must be reachable from the panel; official survival/scavenge maps are only listed when the game files exist.
 
 #### Team Fortress 2 (`team-fortress-2`)
 App 232250, `./srcds_run_64` (LinuxGSM; the egg still uses `srcds_run`: duplicate the definition if your install only has the 32-bit launcher), GSLT recommended. No Workshop, no SourceTV.

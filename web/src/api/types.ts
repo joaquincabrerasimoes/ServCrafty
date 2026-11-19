@@ -625,7 +625,12 @@ export interface GameWorkshop {
   appId: number;
   install: 'steamcmd' | 'config-list';
   dir?: string;
+  /** Also install each item as "<item id><legacyAs>" (e.g. ".vpk" for Left 4 Dead 2 addons). */
+  legacyAs?: string | null;
 }
+
+/** Game integrations the panel has beyond the generic definition (extra server tabs). */
+export type GameProfile = 'l4d2';
 
 /** Game definition v1 (SPEC.md "SteamCMD games"). */
 export interface GameDefinition {
@@ -648,6 +653,8 @@ export interface GameDefinition {
   workshop?: GameWorkshop | null;
   webui?: GameWebUi[];
   scripts?: { postInstall?: string; preStart?: string };
+  /** `l4d2`: Left 4 Dead 2 Maps, Controls and Plugins tabs. */
+  profile?: GameProfile | null;
 }
 
 /**
@@ -701,11 +708,136 @@ export interface WorkshopItem {
   subscribers?: number | null;
   sizeBytes?: number | null;
   updatedAt?: string | null;
+  /** A Workshop collection: adding it adds every item in it. */
+  isCollection?: boolean;
 }
 
 export interface WorkshopSearchResult {
   items: WorkshopItem[];
   total: number;
+}
+
+/** POST /servers/:id/workshop */
+export interface WorkshopAddResult {
+  workshop: WorkshopRef[];
+  item: WorkshopItem;
+  /** Items newly added (more than one for a collection, 0 when all were already there). */
+  added: number;
+  restartRequired: boolean;
+}
+
+/* ------------------------------------------------------------ Left 4 Dead 2 (v0.5.0) */
+
+export const L4D_MODES = ['coop', 'realism', 'versus', 'survival', 'scavenge'] as const;
+export type L4dGameMode = (typeof L4D_MODES)[number];
+export type L4dDifficulty = 'Easy' | 'Normal' | 'Hard' | 'Impossible';
+
+export interface L4dChapter {
+  map: string;
+  title: string;
+}
+
+export interface L4dCampaign {
+  /** 'official:c8' or 'mission:<name>'. */
+  id: string;
+  title: string;
+  author: string | null;
+  source: 'official' | 'addon';
+  /** Addon file that supplies the campaign. */
+  addon: string | null;
+  workshopId: string | null;
+  modes: Partial<Record<L4dGameMode, L4dChapter[]>>;
+}
+
+export interface L4dAddon {
+  file: string;
+  workshopId: string | null;
+  title: string;
+  author: string | null;
+  sizeBytes: number;
+  modifiedAt: string;
+  maps: string[];
+  campaigns: string[];
+  kind: 'campaign' | 'map' | 'content';
+  /** The file could not be read (damaged download). */
+  error: string | null;
+}
+
+/** GET /servers/:id/l4d2/maps */
+export interface L4dMapsOverview {
+  /** false: the game files are not there yet (the server never started). */
+  gameInstalled: boolean;
+  campaigns: L4dCampaign[];
+  addons: L4dAddon[];
+  maps: Array<{ map: string; source: string | null }>;
+  officialFromGame: boolean;
+  /** The server's Workshop list; `installed: false` = downloads on the next start. */
+  workshop: Array<{ id: string; title: string; installed: boolean }>;
+  modes: L4dGameMode[];
+  current: { map: string | null };
+  start: { map: string; gameMode: string; difficulty: string };
+}
+
+export interface L4dPlayer {
+  userId: number;
+  name: string;
+  steamId: string | null;
+  bot: boolean;
+  state: string | null;
+  ping: number | null;
+  connected: string | null;
+}
+
+export interface L4dItemGroup {
+  id: string;
+  label: string;
+  items: Array<{ id: string; label: string }>;
+}
+
+/** GET /servers/:id/l4d2/controls (runs the game's `status` command). */
+export interface L4dControls {
+  running: boolean;
+  map: string | null;
+  players: L4dPlayer[];
+  difficulties: Array<{ value: L4dDifficulty; label: string }>;
+  modes: L4dGameMode[];
+  items: L4dItemGroup[];
+  start: { gameMode: string; difficulty: string };
+}
+
+export type L4dPluginCategory = 'base' | 'slots' | 'library';
+export type L4dSettingValue = number | boolean;
+
+export interface L4dPluginSetting {
+  key: string;
+  label: string;
+  description: string;
+  type: 'number' | 'boolean';
+  default: L4dSettingValue;
+  min?: number;
+  max?: number;
+  value: L4dSettingValue;
+}
+
+export interface L4dPlugin {
+  id: string;
+  name: string;
+  description: string;
+  homepage: string;
+  category: L4dPluginCategory;
+  /** Plugin ids. */
+  requires: string[];
+  missingRequires: string[];
+  /** Installed plugins that need this one. */
+  requiredBy: string[];
+  settings: L4dPluginSetting[];
+  installed: { version: string | null; installedAt: string; files: number } | null;
+}
+
+/** GET /servers/:id/l4d2/plugins */
+export interface L4dPluginsOverview {
+  gameInstalled: boolean;
+  plugins: L4dPlugin[];
 }
 
 /* ------------------------------------------------------------ v0.3.2: game access, disabled games, processes */
