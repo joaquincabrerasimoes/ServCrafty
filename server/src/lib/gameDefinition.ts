@@ -213,6 +213,11 @@ export const gameDefinitionSchema = z
     ports: z.array(portSchema).min(1).max(16),
     variables: z.array(variableSchema).max(100).default([]),
     launch: launchSchema,
+    /**
+     * Optional launch of the Windows build under Wine. When set, the server's Settings offer a platform
+     * choice (Linux = `launch`, Windows = this); `steam.platform` is the default.
+     */
+    windowsLaunch: launchSchema.nullable().default(null),
     files: z.array(fileSchema).max(50).default([]),
     stop: stopSchema.default({ type: 'signal', signal: 'SIGINT', timeoutSec: 60 }),
     console: z.object({ stdin: z.boolean() }).strict().default({ stdin: false }),
@@ -475,32 +480,36 @@ function semanticErrors(def: GameDefinition): DefinitionIssue[] {
     }
   };
 
-  // launch
-  const cwdBad = unsafeRelPathReason(def.launch.cwd, true);
-  if (cwdBad) err('launch.cwd', cwdBad);
+  // launch (and the optional Windows launch)
   const checkIf = (key: string | undefined, path: string) => {
     if (key !== undefined && !varKeys.has(key)) err(path, `"if" must reference a variable; "${key}" is not defined`);
   };
-  def.launch.command.forEach((el, i) => {
-    const at = `launch.command.${i}`;
-    if (typeof el === 'string') checkTemplates(el, at);
-    else if ('parts' in el) {
-      checkIf(el.if, `${at}.if`);
-      checkTemplates(el.separator, `${at}.separator`);
-      el.parts.forEach((part, j) => {
-        if (typeof part === 'string') checkTemplates(part, `${at}.parts.${j}`);
-        else {
-          checkTemplates(part.value, `${at}.parts.${j}.value`);
-          checkIf(part.if, `${at}.parts.${j}.if`);
-        }
-      });
-    } else {
-      checkTemplates(el.value, `${at}.value`);
-      checkIf(el.if, `${at}.if`);
-    }
-  });
-  if (typeof def.launch.command[0] !== 'string') err('launch.command.0', 'the program (first element) must be unconditional');
-  for (const [k, v] of Object.entries(def.launch.env)) checkTemplates(v, `launch.env.${k}`);
+  const checkLaunch = (launch: typeof def.launch, base: string) => {
+    const cwdBad = unsafeRelPathReason(launch.cwd, true);
+    if (cwdBad) err(`${base}.cwd`, cwdBad);
+    launch.command.forEach((el, i) => {
+      const at = `${base}.command.${i}`;
+      if (typeof el === 'string') checkTemplates(el, at);
+      else if ('parts' in el) {
+        checkIf(el.if, `${at}.if`);
+        checkTemplates(el.separator, `${at}.separator`);
+        el.parts.forEach((part, j) => {
+          if (typeof part === 'string') checkTemplates(part, `${at}.parts.${j}`);
+          else {
+            checkTemplates(part.value, `${at}.parts.${j}.value`);
+            checkIf(part.if, `${at}.parts.${j}.if`);
+          }
+        });
+      } else {
+        checkTemplates(el.value, `${at}.value`);
+        checkIf(el.if, `${at}.if`);
+      }
+    });
+    if (typeof launch.command[0] !== 'string') err(`${base}.command.0`, 'the program (first element) must be unconditional');
+    for (const [k, v] of Object.entries(launch.env)) checkTemplates(v, `${base}.env.${k}`);
+  };
+  checkLaunch(def.launch, 'launch');
+  if (def.windowsLaunch) checkLaunch(def.windowsLaunch, 'windowsLaunch');
 
   // files
   const filePaths = new Set<string>();

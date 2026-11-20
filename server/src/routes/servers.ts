@@ -156,7 +156,9 @@ export default async function serverRoutes(app: FastifyInstance): Promise<void> 
   app.get<IdParams & { Querystring: { tail?: string } }>('/servers/:id/logs', async (req) => {
     const user = requireUser(req);
     const { server } = await loadServerFor(user, req.params.id, 'viewer');
-    return { lines: await runtime.getLogs(server, intQuery(req.query.tail, 500, 1, 5000)) };
+    const entries = await runtime.getLogEntries(server, intQuery(req.query.tail, 500, 1, 5000));
+    // `times[i]` is the timestamp of `lines[i]` (docker format, nanoseconds).
+    return { lines: entries.map((e) => e.text), times: entries.map((e) => e.ts) };
   });
 
   app.get<IdParams>('/servers/:id/stats', async (req) => {

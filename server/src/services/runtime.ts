@@ -5,6 +5,7 @@ import type { FastifyBaseLogger } from 'fastify';
 import { query, queryOne } from '../db/pool.js';
 import { badRequest, conflict, errorMessage, notFound, unavailable } from '../lib/errors.js';
 import { dirSize } from '../lib/fsutil.js';
+import { nowStamp, splitStamp } from '../lib/logTime.js';
 import { queryA2s, type A2sInfo, type A2sPlayer } from '../lib/a2s.js';
 import { gameOf, isSteamType, terrariaVariant, type Game } from '../lib/games.js';
 import type { GameDefinition } from '../lib/gameDefinition.js';
@@ -81,6 +82,12 @@ interface RuntimeState {
   status: ServerStatus;
   startedAt: number | null;
   logs: string[];
+  /** Timestamp (docker format) of each entry of `logs`, same indexes. */
+  logTimes: string[];
+  /** Timestamp of the docker line being processed (null for lines the panel writes itself). */
+  curTs: string | null;
+  /** Docker output not yet split into lines (stream chunks do not end on line boundaries). */
+  rawPartial: string;
   partial: string;
   logStream: Readable | null;
   statsStream: Readable | null;
@@ -124,6 +131,9 @@ function state(id: string): RuntimeState {
       status: 'stopped',
       startedAt: null,
       logs: [],
+      logTimes: [],
+      curTs: null,
+      rawPartial: '',
       partial: '',
       logStream: null,
       statsStream: null,
@@ -216,15 +226,33 @@ function cleanLine(game: Game, rawLine: string): string {
 function pushLine(s: RuntimeState, rawLine: string): void {
   const line = cleanLine(s.game, rawLine);
   if (!line) return;
+  const ts = s.curTs ?? nowStamp();
   s.logs.push(line);
-  if (s.logs.length > LOG_BUFFER) s.logs.splice(0, s.logs.length - LOG_BUFFER);
-  bus.emit('log', s.id, line);
+  s.logTimes.push(ts);
+  if (s.logs.length > LOG_BUFFER) {
+    s.logs.splice(0, s.logs.length - LOG_BUFFER);
+    s.logTimes.splice(0, s.logTimes.length - LOG_BUFFER);
+  }
+  bus.emit('log', s.id, line, ts);
   analyzeLine(s, line);
 }
 
 /** Append a ServCrafty-originated line to the server log. */
 export function systemLog(id: string, line: string): void {
   pushLine(state(id), line);
+}
+
+/** Docker output (with timestamps): remember each line's timestamp while its text goes through `feed`. */
+function ingest(s: RuntimeState, chunk: string): void {
+  const data = s.rawPartial + chunk;
+  const parts = data.split('\n');
+  s.rawPartial = parts.pop() ?? '';
+  for (const raw of parts) {
+    const { ts, text } = splitStamp(raw);
+    s.curTs = ts;
+    feed(s, text + '\n');
+  }
+  s.curTs = null;
 }
 
 function feed(s: RuntimeState, chunk: string): void {
@@ -391,25 +419,33 @@ async function attachLogs(s: RuntimeState, containerId: string, tty: boolean, si
     follow: true,
     stdout: true,
     stderr: true,
+    timestamps: true,
     since: sinceSec ?? 0,
   })) as unknown as Readable;
   s.logStream = stream;
   s.partial = '';
+  s.rawPartial = '';
   if (tty) {
-    stream.on('data', (d: Buffer) => feed(s, d.toString('utf8')));
+    stream.on('data', (d: Buffer) => ingest(s, d.toString('utf8')));
   } else {
     const out = new PassThrough();
-    out.on('data', (d: Buffer) => feed(s, d.toString('utf8')));
+    out.on('data', (d: Buffer) => ingest(s, d.toString('utf8')));
     docker().modem.demuxStream(stream, out, out);
     stream.on('end', () => out.end());
   }
   stream.on('error', () => undefined);
 }
 
-/** Last `tail` log lines (from memory, or docker logs of the last container run). */
-export async function getLogs(server: ServerRow, tail: number): Promise<string[]> {
+export interface LogEntry {
+  text: string;
+  /** Timestamp in docker's format (2026-11-20T07:46:00.589825612Z). */
+  ts: string;
+}
+
+/** Last `tail` log lines with their timestamps (from memory, or docker logs of the last container run). */
+export async function getLogEntries(server: ServerRow, tail: number): Promise<LogEntry[]> {
   const s = state(server.id);
-  if (s.logs.length) return s.logs.slice(-tail);
+  if (s.logs.length) return backlog(server.id, tail);
   const id = server.container_id;
   if (!id) return [];
   try {
@@ -417,22 +453,35 @@ export async function getLogs(server: ServerRow, tail: number): Promise<string[]
       follow: false,
       stdout: true,
       stderr: true,
+      timestamps: true,
       tail,
     })) as unknown as Buffer;
     const game = gameOf(server.type);
     const text = demuxBuffer(Buffer.isBuffer(buf) ? buf : Buffer.from(String(buf)));
-    return (splitsCarriageReturns(game) ? text.replace(/\r(?!\n)/g, '\n') : text)
-      .split('\n')
-      .map((l) => cleanLine(game, l))
-      .filter(Boolean)
-      .slice(-tail);
+    const out: LogEntry[] = [];
+    for (const raw of text.split('\n')) {
+      const { ts, text: body } = splitStamp(raw);
+      const parts = splitsCarriageReturns(game) ? body.replace(/\r(?!\n)/g, '\n').split('\n') : [body];
+      for (const p of parts) {
+        const line = cleanLine(game, p);
+        if (line) out.push({ text: line, ts: ts ?? nowStamp() });
+      }
+    }
+    return out.slice(-tail);
   } catch {
     return [];
   }
 }
 
-export function backlog(id: string, n = 200): string[] {
-  return state(id).logs.slice(-n);
+/** Last `tail` log lines (from memory, or docker logs of the last container run). */
+export async function getLogs(server: ServerRow, tail: number): Promise<string[]> {
+  return (await getLogEntries(server, tail)).map((e) => e.text);
+}
+
+export function backlog(id: string, n = 200): LogEntry[] {
+  const s = state(id);
+  const lines = s.logs.slice(-n);
+  return lines.map((text, i) => ({ text, ts: s.logTimes[s.logs.length - lines.length + i] ?? nowStamp() }));
 }
 
 // ---------------------------------------------------------------------------
@@ -988,6 +1037,7 @@ export function start(serverId: string): Promise<void> {
     s.game = gameOf(server.type);
     s.expectedStop = false;
     s.logs = [];
+    s.logTimes = [];
     s.version = null;
     await query('UPDATE servers SET stopped_by_user=false WHERE id=$1', [serverId]);
     await setStatus(serverId, 'starting');
@@ -1291,7 +1341,10 @@ export async function initRuntime(logger: FastifyBaseLogger): Promise<void> {
         s.startedAt = new Date(info.State.StartedAt).getTime();
         // Prefill the backlog without re-analyzing old lines, then follow new output only.
         s.logs = [];
-        s.logs = await getLogs(server, 500);
+        s.logTimes = [];
+        const prefill = await getLogEntries(server, 500);
+        s.logs = prefill.map((e) => e.text);
+        s.logTimes = prefill.map((e) => e.ts);
         await attachLogs(s, info.Id, isSteamType(server.type) ? !!info.Config.Tty : ttyFor(server), Math.floor(Date.now() / 1000));
         attachStats(s, info.Id, server.cpu);
         let steamStatus: ServerStatus | null = null;

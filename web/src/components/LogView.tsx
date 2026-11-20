@@ -4,6 +4,9 @@ import { ArrowDown, CornerDownLeft } from 'lucide-react';
 import type { LogLine } from '@/ws/live';
 import { useT } from '@/i18n';
 
+/** Line text, with its timestamp in front when asked for (the same text the Download button writes). */
+export const lineText = (l: LogLine, timestamps: boolean) => (timestamps && l.ts ? `${l.ts} ` : '') + cleanLine(l.text);
+
 // eslint-disable-next-line no-control-regex
 const ANSI = /\u001b\[[0-9;]*[A-Za-z]|§[0-9a-fk-or]/gi;
 export const cleanLine = (s: string) => s.replace(ANSI, '');
@@ -17,7 +20,20 @@ function lineClass(l: LogLine) {
   return '';
 }
 
-export function LogView({ lines, className, wrap = true, filter }: { lines: LogLine[]; className?: string; wrap?: boolean; filter?: string }) {
+export function LogView({
+  lines,
+  className,
+  wrap = true,
+  filter,
+  timestamps = false,
+}: {
+  lines: LogLine[];
+  className?: string;
+  wrap?: boolean;
+  filter?: string;
+  /** Show the timestamp of every line in front of it. */
+  timestamps?: boolean;
+}) {
   const t = useT();
   const ref = useRef<HTMLDivElement>(null);
   const [stick, setStick] = useState(true);
@@ -46,6 +62,7 @@ export function LogView({ lines, className, wrap = true, filter }: { lines: LogL
         ) : (
           shown.map((l) => (
             <div key={l.id} className={clsx(wrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre', lineClass(l))}>
+              {timestamps && l.ts && <span className="select-text text-console-ink/50">{l.ts} </span>}
               {cleanLine(l.text)}
             </div>
           ))

@@ -20,6 +20,7 @@ import type {
   Share,
   ShareLevel,
   Stats,
+  SteamPlatform,
   SteamVars,
   Template,
   TerrariaConfig,
@@ -31,7 +32,7 @@ import type {
 export type UpdateServerBody = Omit<Partial<Server>, 'terraria' | 'steam'> & {
   terraria?: { [K in keyof TerrariaConfig]?: TerrariaConfig[K] | null };
   /** SteamCMD servers: `vars` is merged into the stored values (send only what changed). */
-  steam?: { vars?: SteamVars; updateOnStart?: boolean };
+  steam?: { vars?: SteamVars; updateOnStart?: boolean; platform?: SteamPlatform };
 } & Record<string, unknown>;
 
 /** The API keeps the schedule payload as an object ({command, keep, ...}); the UI edits just the command text. */
@@ -68,10 +69,12 @@ export const serversApi = {
 
   power: (id: string, action: PowerAction) => api.post<void>(`${s(id)}/power`, { action }),
   command: (id: string, command: string) => api.post<{ output?: string } | void>(`${s(id)}/command`, { command }),
-  logs: async (id: string, tail = 500) => {
+  /** Last log lines; `ts` is each line's timestamp (docker format) when the server sends them. */
+  logs: async (id: string, tail = 500): Promise<Array<{ text: string; ts?: string }>> => {
     const r = await api.get<unknown>(`${s(id)}/logs`, { tail });
-    if (typeof r === 'string') return r.split(/\r?\n/);
-    return asList<string>(r, 'lines', 'logs');
+    if (typeof r === 'string') return r.split(/\r?\n/).map((text) => ({ text }));
+    const times = r && typeof r === 'object' && Array.isArray((r as { times?: unknown }).times) ? (r as { times: unknown[] }).times : [];
+    return asList<string>(r, 'lines', 'logs').map((text, i) => ({ text, ts: typeof times[i] === 'string' ? (times[i] as string) : undefined }));
   },
   stats: (id: string) => api.get<Stats>(`${s(id)}/stats`),
 

@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { gamesApi } from '@/api/games';
-import type { Access, GameDefinition, GamePort, GameSummary, GameWebUi, Server, ShareLevel, User } from '@/api/types';
+import type { Access, GameDefinition, GamePort, GameSummary, GameWebUi, Server, ShareLevel, SteamPlatform, User } from '@/api/types';
 import type { TFn } from '@/i18n';
 import { canManage, canOperate } from './access';
 import { serverGame } from './games';
@@ -12,7 +12,7 @@ export function useGameDefs(enabled = true) {
   return useQuery({ queryKey: gamesKey, queryFn: gamesApi.list, staleTime: 60_000, enabled });
 }
 
-type DefLike = Partial<Pick<GameDefinition, 'ports' | 'webui' | 'workshop' | 'console' | 'resources' | 'variables' | 'profile'>> & {
+type DefLike = Partial<Pick<GameDefinition, 'ports' | 'webui' | 'workshop' | 'console' | 'resources' | 'variables' | 'profile' | 'windowsLaunch' | 'steam'>> & {
   hasWorkshop?: boolean;
   hasWebui?: boolean;
 };
@@ -35,6 +35,13 @@ export function mainPortOf(def: DefLike | undefined): GamePort | undefined {
 export const publishedPorts = (def: DefLike | undefined): GamePort[] => (def?.ports ?? []).filter((p) => p.publish !== false);
 
 export const hasWorkshop = (def: DefLike | undefined) => !!def && (!!def.workshop || def.hasWorkshop === true);
+
+/** The game can run natively on Linux or as its Windows build under Wine: the platform is chosen per server. */
+export const hasPlatformChoice = (def: DefLike | undefined) => !!def?.windowsLaunch;
+
+/** Platform a server runs on: its own choice when the game offers one, else the definition's (Linux by default). */
+export const platformOf = (def: DefLike | undefined, chosen: SteamPlatform | undefined): SteamPlatform =>
+  hasPlatformChoice(def) && chosen ? chosen : (def?.steam?.platform ?? 'linux');
 
 /** Left 4 Dead 2 integration: Maps, Controls and Plugins tabs. */
 export const isL4d2 = (def: DefLike | undefined) => def?.profile === 'l4d2';

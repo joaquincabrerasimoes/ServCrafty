@@ -170,16 +170,23 @@ export function assertSteam(server: { type: ServerType | string }, what = 'This 
 export const STEAM_IMAGE_NAME = 'servcrafty-steamcmd';
 
 /**
+ * Version of the SteamCMD executor image this panel uses. The image has its own version (it only changes
+ * when `docker/steam/` does) and is built by `.github/workflows/steam-image.yml`, not on every panel
+ * release. Keep it equal to `docker/steam/package.json` (a test checks that).
+ */
+export const STEAM_IMAGE_VERSION = '0.4.0';
+
+/**
  * `image:tag` of the SteamCMD executor image. `override` is env `SERVCRAFTY_STEAM_IMAGE` (a full image
  * reference; used verbatim when well-formed); otherwise `ghcr.io/<owner>/servcrafty-steamcmd:<tag>` where
  * owner is the owner of the update repository (the same GitHub account publishes the panel image) and tag
- * is the server's SERVCRAFTY_IMAGE_TAG when set, else the panel version.
+ * is the server's SERVCRAFTY_IMAGE_TAG when set, else STEAM_IMAGE_VERSION.
  */
-export function steamImage(opts: { override?: string | null; updateRepo: string; appVersion: string; forcedTag?: string | null }): string {
+export function steamImage(opts: { override?: string | null; updateRepo: string; forcedTag?: string | null }): string {
   const ov = opts.override?.trim();
   if (ov && /^[a-z0-9][a-z0-9._/:@-]{0,254}$/i.test(ov) && !ov.includes('..')) return ov;
   const owner = (opts.updateRepo.split('/')[0] ?? 'servcrafty').toLowerCase();
-  const tag = opts.forcedTag && TAG_RE.test(opts.forcedTag) ? opts.forcedTag : TAG_RE.test(opts.appVersion) ? opts.appVersion : 'latest';
+  const tag = opts.forcedTag && TAG_RE.test(opts.forcedTag) ? opts.forcedTag : STEAM_IMAGE_VERSION;
   return `ghcr.io/${owner}/${STEAM_IMAGE_NAME}:${tag}`;
 }
 

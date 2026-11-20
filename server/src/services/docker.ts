@@ -93,7 +93,6 @@ export function imageFor(server: ServerRow): string {
     return steamImage({
       override: process.env.SERVCRAFTY_STEAM_IMAGE,
       updateRepo: config().updateRepo,
-      appVersion: APP_VERSION,
       forcedTag: server.env?.[IMAGE_TAG_ENV],
     });
   }

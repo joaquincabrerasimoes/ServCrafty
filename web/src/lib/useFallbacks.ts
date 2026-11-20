@@ -16,7 +16,7 @@ export function useLogs(serverId: string, live: Live, tail = 300): LogLine[] {
   });
   return useMemo(() => {
     if (!offline) return live.logs;
-    const rest: LogLine[] = (data ?? []).map((text, i) => ({ id: -1 - i, text, kind: 'line' }));
+    const rest: LogLine[] = (data ?? []).map((e, i) => ({ id: -1 - i, text: e.text, kind: 'line', ts: e.ts }));
     // Keep locally echoed commands/errors visible alongside the polled tail.
     return rest.concat(live.logs.filter((l) => l.kind !== 'line'));
   }, [offline, live.logs, data]);

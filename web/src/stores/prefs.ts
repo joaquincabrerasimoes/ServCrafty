@@ -5,8 +5,11 @@ import type { Locale, ThemePref } from '@/api/types';
 interface PrefsState {
   theme: ThemePref;
   locale: Locale;
+  /** Show the timestamp (docker format) in front of every console line. */
+  logTimestamps: boolean;
   setTheme: (t: ThemePref) => void;
   setLocale: (l: Locale) => void;
+  setLogTimestamps: (v: boolean) => void;
 }
 
 const detectLocale = (): Locale => (navigator.language?.toLowerCase().startsWith('es') ? 'es' : 'en');
@@ -16,10 +19,12 @@ export const usePrefs = create<PrefsState>()(
     (set) => ({
       theme: 'system',
       locale: detectLocale(),
+      logTimestamps: false,
       setTheme: (theme) => set({ theme }),
       setLocale: (locale) => set({ locale }),
+      setLogTimestamps: (logTimestamps) => set({ logTimestamps }),
     }),
-    { name: 'servcrafty.prefs', partialize: (s) => ({ theme: s.theme, locale: s.locale }) },
+    { name: 'servcrafty.prefs', partialize: (s) => ({ theme: s.theme, locale: s.locale, logTimestamps: s.logTimestamps }) },
   ),
 );
 

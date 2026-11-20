@@ -60,8 +60,8 @@ export default async function wsRoutes(app: FastifyInstance): Promise<void> {
     }
     const subs = new Map<string, Sub>();
 
-    const onLog = (serverId: string, line: string) => {
-      if (subs.get(serverId)?.logs) send({ type: 'log', serverId, line });
+    const onLog = (serverId: string, line: string, ts: string) => {
+      if (subs.get(serverId)?.logs) send({ type: 'log', serverId, line, ts });
     };
     const onStats = (serverId: string, stats: Stats) => {
       if (subs.get(serverId)?.stats) send({ type: 'stats', serverId, stats });
@@ -121,8 +121,8 @@ export default async function wsRoutes(app: FastifyInstance): Promise<void> {
               send({ type: 'status', serverId: server.id, status: runtime.getStatus(server.id) });
               if (sub.logs) {
                 const backlog = runtime.backlog(server.id, 200);
-                const lines = backlog.length ? backlog : await runtime.getLogs(server, 200);
-                for (const line of lines) send({ type: 'log', serverId: server.id, line });
+                const entries = backlog.length ? backlog : await runtime.getLogEntries(server, 200);
+                for (const e of entries) send({ type: 'log', serverId: server.id, line: e.text, ts: e.ts });
               }
               if (sub.stats) {
                 runtime.watch(server.id, 1);

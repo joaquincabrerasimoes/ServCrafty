@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Download, Eraser, Search, WrapText } from 'lucide-react';
+import { Clock, Download, Eraser, Search, WrapText } from 'lucide-react';
 import { useT } from '@/i18n';
 import { canOperate } from '@/lib/access';
 import { serverCaps } from '@/lib/games';
@@ -7,7 +7,8 @@ import { consoleAllowed } from '@/lib/gameDefs';
 import { sendCommand } from '@/lib/sendCommand';
 import { useLogs } from '@/lib/useFallbacks';
 import { clearLogs } from '@/ws/live';
-import { CommandInput, LogView, cleanLine } from '@/components/LogView';
+import { CommandInput, LogView, lineText } from '@/components/LogView';
+import { usePrefs } from '@/stores/prefs';
 import { IconButton } from '@/components/ui';
 import { useServerCtx } from './ServerLayout';
 
@@ -18,10 +19,12 @@ export default function Console() {
   const logs = useLogs(server.id, live, 500);
   const [filter, setFilter] = useState('');
   const [wrap, setWrap] = useState(true);
+  const timestamps = usePrefs((s) => s.logTimestamps);
+  const setTimestamps = usePrefs((s) => s.setLogTimestamps);
   const op = canOperate(server.access);
 
   const download = () => {
-    const blob = new Blob([logs.map((l) => cleanLine(l.text)).join('\n')], { type: 'text/plain' });
+    const blob = new Blob([logs.map((l) => lineText(l, timestamps)).join('\n')], { type: 'text/plain' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = `${server.name}-${new Date().toISOString().slice(0, 19)}.log`;
@@ -39,6 +42,9 @@ export default function Console() {
         <IconButton label={t('console.wrap')} onClick={() => setWrap(!wrap)} className={wrap ? 'text-accent' : ''}>
           <WrapText className="h-4 w-4" />
         </IconButton>
+        <IconButton label={t('console.timestamps')} onClick={() => setTimestamps(!timestamps)} className={timestamps ? 'text-accent' : ''}>
+          <Clock className="h-4 w-4" />
+        </IconButton>
         <IconButton label={t('console.download')} onClick={download}>
           <Download className="h-4 w-4" />
         </IconButton>
@@ -46,7 +52,7 @@ export default function Console() {
           <Eraser className="h-4 w-4" />
         </IconButton>
       </div>
-      <LogView lines={logs} filter={filter} wrap={wrap} className="min-h-0 flex-1" />
+      <LogView lines={logs} filter={filter} wrap={wrap} timestamps={timestamps} className="min-h-0 flex-1" />
       {!stdin && <p className="text-xs text-muted">{t('steam.consoleNoStdinHint')}</p>}
       <CommandInput
         disabled={!op || !stdin || server.status !== 'running'}

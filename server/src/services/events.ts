@@ -18,7 +18,8 @@ export const webhookEvents = [
 export type WebhookEvent = (typeof webhookEvents)[number];
 
 export interface BusEvents {
-  log: [serverId: string, line: string];
+  /** `ts`: when the line was written, in docker's format (2026-11-20T07:46:00.589825612Z). */
+  log: [serverId: string, line: string, ts: string];
   status: [serverId: string, status: ServerStatus];
   stats: [serverId: string, stats: Stats];
   notify: [serverId: string, event: WebhookEvent, data: Record<string, unknown>];

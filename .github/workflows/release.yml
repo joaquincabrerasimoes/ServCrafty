@@ -1,6 +1,8 @@
 name: Release
 
-# Push a tag vX.Y.Z (created by scripts/release.sh) to build the image and publish the release.
+# Push a tag vX.Y.Z (created by scripts/release.sh) to build the panel image and publish the release.
+# The SteamCMD image is built by steam-image.yml when docker/steam/ changes; this workflow only builds it
+# if the version the panel expects is missing from the registry.
 on:
   push:
     tags:
@@ -40,6 +42,7 @@ jobs:
             echo "prerelease=$prerelease"
             echo "image=ghcr.io/$owner/servcrafty"
             echo "steam_image=ghcr.io/$owner/servcrafty-steamcmd"
+            echo "steam_version=$(node -p "require('./docker/steam/package.json').version")"
           } >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-buildx-action@v3
@@ -67,7 +70,19 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Build and push SteamCMD image
+      - name: Is the SteamCMD image published?
+        id: steam
+        run: |
+          if docker buildx imagetools inspect "${{ steps.meta.outputs.steam_image }}:${{ steps.meta.outputs.steam_version }}" >/dev/null 2>&1; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+            echo "SteamCMD image ${{ steps.meta.outputs.steam_version }} already published, not rebuilding"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Fallback only: normally steam-image.yml has built it when docker/steam/ changed.
+      - name: Build and push SteamCMD image (missing)
+        if: steps.steam.outputs.present != 'true'
         uses: docker/build-push-action@v6
         with:
           context: docker/steam
@@ -75,11 +90,11 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: |
-            ${{ steps.meta.outputs.steam_image }}:${{ steps.meta.outputs.version }}
+            ${{ steps.meta.outputs.steam_image }}:${{ steps.meta.outputs.steam_version }}
             ${{ steps.meta.outputs.prerelease == 'false' && format('{0}:latest', steps.meta.outputs.steam_image) || '' }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
-            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
+            org.opencontainers.image.version=${{ steps.meta.outputs.steam_version }}
             org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha,scope=steamcmd
           cache-to: type=gha,mode=max,scope=steamcmd

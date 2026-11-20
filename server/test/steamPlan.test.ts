@@ -5,15 +5,17 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { AppError } from '../src/lib/errors.js';
 import { parseDefinition, type GameDefinition } from '../src/lib/gameDefinition.js';
-import { capabilitiesOf, gameOf, steamImage } from '../src/lib/games.js';
+import { capabilitiesOf, gameOf, STEAM_IMAGE_VERSION, steamImage } from '../src/lib/games.js';
 import { steamContainerSpec } from '../src/lib/steamContainer.js';
 import { cleanSteamLine, parseSteamLine, replaySteamLog, steamMatchers } from '../src/lib/steamLog.js';
 import {
   buildPlan,
+  effectivePlatform,
   isTruthy,
   mergeSteamConfig,
   normalizeSteamConfig,
   normalizeSteamVars,
+  platformChoice,
   publicSteamConfig,
   publishedPorts,
   renderWebuiAuth,
@@ -46,11 +48,11 @@ test('gameOf/capabilities for STEAMCMD', () => {
 });
 
 test('steam image: owner from the update repo, version tag, overrides', () => {
-  assert.equal(steamImage({ updateRepo: 'JoaquinX/ServCrafty', appVersion: '0.3.0' }), 'ghcr.io/joaquinx/servcrafty-steamcmd:0.3.0');
-  assert.equal(steamImage({ updateRepo: 'a/b', appVersion: '0.3.0', forcedTag: 'latest' }), 'ghcr.io/a/servcrafty-steamcmd:latest');
-  assert.equal(steamImage({ updateRepo: 'a/b', appVersion: '0.3.0', forcedTag: 'bad tag;x' }), 'ghcr.io/a/servcrafty-steamcmd:0.3.0');
-  assert.equal(steamImage({ updateRepo: 'a/b', appVersion: '0.3.0', override: 'registry.local/steam:dev' }), 'registry.local/steam:dev');
-  assert.equal(steamImage({ updateRepo: 'a/b', appVersion: '0.3.0', override: 'bad image;rm' }), 'ghcr.io/a/servcrafty-steamcmd:0.3.0');
+  assert.equal(steamImage({ updateRepo: 'JoaquinX/ServCrafty' }), `ghcr.io/joaquinx/servcrafty-steamcmd:${STEAM_IMAGE_VERSION}`);
+  assert.equal(steamImage({ updateRepo: 'a/b', forcedTag: 'latest' }), 'ghcr.io/a/servcrafty-steamcmd:latest');
+  assert.equal(steamImage({ updateRepo: 'a/b', forcedTag: 'bad tag;x' }), `ghcr.io/a/servcrafty-steamcmd:${STEAM_IMAGE_VERSION}`);
+  assert.equal(steamImage({ updateRepo: 'a/b', override: 'registry.local/steam:dev' }), 'registry.local/steam:dev');
+  assert.equal(steamImage({ updateRepo: 'a/b', override: 'bad image;rm' }), `ghcr.io/a/servcrafty-steamcmd:${STEAM_IMAGE_VERSION}`);
 });
 
 test('vars: defaults filled, coercion, unknown keys rejected', () => {
@@ -370,4 +372,38 @@ test('GET /games item: full definition without scripts or web UI credentials', a
   assert.equal(s.builtin, true);
   assert.equal(s.hasWorkshop, true);
   assert.equal(s.hasWebui, true);
+});
+
+test('steam image version matches docker/steam/package.json', () => {
+  const pkg = JSON.parse(readFileSync(path.join(here, '..', '..', 'docker', 'steam', 'package.json'), 'utf8')) as { version: string };
+  assert.equal(STEAM_IMAGE_VERSION, pkg.version, 'bump STEAM_IMAGE_VERSION (server/src/lib/games.ts) together with docker/steam/package.json');
+});
+
+test('platform choice: only definitions with a Windows launch; plan follows the server choice', () => {
+  const both = parseDefinition({
+    ...JSON.parse(JSON.stringify(def)),
+    windowsLaunch: { cwd: '', command: ['server.exe', '-port', '{{ports.game}}'], env: {} },
+  });
+  assert.equal(platformChoice(both), true);
+  assert.equal(platformChoice(def), false);
+  assert.equal(effectivePlatform(both, {}), 'linux');
+  assert.equal(effectivePlatform(both, { platform: 'windows' }), 'windows');
+  assert.equal(effectivePlatform(def, { platform: 'windows' }), 'linux', 'ignored without a Windows launch');
+
+  const cfg = normalizeSteamConfig(both, { gameId: both.id, vars: {} });
+  const input = { serverId: 's', serverName: 'n', mainHostPort: 27015, extraPorts: { query: 27016 } };
+  const lin = buildPlan(both, { ...input, steam: cfg }).plan;
+  assert.equal(lin.steam.platform, 'linux');
+  assert.notEqual(lin.launch.argv[0], 'server.exe');
+  const merged = mergeSteamConfig(both, cfg, { platform: 'windows' });
+  assert.equal(merged.platform, 'windows');
+  assert.equal(merged.validateNext, true, 'a platform change downloads the other build');
+  const win = buildPlan(both, { ...input, steam: merged }).plan;
+  assert.equal(win.steam.platform, 'windows');
+  assert.deepEqual(win.launch.argv.slice(0, 1), ['server.exe']);
+  // same platform again: nothing to re-download
+  assert.equal(mergeSteamConfig(both, { ...merged, validateNext: false }, { platform: 'windows' }).validateNext, false);
+
+  assert.throws(() => mergeSteamConfig(def, normalizeSteamConfig(def, { gameId: def.id, vars: {} }), { platform: 'windows' }), AppError);
+  assert.throws(() => normalizeSteamConfig(def, { gameId: def.id, vars: {}, platform: 'windows' }), AppError);
 });

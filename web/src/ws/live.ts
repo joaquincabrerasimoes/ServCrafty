@@ -6,7 +6,12 @@ export interface LogLine {
   id: number;
   text: string;
   kind: 'line' | 'echo' | 'error';
+  /** When the line was written (docker format, nanoseconds, UTC). */
+  ts?: string;
 }
+
+/** Now, in the format of the server's timestamps (milliseconds padded to nanoseconds). */
+export const nowStamp = () => new Date().toISOString().replace(/Z$/, '000000Z');
 
 export interface Sample {
   t: number;
@@ -129,7 +134,7 @@ class LiveSocket {
     }
     switch (msg.type) {
       case 'log':
-        queueLine(msg.serverId, { id: ++lineSeq, text: msg.line, kind: 'line' });
+        queueLine(msg.serverId, { id: ++lineSeq, text: msg.line, kind: 'line', ts: msg.ts ?? nowStamp() });
         break;
       case 'stats': {
         const st = msg.stats;
@@ -153,8 +158,8 @@ class LiveSocket {
         }));
         break;
       case 'error':
-        if (msg.serverId) queueLine(msg.serverId, { id: ++lineSeq, text: msg.message, kind: 'error' });
-        else for (const id of this.refs.keys()) queueLine(id, { id: ++lineSeq, text: msg.message, kind: 'error' });
+        if (msg.serverId) queueLine(msg.serverId, { id: ++lineSeq, text: msg.message, kind: 'error', ts: nowStamp() });
+        else for (const id of this.refs.keys()) queueLine(id, { id: ++lineSeq, text: msg.message, kind: 'error', ts: nowStamp() });
         break;
     }
   }
@@ -198,7 +203,7 @@ class LiveSocket {
 
   /** Allows REST fallbacks to echo into the same log. */
   note(serverId: string, text: string, kind: LogLine['kind'] = 'echo') {
-    queueLine(serverId, { id: ++lineSeq, text, kind });
+    queueLine(serverId, { id: ++lineSeq, text, kind, ts: nowStamp() });
   }
 
   reset() {

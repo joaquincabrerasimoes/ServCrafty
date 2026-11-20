@@ -21,7 +21,11 @@ export interface PluginRule {
   to: string;
 }
 
+export type PluginPlatform = 'linux' | 'windows';
+
 export interface PluginSource {
+  /** Only installed on this platform of the server (Linux native or Windows under Wine); absent = both. */
+  platform?: PluginPlatform;
   /** Fixed download address, or `latest`: `index` returns the current file name, found under `base`. */
   url?: string;
   latest?: { index: string; base: string };
@@ -59,7 +63,10 @@ export const PLUGIN_CATALOG: PluginDef[] = [
     homepage: 'https://www.sourcemm.net/',
     category: 'base',
     requires: [],
-    sources: [{ latest: { index: `${MM_BASE}mmsource-latest-linux`, base: MM_BASE }, format: 'tar.gz', rules: [{ from: '', to: '' }] }],
+    sources: [
+      { platform: 'linux', latest: { index: `${MM_BASE}mmsource-latest-linux`, base: MM_BASE }, format: 'tar.gz', rules: [{ from: '', to: '' }] },
+      { platform: 'windows', latest: { index: `${MM_BASE}mmsource-latest-windows`, base: MM_BASE }, format: 'zip', rules: [{ from: '', to: '' }] },
+    ],
     settings: [],
     configFile: SHARED_CONFIG,
   },
@@ -72,8 +79,16 @@ export const PLUGIN_CATALOG: PluginDef[] = [
     requires: ['metamod'],
     sources: [
       {
+        platform: 'linux',
         latest: { index: `${SM_BASE}sourcemod-latest-linux`, base: SM_BASE },
         format: 'tar.gz',
+        rules: [{ from: '', to: '' }],
+        preserve: ['addons/sourcemod/configs/', 'cfg/sourcemod/'],
+      },
+      {
+        platform: 'windows',
+        latest: { index: `${SM_BASE}sourcemod-latest-windows`, base: SM_BASE },
+        format: 'zip',
         rules: [{ from: '', to: '' }],
         preserve: ['addons/sourcemod/configs/', 'cfg/sourcemod/'],
       },
@@ -90,10 +105,20 @@ export const PLUGIN_CATALOG: PluginDef[] = [
     requires: [],
     sources: [
       {
+        platform: 'linux',
         url: 'https://github.com/lakwsh/l4dtoolz/releases/download/2.5.1/l4dtoolz-2.5.1-main.zip',
         format: 'zip',
         rules: [
           { from: 'l4dtoolz.so', to: 'addons/l4dtoolz.so' },
+          { from: 'l4dtoolz.vdf', to: 'addons/l4dtoolz.vdf' },
+        ],
+      },
+      {
+        platform: 'windows',
+        url: 'https://github.com/lakwsh/l4dtoolz/releases/download/2.5.1/l4dtoolz-2.5.1-main.zip',
+        format: 'zip',
+        rules: [
+          { from: 'l4dtoolz.dll', to: 'addons/l4dtoolz.dll' },
           { from: 'l4dtoolz.vdf', to: 'addons/l4dtoolz.vdf' },
         ],
       },
@@ -169,6 +194,9 @@ export const PLUGIN_CATALOG: PluginDef[] = [
     configFile: SHARED_CONFIG,
   },
 ];
+
+/** The downloads of a plugin for a platform. */
+export const sourcesFor = (p: PluginDef, platform: PluginPlatform): PluginSource[] => p.sources.filter((s) => !s.platform || s.platform === platform);
 
 export const pluginById = (id: string): PluginDef | undefined => PLUGIN_CATALOG.find((p) => p.id === id);
 

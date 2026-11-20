@@ -18,7 +18,8 @@ import {
   STATUS_END,
   type StatusInfo,
 } from '../lib/l4d2/control.js';
-import { PLUGIN_CATALOG, pluginById, withDependencies, type PluginDef } from '../lib/l4d2/pluginCatalog.js';
+import { PLUGIN_CATALOG, pluginById, sourcesFor, withDependencies, type PluginDef, type PluginPlatform } from '../lib/l4d2/pluginCatalog.js';
+import { effectivePlatform } from '../lib/steamPlan.js';
 import {
   installSource,
   loadState,
@@ -180,7 +181,13 @@ async function requireGameFiles(server: ServerRow): Promise<string> {
   return root;
 }
 
-const publicPlugin = (p: PluginDef, rec: Awaited<ReturnType<typeof loadState>>['plugins'][string] | undefined, state: Awaited<ReturnType<typeof loadState>>) => ({
+type PluginState = Awaited<ReturnType<typeof loadState>>;
+
+/** Platform the server runs on (Linux native or the Windows build under Wine). */
+const platformOf = (server: ServerRow, def: GameDefinition): PluginPlatform => effectivePlatform(def, server.steam ?? {});
+const recordPlatform = (rec: PluginState['plugins'][string]): PluginPlatform => rec.platform ?? 'linux';
+
+const publicPlugin = (p: PluginDef, rec: PluginState['plugins'][string] | undefined, state: PluginState, platform: PluginPlatform) => ({
   id: p.id,
   name: p.name,
   description: p.description,
@@ -190,15 +197,19 @@ const publicPlugin = (p: PluginDef, rec: Awaited<ReturnType<typeof loadState>>['
   missingRequires: p.requires.filter((r) => !state.plugins[r]),
   requiredBy: PLUGIN_CATALOG.filter((o) => o.requires.includes(p.id) && state.plugins[o.id]).map((o) => o.id),
   settings: p.settings.map((s) => ({ ...s, value: rec?.settings[s.key] ?? s.default })),
-  installed: rec ? { version: rec.version, installedAt: rec.installedAt, files: rec.files.length } : null,
+  installed: rec ? { version: rec.version, installedAt: rec.installedAt, files: rec.files.length, platform: recordPlatform(rec) } : null,
+  /** Installed for the other platform: install it again to get the files for the current one. */
+  platformMismatch: !!rec && recordPlatform(rec) !== platform,
 });
 
 export async function pluginsOverview(server: ServerRow) {
-  l4d2Def(server);
+  const def = l4d2Def(server);
+  const platform = platformOf(server, def);
   const state = await loadState(stateFile(server.id));
   return {
     gameInstalled: await installed(l4dRoot(server.id)),
-    plugins: PLUGIN_CATALOG.map((p) => publicPlugin(p, state.plugins[p.id], state)),
+    platform,
+    plugins: PLUGIN_CATALOG.map((p) => publicPlugin(p, state.plugins[p.id], state, platform)),
   };
 }
 
@@ -210,7 +221,7 @@ async function applyLive(server: ServerRow, values: SettingValues): Promise<void
 
 /** Install a plugin together with everything it needs; installing an installed plugin updates it. */
 export async function installPlugin(server: ServerRow, id: string, settingsInput?: unknown, deps: InstallDeps = defaultDeps) {
-  l4d2Def(server);
+  const platform = platformOf(server, l4d2Def(server));
   const target = pluginById(id);
   if (!target) throw badRequest('Unknown plugin', 'unknown_plugin');
   const root = await requireGameFiles(server);
@@ -219,10 +230,11 @@ export async function installPlugin(server: ServerRow, id: string, settingsInput
     const done: string[] = [];
     for (const p of withDependencies(id)) {
       const isTarget = p.id === id;
-      if (state.plugins[p.id] && !isTarget) continue;
+      const have = state.plugins[p.id];
+      if (have && !isTarget && recordPlatform(have) === platform) continue;
       const files: string[] = [];
       let version: string | null = null;
-      for (const source of p.sources) {
+      for (const source of sourcesFor(p, platform)) {
         const r = await installSource(root, source, deps);
         files.push(...r.files);
         version ??= r.version;
@@ -232,7 +244,7 @@ export async function installPlugin(server: ServerRow, id: string, settingsInput
       await writeSettings(root, p, settings);
       // Files of an older install that the new version no longer ships.
       if (prev) await removeFiles(root, prev.files.filter((f) => !files.includes(f)));
-      state.plugins[p.id] = { version, installedAt: new Date().toISOString(), files: [...new Set(files)], settings };
+      state.plugins[p.id] = { platform, version, installedAt: new Date().toISOString(), files: [...new Set(files)], settings };
       await saveState(stateFile(server.id), state);
       done.push(p.id);
     }

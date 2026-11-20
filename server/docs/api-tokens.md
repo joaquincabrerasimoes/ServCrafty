@@ -516,7 +516,7 @@ Messages you receive:
 
 ```json
 { "type": "status", "serverId": "<uuid>", "status": "running" }
-{ "type": "log", "serverId": "<uuid>", "line": "[12:00:01] [Server thread/INFO]: Done" }
+{ "type": "log", "serverId": "<uuid>", "line": "[12:00:01] [Server thread/INFO]: Done", "ts": "2026-11-20T07:46:00.589825612Z" }
 { "type": "stats", "serverId": "<uuid>", "stats": { "status": "running", "cpuPercent": 3.2, "memory": { "usedMb": 1200, "limitMb": 2048 } } }
 { "type": "command_result", "serverId": "<uuid>", "command": "list", "output": "..." }
 { "type": "error", "serverId": "<uuid>", "message": "Operator access required to send commands" }

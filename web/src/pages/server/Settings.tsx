@@ -18,7 +18,8 @@ import { TerrariaWorlds, useTerrariaWorlds } from './TerrariaWorlds';
 import { cleanVariables, diffSteamVars, isGenerated, steamFromVars, validateSteam, type SteamErrors, type SteamForm } from '../create/steamForm';
 import { CustomVariableField, SteamVariablesForm } from '../create/SteamVariablesForm';
 import { L4d2MapPicker } from '@/components/L4d2MapPicker';
-import { isL4d2 } from '@/lib/gameDefs';
+import { hasPlatformChoice, isL4d2, platformOf } from '@/lib/gameDefs';
+import type { SteamPlatform } from '@/api/types';
 import { Note } from '../create/TerrariaConfigStep';
 import { SteamPorts } from './SteamPorts';
 import { ServerIconCard } from './ServerIconCard';
@@ -70,6 +71,9 @@ export default function ServerSettings() {
     if (def && steamVals === null) setSteamVals(steamFromVars(cleanVariables(def.variables), server.steam?.vars));
   }, [def, steamVals, server.steam?.vars]);
   const [updateOnStart, setUpdateOnStart] = useState(server.steam?.updateOnStart ?? true);
+  const savedPlatform = platformOf(def, server.steam?.platform);
+  const [platform, setPlatform] = useState<SteamPlatform | null>(null);
+  const chosenPlatform = platform ?? savedPlatform;
   const [steamApiErrors, setSteamApiErrors] = useState<SteamErrors>({});
   // Secrets the API blanked for this user (below manager): shown as "hidden", never overwritten with ''.
   const hiddenSecrets = useMemo(
@@ -128,7 +132,11 @@ export default function ServerSettings() {
     const steamPatch = steam
       ? (() => {
           const vars = steamVals ? diffSteamVars(steamVars, steamVals, steamInitial, hiddenSecrets) : {};
-          return { ...(Object.keys(vars).length ? { vars } : {}), updateOnStart };
+          return {
+            ...(Object.keys(vars).length ? { vars } : {}),
+            updateOnStart,
+            ...(hasPlatformChoice(def) && chosenPlatform !== savedPlatform ? { platform: chosenPlatform } : {}),
+          };
         })()
       : undefined;
     try {
@@ -319,6 +327,20 @@ export default function ServerSettings() {
               }
               footer={
                 <div className="space-y-4">
+                  {hasPlatformChoice(def) && (
+                    <Field label={t('steam.platform')} hint={t(chosenPlatform === 'windows' ? 'steam.platformHintWindows' : 'steam.platformHintLinux')}>
+                      <select
+                        className="input"
+                        value={chosenPlatform}
+                        disabled={!canManage(server.access)}
+                        onChange={(e) => setPlatform(e.target.value as SteamPlatform)}
+                      >
+                        <option value="linux">{t('steam.platformLinux')}</option>
+                        <option value="windows">{t('steam.platformWindows')}</option>
+                      </select>
+                      {chosenPlatform !== savedPlatform && <p className="hint text-warn">{t('steam.platformChangeNote')}</p>}
+                    </Field>
+                  )}
                   <div>
                     <Toggle checked={updateOnStart} onChange={setUpdateOnStart} label={t('steam.updateOnStart')} />
                     <p className="hint">{t('steam.updateOnStartHint')}</p>

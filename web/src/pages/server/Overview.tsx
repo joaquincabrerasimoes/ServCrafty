@@ -10,12 +10,13 @@ import { canOperate } from '@/lib/access';
 import { serverCaps } from '@/lib/games';
 import { consoleAllowed } from '@/lib/gameDefs';
 import { ingestStats } from '@/ws/live';
-import { Meter } from '@/components/ui';
+import { Meter, Toggle } from '@/components/ui';
 import { formatNumber, formatUptime } from '@/lib/format';
 import { sendCommand } from '@/lib/sendCommand';
 import { useLogs, useStats } from '@/lib/useFallbacks';
 import { MAX_SAMPLES, type Sample } from '@/ws/live';
 import { CommandInput, LogView } from '@/components/LogView';
+import { usePrefs } from '@/stores/prefs';
 import { useServerCtx } from './ServerLayout';
 
 /* The layout follows the vanilla dedicated-server window: Stats and Players on the left,
@@ -218,6 +219,8 @@ export default function Overview() {
   const { server, live, def } = useServerCtx();
   const stats = useStats(server.id, live);
   const logs = useLogs(server.id, live);
+  const timestamps = usePrefs((s) => s.logTimestamps);
+  const setTimestamps = usePrefs((s) => s.setLogTimestamps);
   const op = canOperate(server.access);
   const caps = serverCaps(server);
   const stdin = !caps.hasSteamConfig || consoleAllowed(def);
@@ -233,14 +236,20 @@ export default function Overview() {
       <section className="gui-frame flex min-w-0 flex-col lg:min-h-0 lg:[contain:size]">
         <div className="mb-2 flex items-center justify-between gap-2">
           <h2 className="gui-legend !mb-0">{t('overview.log')}</h2>
-          {live.conn !== 'open' && (
-            <span className="inline-flex items-center gap-1.5 text-xs text-warn">
-              <WifiOff className="h-3.5 w-3.5" />
-              {live.conn === 'connecting' ? t('console.connecting') : t('console.offline')}
-            </span>
-          )}
+          <div className="ml-auto flex items-center gap-4">
+            {live.conn !== 'open' && (
+              <span className="inline-flex items-center gap-1.5 text-xs text-warn">
+                <WifiOff className="h-3.5 w-3.5" />
+                {live.conn === 'connecting' ? t('console.connecting') : t('console.offline')}
+              </span>
+            )}
+            <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-muted">
+              <Toggle checked={timestamps} onChange={setTimestamps} ariaLabel={t('console.timestamps')} />
+              {t('console.timestamps')}
+            </label>
+          </div>
         </div>
-        <LogView lines={logs} className="h-[22rem] sm:h-[28rem] lg:h-auto lg:min-h-0 lg:flex-1" />
+        <LogView lines={logs} timestamps={timestamps} className="h-[22rem] sm:h-[28rem] lg:h-auto lg:min-h-0 lg:flex-1" />
         <div className="mt-2">
           <CommandInput
             disabled={!op || !stdin || server.status !== 'running'}

@@ -50,6 +50,8 @@ docker run --rm -it -v /tmp/sc/data:/data -v /tmp/sc/plan.json:/servcrafty/plan.
 
 Build locally: `docker build -t servcrafty-steamcmd docker/steam`.
 
+**Versioning.** This image has its own version (`package.json` `version`, mirrored by `STEAM_IMAGE_VERSION` in `server/src/lib/games.ts`; a server test keeps them equal). `.github/workflows/steam-image.yml` builds and pushes `:<version>` and `:latest` when a push to `main` changes `docker/steam/**`, or on demand; panel releases do not rebuild it. Any change here: bump both versions.
+
 ## Tests
 
 No Docker or SteamCMD needed:

@@ -133,6 +133,7 @@ function PluginCard({
       <p className="text-sm text-muted">{plugin.description}</p>
       <div className="space-y-1 text-xs text-muted">
         {inst && <p>{t('l4d2.plugins.installedAt', { date: formatDate(inst.installedAt), n: inst.files })}</p>}
+        {inst && plugin.platformMismatch && <p className="font-medium text-warn">{t('l4d2.plugins.platformMismatch', { platform: inst.platform === 'windows' ? 'Windows' : 'Linux' })}</p>}
         {plugin.requires.length > 0 && (
           <p>
             {t('l4d2.plugins.requires')}{' '}
@@ -168,7 +169,7 @@ function PluginCard({
           onClick={() => onInstall(plugin)}
           icon={inst ? <RefreshCw className="h-4 w-4" /> : <Download className="h-4 w-4" />}
         >
-          {inst ? t('l4d2.plugins.update') : t('l4d2.plugins.install')}
+          {inst ? t(plugin.platformMismatch ? 'l4d2.plugins.reinstall' : 'l4d2.plugins.update') : t('l4d2.plugins.install')}
         </Button>
       </div>
       {inst && plugin.settings.length > 0 && <PluginSettingsForm key={inst.installedAt} serverId={serverId} plugin={plugin} disabled={!!busy} />}

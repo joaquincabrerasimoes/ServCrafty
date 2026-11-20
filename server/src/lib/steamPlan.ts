@@ -32,6 +32,22 @@ export interface SteamConfig {
   validateNext: boolean;
   /** Next start deletes the downloaded Workshop content first (POST /servers/:id/workshop/refresh). */
   workshopRefresh?: boolean;
+  /**
+   * Platform the game runs on. Only honoured when the definition has `windowsLaunch` (Linux native or
+   * Windows build under Wine); otherwise the definition's `steam.platform` applies.
+   */
+  platform?: SteamPlatform;
+}
+
+export type SteamPlatform = 'linux' | 'windows';
+export const STEAM_PLATFORMS: readonly SteamPlatform[] = ['linux', 'windows'];
+
+/** True when the definition can run on either platform (it ships a Windows launch next to the Linux one). */
+export const platformChoice = (def: Pick<GameDefinition, 'windowsLaunch'>): boolean => !!def.windowsLaunch;
+
+/** The platform a server runs on: its own choice when the definition allows one, else the definition's. */
+export function effectivePlatform(def: Pick<GameDefinition, 'steam' | 'windowsLaunch'>, cfg: Pick<SteamConfig, 'platform'>): SteamPlatform {
+  return platformChoice(def) && cfg.platform ? cfg.platform : def.steam.platform;
 }
 
 export const WORKSHOP_ID_RE = /^[1-9][0-9]{0,19}$/;
@@ -58,6 +74,7 @@ export const steamInputSchema = z
     vars: z.record(z.string().max(64), varValueSchema).default({}),
     updateOnStart: z.boolean().optional(),
     workshop: z.array(workshopItemSchema).max(MAX_WORKSHOP_ITEMS).optional(),
+    platform: z.enum(['linux', 'windows']).optional(),
   })
   .strict();
 export type SteamInput = z.input<typeof steamInputSchema>;
@@ -68,6 +85,7 @@ export const steamPatchSchema = z
     gameId: z.string().max(64).optional(),
     vars: z.record(z.string().max(64), varValueSchema.nullable()).optional(),
     updateOnStart: z.boolean().optional(),
+    platform: z.enum(['linux', 'windows']).optional(),
   })
   .strict();
 export type SteamPatch = z.infer<typeof steamPatchSchema>;
@@ -194,7 +212,9 @@ export function normalizeSteamConfig(def: GameDefinition, input: SteamInput): St
   if (p.gameId !== def.id) throw invalidSteamConfig([{ path: 'gameId', message: 'does not match the definition' }]);
   const workshop = def.workshop ? dedupeWorkshop(p.workshop ?? []) : [];
   if (!def.workshop && p.workshop?.length) throw invalidSteamConfig([{ path: 'workshop', message: 'this game has no Workshop support' }]);
+  if (p.platform !== undefined && !platformChoice(def)) throw invalidSteamConfig([{ path: 'platform', message: 'this game has a single platform' }]);
   return {
+    ...(p.platform ? { platform: p.platform } : {}),
     gameId: def.id,
     vars: normalizeSteamVars(def, p.vars, { generate: true }),
     workshop,
@@ -209,6 +229,9 @@ export function mergeSteamConfig(def: GameDefinition, current: SteamConfig, patc
     throw new AppError(400, 'game_change_unsupported', 'A server cannot be switched to another game definition');
   }
   // Values of variables the definition no longer has are dropped silently; unknown keys in the patch are errors.
+  if (patch.platform !== undefined && !platformChoice(def)) throw invalidSteamConfig([{ path: 'platform', message: 'this game has a single platform' }]);
+  // A platform change makes the next start download the other build (an update run with validation), whatever "update on start" says.
+  const platformChanged = patch.platform !== undefined && patch.platform !== effectivePlatform(def, current);
   const known = new Set(def.variables.map((v) => v.key));
   const base: Record<string, SteamVarValue | null> = {};
   for (const [k, v] of Object.entries(current.vars ?? {})) if (known.has(k)) base[k] = v;
@@ -220,7 +243,8 @@ export function mergeSteamConfig(def: GameDefinition, current: SteamConfig, patc
     // An empty (or reset) generated variable gets a fresh value.
     vars: normalizeSteamVars(def, merged as Record<string, SteamVarValue>, { generate: true }),
     updateOnStart: patch.updateOnStart ?? current.updateOnStart ?? true,
-    validateNext: current.validateNext ?? false,
+    validateNext: (current.validateNext ?? false) || platformChanged,
+    ...(patch.platform !== undefined ? { platform: patch.platform } : {}),
   };
 }
 
@@ -487,13 +511,15 @@ export function buildPlan(def: GameDefinition, input: PlanInput): { plan: SteamP
   const r = (s: string) => renderTemplate(s, values);
   const known = new Map(def.variables.map((v) => [v.key, v]));
 
+  const platform = effectivePlatform(def, input.steam);
+  const launch = platform === 'windows' && def.windowsLaunch ? def.windowsLaunch : def.launch;
   const argv: string[] = [];
-  for (const el of def.launch.command) {
+  for (const el of launch.command) {
     const arg = renderArg(el, vars, r);
     if (arg !== null) argv.push(arg);
   }
   const env: Record<string, string> = {};
-  for (const [k, v] of Object.entries(def.launch.env)) env[k] = r(v);
+  for (const [k, v] of Object.entries(launch.env)) env[k] = r(v);
 
   const files: PlanFile[] = def.files.map((f): PlanFile => {
     if (f.type === 'template') return { type: 'template', path: f.path, when: f.when, content: r(f.content) };
@@ -522,7 +548,7 @@ export function buildPlan(def: GameDefinition, input: PlanInput): { plan: SteamP
       appId: def.steam.appId,
       branch: def.steam.branch,
       betaPassword: def.steam.betaPassword,
-      platform: def.steam.platform,
+      platform,
       login: def.steam.login,
       validate,
       // "validate" implies an update run; otherwise follow the server's setting.
@@ -532,7 +558,7 @@ export function buildPlan(def: GameDefinition, input: PlanInput): { plan: SteamP
       ? { appId: def.workshop.appId, ids: workshopIds, install: def.workshop.install, dir: def.workshop.dir ?? null, legacyAs: def.workshop.legacyAs ?? null }
       : null,
     files,
-    launch: { cwd: def.launch.cwd, argv, env },
+    launch: { cwd: launch.cwd, argv, env },
     stop: {
       type: def.stop.type,
       signal: def.stop.signal,

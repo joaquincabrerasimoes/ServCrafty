@@ -81,7 +81,7 @@ export async function installSource(root: string, source: PluginSource, deps: In
     const name = (await deps.fetchText(source.latest.index)).trim();
     if (!/^[\w.+-]{3,120}$/.test(name)) throw badRequest('Unexpected answer from the download server', 'plugin_download_failed');
     url = source.latest.base + name;
-    version = name.replace(/-linux\.tar\.gz$|\.tar\.gz$|\.zip$/i, '');
+    version = name.replace(/-(linux|windows)(\.tar\.gz|\.zip)$|\.tar\.gz$|\.zip$/i, '');
   }
   if (!url?.startsWith('https://')) throw badRequest('Plugin download must use https', 'plugin_download_failed');
 
@@ -201,6 +201,8 @@ export const settingCommands = (values: SettingValues): string[] => Object.entri
 // State
 
 export interface PluginRecord {
+  /** Platform the files were installed for (records of older versions have none: Linux). */
+  platform?: 'linux' | 'windows';
   version: string | null;
   installedAt: string;
   files: string[];

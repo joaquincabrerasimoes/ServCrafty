@@ -6,7 +6,7 @@ import path from 'node:path';
 import test from 'node:test';
 import archiver from 'archiver';
 import * as tar from 'tar';
-import { PLUGIN_CATALOG, pluginById, withDependencies } from '../src/lib/l4d2/pluginCatalog.js';
+import { PLUGIN_CATALOG, pluginById, sourcesFor, withDependencies } from '../src/lib/l4d2/pluginCatalog.js';
 import {
   applyCvars,
   installSource,
@@ -237,4 +237,19 @@ test('state file: round trip, missing or corrupt starts empty', async () => {
   } finally {
     await fsp.rm(dir, { recursive: true, force: true });
   }
+});
+
+test('every plugin has downloads for both platforms; windows builds use .dll / zip archives', () => {
+  for (const p of PLUGIN_CATALOG) {
+    for (const platform of ['linux', 'windows'] as const) {
+      assert.ok(sourcesFor(p, platform).length > 0, `${p.id} has no ${platform} download`);
+    }
+  }
+  const sm = pluginById('sourcemod')!;
+  assert.equal(sourcesFor(sm, 'windows')[0]!.format, 'zip');
+  assert.equal(sourcesFor(sm, 'linux')[0]!.format, 'tar.gz');
+  assert.ok(sourcesFor(pluginById('l4dtoolz')!, 'windows').some((s) => s.rules.some((r) => r.to.endsWith('.dll'))));
+  assert.ok(!sourcesFor(pluginById('l4dtoolz')!, 'windows').some((s) => s.rules.some((r) => r.to.endsWith('.so'))));
+  // platform-independent plugins (sourcemod scripts) are shared
+  assert.equal(sourcesFor(pluginById('l4d2_rmc')!, 'windows').length, sourcesFor(pluginById('l4d2_rmc')!, 'linux').length);
 });

@@ -7398,6 +7398,14 @@
             "type": "boolean",
             "default": true
           },
+          "platform": {
+            "type": "string",
+            "enum": [
+              "linux",
+              "windows"
+            ],
+            "description": "Only for games whose definition has `windowsLaunch` (for example Left 4 Dead 2): run the native Linux build or the Windows build under Wine. Other games answer 400 `invalid_steam_config`."
+          },
           "workshop": {
             "type": "array",
             "items": {
@@ -7439,6 +7447,14 @@
           },
           "updateOnStart": {
             "type": "boolean"
+          },
+          "platform": {
+            "type": "string",
+            "enum": [
+              "linux",
+              "windows"
+            ],
+            "description": "Games with a Windows launch only. Changing it makes the next start download the other build."
           }
         },
         "additionalProperties": false
@@ -7876,6 +7892,13 @@
             "items": {
               "type": "string"
             }
+          },
+          "times": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Timestamp of each line (`times[i]` belongs to `lines[i]`), in the format of `docker logs -t`: `2026-11-20T07:46:00.589825612Z` (UTC, nanoseconds)."
           }
         },
         "required": [

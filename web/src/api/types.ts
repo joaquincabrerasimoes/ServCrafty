@@ -267,7 +267,7 @@ export interface CreateServerBody {
   /** Terraria servers only. */
   terraria?: Partial<TerrariaConfig>;
   /** SteamCMD servers only (type STEAMCMD). */
-  steam?: { gameId: string; vars: SteamVars; updateOnStart?: boolean };
+  steam?: { gameId: string; vars: SteamVars; updateOnStart?: boolean; platform?: SteamPlatform };
   eula: true;
 }
 
@@ -502,7 +502,7 @@ export type WsClientMessage =
   | { type: 'command'; serverId: string; command: string };
 
 export type WsServerMessage =
-  | { type: 'log'; serverId: string; line: string }
+  | { type: 'log'; serverId: string; line: string; /** When the line was written, docker format (2026-11-20T07:46:00.589825612Z). */ ts?: string }
   | { type: 'stats'; serverId: string; stats: Stats }
   | { type: 'status'; serverId: string; status: ServerStatus }
   | { type: 'error'; message: string; serverId?: string };
@@ -513,9 +513,14 @@ export type SteamVarValue = string | number | boolean;
 export type SteamVars = Record<string, SteamVarValue>;
 
 /** servers.steam */
+/** Where a SteamCMD game runs: native Linux or its Windows build under Wine. */
+export type SteamPlatform = 'linux' | 'windows';
+
 export interface ServerSteam {
   gameId: string;
   vars: SteamVars;
+  /** Chosen platform; only meaningful for games with a Windows launch (`windowsLaunch`). */
+  platform?: SteamPlatform;
   workshop?: WorkshopRef[];
   updateOnStart: boolean;
   validateNext?: boolean;
@@ -533,7 +538,7 @@ export interface GameSteamSource {
   appId: number;
   branch?: string | null;
   betaPassword?: string | null;
-  platform?: 'linux' | 'windows';
+  platform?: SteamPlatform;
   login?: string;
 }
 
@@ -644,6 +649,8 @@ export interface GameDefinition {
   ports: GamePort[];
   variables?: GameVariable[];
   launch: GameLaunch;
+  /** Launch of the Windows build under Wine: when present the server's Settings offer a platform choice. */
+  windowsLaunch?: GameLaunch | null;
   files?: GameFile[];
   stop?: GameStop;
   console?: { stdin: boolean };
@@ -831,12 +838,16 @@ export interface L4dPlugin {
   /** Installed plugins that need this one. */
   requiredBy: string[];
   settings: L4dPluginSetting[];
-  installed: { version: string | null; installedAt: string; files: number } | null;
+  installed: { version: string | null; installedAt: string; files: number; platform?: SteamPlatform } | null;
+  /** Installed for the other platform: install again to get the files of the current one. */
+  platformMismatch?: boolean;
 }
 
 /** GET /servers/:id/l4d2/plugins */
 export interface L4dPluginsOverview {
   gameInstalled: boolean;
+  /** Platform the server runs on (plugins are installed for it). */
+  platform?: SteamPlatform;
   plugins: L4dPlugin[];
 }
 
