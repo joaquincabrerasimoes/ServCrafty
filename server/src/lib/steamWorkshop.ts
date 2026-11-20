@@ -178,6 +178,13 @@ export async function getCollectionChildren(id: string): Promise<string[] | null
 export const WORKSHOP_SORTS = ['relevance', 'popular', 'trend', 'recent', 'updated'] as const;
 export type WorkshopSort = (typeof WORKSHOP_SORTS)[number];
 
+/** `?sort=` of a search: missing or empty means relevance, anything else must be a known sort. */
+export function parseWorkshopSort(v: unknown): WorkshopSort {
+  if (v === undefined || v === null || v === '') return 'relevance';
+  if (typeof v === 'string' && (WORKSHOP_SORTS as readonly string[]).includes(v)) return v as WorkshopSort;
+  throw badRequest('Invalid sort', 'validation_error');
+}
+
 /** EPublishedFileQueryType for a sort (text relevance only makes sense with a query). */
 export function queryTypeFor(sort: WorkshopSort, hasText: boolean): number {
   switch (sort) {

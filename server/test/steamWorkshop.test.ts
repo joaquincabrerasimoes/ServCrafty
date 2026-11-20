@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { AppError } from '../src/lib/errors.js';
-import { getWorkshopItem, parseWorkshopRef, queryFilesUrl, queryTypeFor, searchWorkshop, toWorkshopItem } from '../src/lib/steamWorkshop.js';
+import { parseWorkshopSort, getWorkshopItem, parseWorkshopRef, queryFilesUrl, queryTypeFor, searchWorkshop, toWorkshopItem } from '../src/lib/steamWorkshop.js';
 
 test('workshop ids and URLs', () => {
   assert.equal(parseWorkshopRef('2215187009'), '2215187009');
@@ -45,6 +45,14 @@ test('raw details are normalized defensively', () => {
   });
   assert.equal(toWorkshopItem({ publishedfileid: 'x' }), null);
   assert.equal(toWorkshopItem({ publishedfileid: '7', file_type: 2 })?.isCollection, true);
+});
+
+test('search sort: missing or empty is relevance (a search without ?sort= used to fail)', () => {
+  assert.equal(parseWorkshopSort(undefined), 'relevance');
+  assert.equal(parseWorkshopSort(''), 'relevance');
+  assert.equal(parseWorkshopSort('popular'), 'popular');
+  assert.throws(() => parseWorkshopSort('best'), /Invalid sort/);
+  assert.throws(() => parseWorkshopSort(['popular']), /Invalid sort/);
 });
 
 test('QueryFiles URL takes an optional required tag', () => {

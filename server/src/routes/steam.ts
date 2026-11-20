@@ -4,7 +4,7 @@ import { requireUser } from '../auth/plugin.js';
 import { AppError, badRequest, conflict, notFound } from '../lib/errors.js';
 import { assertSteam } from '../lib/games.js';
 import { dedupeWorkshop, generateVar, MAX_WORKSHOP_ITEMS, type SteamWorkshopItem } from '../lib/steamPlan.js';
-import { getCollectionChildren, getWorkshopItem, getWorkshopItems, parseWorkshopRef, searchWorkshop, WORKSHOP_SORTS, type WorkshopSort } from '../lib/steamWorkshop.js';
+import { getCollectionChildren, getWorkshopItem, getWorkshopItems, parseWorkshopRef, parseWorkshopSort, searchWorkshop } from '../lib/steamWorkshop.js';
 import { intQuery, parse } from '../lib/validation.js';
 import { loadServerFor } from '../services/access.js';
 import { audit } from '../services/audit.js';
@@ -65,7 +65,7 @@ export default async function steamRoutes(app: FastifyInstance): Promise<void> {
     if (!def.workshop) throw badRequest('This game has no Steam Workshop support', 'workshop_unsupported');
     const key = await getSteamApiKey();
     if (!key) throw badRequest('Workshop search needs a Steam Web API key (Admin > Settings)', 'steam_key_missing');
-    const sort = parse(z.enum(WORKSHOP_SORTS).default('relevance'), req.query.sort || undefined) as WorkshopSort;
+    const sort = parseWorkshopSort(req.query.sort);
     const q = String(req.query.q ?? '').slice(0, 200);
     const tag = String(req.query.tag ?? '').slice(0, 60);
     return searchWorkshop(key, def.workshop.appId, q, intQuery(req.query.page, 1, 1, 500), sort, tag);
