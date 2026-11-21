@@ -147,6 +147,43 @@ test('vpk: lists files, reads preload and archive data, refuses damaged files', 
   }
 });
 
+test('scanGame: the campaigns of the DLC folders (The Passing, The Sacrifice, the Left 4 Dead 1 ports...) are listed too', async () => {
+  const dir = await tmp();
+  try {
+    const mission = (name: string, maps: string[]) =>
+      `"mission" { "Name" "${name}" "modes" { "coop" { ${maps.map((m, i) => `"${i + 1}" { "Map" "${m}" }`).join(' ')} } } }`;
+    const put = async (folder: string, files: { path: string; data: string }[]) => {
+      await fsp.mkdir(path.join(dir, folder), { recursive: true });
+      await fsp.writeFile(path.join(dir, folder, 'pak01_dir.vpk'), buildVpk(files));
+    };
+    // Where the real game keeps them: the base folder only has the first campaigns.
+    await put('left4dead2', [{ path: 'missions/l4d2c1.txt', data: mission('L4D2C1', ['c1m1_hotel', 'c1m2_streets']) }, { path: 'maps/c1m1_hotel.bsp', data: 'x' }]);
+    await put('left4dead2_dlc1', [{ path: 'missions/l4d2c6.txt', data: mission('L4D2C6', ['c6m1_riverbank']) }, { path: 'maps/c6m1_riverbank.bsp', data: 'x' }]);
+    await put('left4dead2_dlc2', [
+      { path: 'missions/l4d2c8.txt', data: mission('L4D2C8', ['c8m1_apartment', 'c8m2_subway']) },
+      { path: 'missions/l4d2c10.txt', data: mission('L4D2C10', ['c10m1_caves']) },
+      { path: 'maps/c8m1_apartment.bsp', data: 'x' },
+    ]);
+    await put('left4dead2_dlc3', [{ path: 'missions/l4d2c13.txt', data: mission('L4D2C13', ['c13m1_alpinecreek']) }]);
+    // A damaged pak does not hide the others.
+    await fsp.mkdir(path.join(dir, 'left4dead2_dlc4'), { recursive: true });
+
+    const c = await scanGame(dir);
+    assert.equal(c.officialFromGame, true);
+    assert.deepEqual(
+      c.campaigns.map((x) => x.id),
+      ['official:c1', 'official:c6', 'official:c8', 'official:c10', 'official:c13'],
+      'sorted by number, from all the folders',
+    );
+    assert.equal(c.campaigns.find((x) => x.id === 'official:c8')!.title, 'No Mercy');
+    assert.equal(c.campaigns.find((x) => x.id === 'official:c13')!.title, 'Cold Stream');
+    assert.ok(c.maps.some((m) => m.map === 'c8m1_apartment' && m.source === null));
+    assert.ok(c.maps.some((m) => m.map === 'c6m1_riverbank'));
+  } finally {
+    await fsp.rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('scanGame: built-in campaigns until the game exists, then campaigns of the official files and addons', async () => {
   const dir = await tmp();
   try {

@@ -223,13 +223,23 @@ async function parseVpk(file: string, st: { size: number; mtimeMs: number }): Pr
 
 const exists = (f: string) => fsp.stat(f).then((s) => s, () => null);
 
+/**
+ * Folders whose `pak01_dir.vpk` holds official campaigns. The base game has the first five (Dead Center to The Parish);
+ * the rest live in the DLC folders: The Passing, The Sacrifice and the campaigns ported from Left 4 Dead 1 (No Mercy,
+ * Crash Course, Death Toll, Dead Air, Blood Harvest), Cold Stream and The Last Stand. Reading only the base folder
+ * left them all out of the Maps tab.
+ */
+export const OFFICIAL_PAK_DIRS = ['left4dead2', 'left4dead2_dlc1', 'left4dead2_dlc2', 'left4dead2_dlc3'] as const;
+
 export async function scanOfficial(gameDir: string): Promise<{ campaigns: Campaign[]; maps: string[]; fromGame: boolean }> {
-  const file = path.join(gameDir, 'left4dead2', 'pak01_dir.vpk');
-  const st = await exists(file);
-  if (st) {
+  const campaigns: Campaign[] = [];
+  const maps = new Set<string>();
+  for (const folder of OFFICIAL_PAK_DIRS) {
+    const file = path.join(gameDir, folder, 'pak01_dir.vpk');
+    const st = await exists(file);
+    if (!st) continue;
     try {
       const p = await parseVpk(file, st);
-      const campaigns: Campaign[] = [];
       for (const m of p.missions) {
         const all = Object.values(m.modes).flat().map((c) => c!.map);
         const n = officialNumber(all);
@@ -242,12 +252,14 @@ export async function scanOfficial(gameDir: string): Promise<{ campaigns: Campai
           campaigns.push({ id, title: OFFICIAL_TITLES[n]!, author: 'Valve', source: 'official', addon: null, workshopId: null, modes: { ...m.modes } });
         }
       }
-      campaigns.sort((a, b) => Number(a.id.slice(10)) - Number(b.id.slice(10)));
-      const maps = p.maps.filter((x) => /^c\d+m\d+_/.test(x));
-      if (campaigns.length) return { campaigns, maps, fromGame: true };
+      for (const x of p.maps) if (/^c\d+m\d+_/.test(x)) maps.add(x);
     } catch {
-      /* fall through to the built-in list */
+      /* an unreadable pak is skipped: the other folders (or the built-in list) still apply */
     }
+  }
+  if (campaigns.length) {
+    campaigns.sort((a, b) => Number(a.id.slice(10)) - Number(b.id.slice(10)));
+    return { campaigns, maps: [...maps], fromGame: true };
   }
   return { campaigns: fallbackOfficial(), maps: [], fromGame: false };
 }
