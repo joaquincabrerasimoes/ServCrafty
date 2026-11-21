@@ -197,7 +197,7 @@ const BOT_ERRORS: Record<string, string> = {
   usage: 'Unknown survivor',
 };
 
-/** Add one survivor bot of the chosen character (0-7). Needs the bundled "Bot spawner" plugin. */
+/** Add one survivor bot of the chosen character (0-7). Needs the bundled "Bot spawner" plugin (which needs Multiplayer). */
 export async function addBot(server: ServerRow, character: number) {
   l4d2Def(server);
   const command = addBotCommand(character);

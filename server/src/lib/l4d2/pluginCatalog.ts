@@ -177,10 +177,10 @@ export const PLUGIN_CATALOG: PluginDef[] = [
   {
     id: 'servcrafty_bots',
     name: 'Bot spawner (choose the character)',
-    description: 'Adds survivor bots of the character you pick, including the Left 4 Dead 1 survivors (Bill, Zoey, Francis, Louis). Used by the Controls tab; no settings.',
+    description: 'Adds survivor bots of the character you pick, including the Left 4 Dead 1 survivors (Bill, Zoey, Francis, Louis). Used by the Controls tab; needs the Multiplayer plugin (installed with it).',
     homepage: 'https://github.com/joaquincabrerasimoes/ServCrafty',
     category: 'slots',
-    requires: ['sourcemod'],
+    requires: ['sourcemod', 'l4dtoolz', 'l4d2_rmc'],
     sources: [{ format: 'file', bundled: 'servcrafty_bots.smx', rules: [{ from: '', to: 'addons/sourcemod/plugins/servcrafty_bots.smx' }] }],
     settings: [],
     configFile: SHARED_CONFIG,

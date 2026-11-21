@@ -1,6 +1,6 @@
 // ServCrafty Bots: spawn survivor bots of a chosen character on a Left 4 Dead 2 server.
 //
-// The game's own `sb_add` always picks the character itself, so the panel could only add duplicates. This plugin adds a bot
+// The game's own `sb_add` (and the Multiplayer plugin's `sm_setmax`) always pick the character itself, so the panel could only add duplicates. This plugin adds a bot
 // the way the game does and then gives it the character, model and name asked for, including the four Left 4 Dead 1
 // survivors. The panel talks to it over RCON:
 //
@@ -145,29 +145,27 @@ public Action Cmd_AddBot(int args)
 		return Plugin_Handled;
 	}
 
-	// The team size is capped by survivor_limit: make room for one more (up to 16, as the Multiplayer plugin does).
-	ConVar limit = FindConVar("survivor_limit");
-	if (limit != null)
-	{
-		limit.SetBounds(ConVarBound_Upper, true, float(MAX_SURVIVORS));
-		if (limit.IntValue < count + 1)
-		{
-			limit.IntValue = count + 1;
-		}
-	}
-
 	bool before[MAXPLAYERS + 1];
 	for (int i = 1; i <= MaxClients; i++)
 	{
 		before[i] = IsSurvivor(i);
 	}
 
-	// sb_add is a cheat command: lift the flag for this one call.
-	int flags = GetCommandFlags("sb_add");
-	SetCommandFlags("sb_add", flags & ~FCVAR_CHEAT);
-	ServerCommand("sb_add");
-	ServerExecute();
-	SetCommandFlags("sb_add", flags);
+	// sb_add refuses to go past survivor_limit (4) and the Multiplayer plugin (l4d2_rmc) keeps that limit to itself,
+	// so ask that plugin for a team one survivor bigger: it creates the bot. Fall back to sb_add if it is not there.
+	if (GetCommandFlags("sm_setmax") != INVALID_FCVAR_FLAGS)
+	{
+		ServerCommand("sm_setmax %d", count + 1);
+		ServerExecute();
+	}
+	else
+	{
+		int flags = GetCommandFlags("sb_add");
+		SetCommandFlags("sb_add", flags & ~FCVAR_CHEAT);
+		ServerCommand("sb_add");
+		ServerExecute();
+		SetCommandFlags("sb_add", flags);
+	}
 
 	int bot = 0;
 	for (int i = 1; i <= MaxClients; i++)
