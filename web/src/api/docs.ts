@@ -1,9 +1,11 @@
 import { ApiError, buildUrl } from './client';
 
-export type DocKind = 'guide' | 'openapi';
+export type DocKind = 'guide' | 'mcp' | 'skill' | 'openapi';
 
 const DOCS: Record<DocKind, { path: string; fallback: string; accept: string }> = {
   guide: { path: '/docs/api-tokens.md', fallback: 'servcrafty-api-tokens.md', accept: 'text/markdown, text/plain, */*' },
+  mcp: { path: '/docs/mcp.md', fallback: 'servcrafty-mcp.md', accept: 'text/markdown, text/plain, */*' },
+  skill: { path: '/docs/skill.md', fallback: 'SKILL.md', accept: 'text/markdown, text/plain, */*' },
   openapi: { path: '/docs/openapi.json', fallback: 'servcrafty-openapi.json', accept: 'application/json, */*' },
 };
 

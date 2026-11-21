@@ -82,10 +82,42 @@ export interface ApiToken {
   id: string;
   name: string;
   prefix?: string;
+  /** What the key may do (`*` = everything its owner can). */
+  scopes: string[];
+  /** Servers the key is limited to; null = all. */
+  serverIds: string[] | null;
   createdAt?: string;
   lastUsedAt?: string | null;
   expiresAt?: string | null;
   token?: string; // only on creation
+}
+
+export type ScopeRisk = 'low' | 'medium' | 'high' | 'critical';
+
+export interface ApiScopeDef {
+  id: string;
+  group: string;
+  risk: ScopeRisk;
+  adminOnly?: boolean;
+  description: string;
+}
+
+export interface ApiScopePreset {
+  id: 'read-only' | 'operator' | 'manager' | 'full';
+  description: string;
+  scopes: string[];
+}
+
+export interface ApiScopeCatalog {
+  scopes: ApiScopeDef[];
+  presets: ApiScopePreset[];
+}
+
+export interface ApiTokenInput {
+  name: string;
+  scopes: string[];
+  serverIds?: string[] | null;
+  expiresAt?: string;
 }
 
 export const SERVER_TYPES = [

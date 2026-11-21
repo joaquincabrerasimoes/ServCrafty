@@ -1,8 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { startRegistration } from '@simplewebauthn/browser';
-import { Check, Copy, Fingerprint, KeyRound, Plus, ShieldCheck, ShieldOff, Trash2 } from 'lucide-react';
-import { accountApi, type ApiToken, type TotpSetup } from '@/api';
+import { Check, Fingerprint, Plus, ShieldCheck, ShieldOff, Trash2 } from 'lucide-react';
+import { accountApi, type TotpSetup } from '@/api';
 import { useT } from '@/i18n';
 import { useAuth } from '@/stores/auth';
 import { formatDate, formatMb, formatNumber, formatRelative } from '@/lib/format';
@@ -12,7 +12,7 @@ import { toast } from '@/stores/toast';
 import { confirm } from '@/components/feedback';
 import { Badge, Button, ErrorState, Field, IconButton, Loading, Meter, Modal, PageHeader, Section } from '@/components/ui';
 import { LocaleSelect, ThemeSwitch } from '@/components/PrefsControls';
-import { DocsMenu } from '@/components/DocsMenu';
+import { ApiKeys } from '@/components/ApiKeys';
 
 function Profile() {
   const t = useT();
@@ -291,119 +291,6 @@ function Passkeys() {
   );
 }
 
-function Tokens() {
-  const t = useT();
-  const qc = useQueryClient();
-  const q = useQuery({ queryKey: ['tokens'], queryFn: accountApi.tokens });
-  const [name, setName] = useState('');
-  const [expires, setExpires] = useState('');
-  const [created, setCreated] = useState<ApiToken | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  const create = async (e: FormEvent) => {
-    e.preventDefault();
-    setBusy(true);
-    try {
-      const tok = await accountApi.createToken(name.trim(), expires ? new Date(expires).toISOString() : undefined);
-      setCreated(tok);
-      setName('');
-      setExpires('');
-      void qc.invalidateQueries({ queryKey: ['tokens'] });
-    } catch (err) {
-      toast.error(err);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const revoke = async (tok: ApiToken) => {
-    if (!(await confirm({ title: t('account.revokeTitle', { name: tok.name }), danger: true, confirmLabel: t('account.revoke') }))) return;
-    try {
-      await accountApi.deleteToken(tok.id);
-      void qc.invalidateQueries({ queryKey: ['tokens'] });
-    } catch (e) {
-      toast.error(e);
-    }
-  };
-
-  return (
-    <Section title={t('account.tokens')} description={t('account.tokensBody')} actions={<DocsMenu />}>
-      {q.isLoading ? (
-        <Loading />
-      ) : q.error ? (
-        <ErrorState error={q.error} onRetry={() => void q.refetch()} />
-      ) : q.data?.length ? (
-        <div className="mb-4 overflow-x-auto rounded-block border border-line">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>{t('account.tokenName')}</th>
-                <th className="hidden sm:table-cell">{t('account.prefix')}</th>
-                <th className="hidden md:table-cell">{t('account.lastUsedCol')}</th>
-                <th className="hidden md:table-cell">{t('account.expires')}</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {q.data.map((tok) => (
-                <tr key={tok.id}>
-                  <td className="font-medium">{tok.name}</td>
-                  <td className="hidden font-mono text-xs sm:table-cell">{tok.prefix ? `${tok.prefix}…` : ''}</td>
-                  <td className="hidden text-muted md:table-cell">{tok.lastUsedAt ? formatRelative(tok.lastUsedAt) : t('account.never')}</td>
-                  <td className="hidden text-muted md:table-cell">{tok.expiresAt ? formatDate(tok.expiresAt) : t('account.never')}</td>
-                  <td className="text-right">
-                    <IconButton label={t('account.revoke')} className="hover:text-danger" onClick={() => void revoke(tok)}>
-                      <Trash2 className="h-4 w-4" />
-                    </IconButton>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <p className="mb-4 text-sm text-muted">{t('account.noTokens')}</p>
-      )}
-      <form onSubmit={create} className="flex flex-col gap-2 sm:flex-row sm:items-end">
-        <Field label={t('account.tokenName')} className="flex-1">
-          <input className="input" value={name} onChange={(e) => setName(e.target.value)} required maxLength={64} />
-        </Field>
-        <Field label={t('account.expires')} className="sm:w-48">
-          <input className="input" type="date" value={expires} onChange={(e) => setExpires(e.target.value)} />
-        </Field>
-        <Button type="submit" variant="primary" loading={busy} icon={<KeyRound className="h-4 w-4" />}>
-          {t('account.createToken')}
-        </Button>
-      </form>
-      <Modal
-        open={!!created}
-        onClose={() => setCreated(null)}
-        title={t('account.tokenCreated')}
-        footer={
-          <Button variant="primary" onClick={() => setCreated(null)}>
-            {t('common.done')}
-          </Button>
-        }
-      >
-        <p className="mb-3 text-sm text-muted">{t('account.tokenOnce')}</p>
-        <div className="flex gap-2">
-          <code className="min-w-0 flex-1 break-all rounded-block bg-raised px-3 py-2 font-mono text-sm">{created?.token}</code>
-          <IconButton
-            label={t('common.copy')}
-            className="h-10 w-10"
-            onClick={() => {
-              void navigator.clipboard?.writeText(created?.token ?? '');
-              toast.info(t('common.copied'));
-            }}
-          >
-            <Copy className="h-4 w-4" />
-          </IconButton>
-        </div>
-      </Modal>
-    </Section>
-  );
-}
-
 function Quota() {
   const t = useT();
   const q = useQuery({ queryKey: qk.quota, queryFn: accountApi.quota });
@@ -448,7 +335,7 @@ export default function Account() {
         <div className="space-y-4">
           <Totp />
           <Passkeys />
-          <Tokens />
+          <ApiKeys />
         </div>
       </div>
     </>

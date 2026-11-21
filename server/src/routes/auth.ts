@@ -1,3 +1,4 @@
+import { expandScopes } from '../lib/apiScopes.js';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { AuthenticationResponseJSON } from '@simplewebauthn/server';
@@ -101,6 +102,6 @@ export default async function authRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/auth/me', async (req) => {
     const user = requireUser(req);
-    return { user: await publicUserWithGames(user, { creatable: true }), mfa: await mfaInfo(user.id), authVia: req.authVia };
+    return { user: await publicUserWithGames(user, { creatable: true }), mfa: await mfaInfo(user.id), authVia: req.authVia, ...(req.apiKey ? { key: { id: req.apiKey.id, name: req.apiKey.name, scopes: req.apiKey.scopes, granted: expandScopes(req.apiKey.scopes), serverIds: req.apiKey.serverIds } } : {}) };
   });
 }

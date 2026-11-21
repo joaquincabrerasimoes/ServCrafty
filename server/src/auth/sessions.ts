@@ -109,10 +109,19 @@ export function generateApiToken(): { token: string; hash: string; prefix: strin
   return { token, hash: sha256(token), prefix: token.slice(0, TOKEN_PREFIX.length + 6) };
 }
 
-export async function loadUserByToken(token: string): Promise<UserRow | null> {
+/** What an API key is allowed to do (v0.6.0). */
+export interface TokenLimits {
+  id: string;
+  name: string;
+  scopes: string[];
+  /** null: every server the owner can reach. */
+  serverIds: string[] | null;
+}
+
+export async function loadUserByToken(token: string): Promise<{ user: UserRow; key: TokenLimits } | null> {
   if (!token.startsWith(TOKEN_PREFIX)) return null;
-  const row = await queryOne<{ token_id: string; last_used_at: Date | null; u: UserRow }>(
-    `SELECT t.id AS token_id, t.last_used_at, to_jsonb(u) AS u FROM api_tokens t JOIN users u ON u.id = t.user_id
+  const row = await queryOne<{ token_id: string; name: string; scopes: string[]; server_ids: string[] | null; last_used_at: Date | null; u: UserRow }>(
+    `SELECT t.id AS token_id, t.name, t.scopes, t.server_ids, t.last_used_at, to_jsonb(u) AS u FROM api_tokens t JOIN users u ON u.id = t.user_id
      WHERE t.token_hash = $1 AND (t.expires_at IS NULL OR t.expires_at > now())`,
     [sha256(token)],
   );
@@ -120,5 +129,8 @@ export async function loadUserByToken(token: string): Promise<UserRow | null> {
   if (!row.last_used_at || Date.now() - new Date(row.last_used_at).getTime() > 60_000) {
     await query('UPDATE api_tokens SET last_used_at = now() WHERE id = $1', [row.token_id]).catch(() => undefined);
   }
-  return { ...row.u, created_at: new Date(row.u.created_at) };
+  return {
+    user: { ...row.u, created_at: new Date(row.u.created_at) },
+    key: { id: row.token_id, name: row.name, scopes: row.scopes?.length ? row.scopes : ['*'], serverIds: row.server_ids },
+  };
 }

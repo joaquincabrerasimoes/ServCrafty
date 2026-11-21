@@ -16,6 +16,7 @@ import { assertMinecraft, gameOf } from '../lib/games.js';
 import { parseProperties, serializeProperties } from '../lib/properties.js';
 import { intQuery, parse } from '../lib/validation.js';
 import { loadServerFor, listServersFor } from '../services/access.js';
+import { grantCreated, limitToKey } from '../services/apiKeys.js';
 import { audit } from '../services/audit.js';
 import { serverDir } from '../services/docker.js';
 import { getDefinition } from '../services/gameDefinitions.js';
@@ -78,7 +79,7 @@ const RESTART_FIELDS = ['type', 'mcVersion', 'loaderVersion', 'modpack', 'javaAr
 export default async function serverRoutes(app: FastifyInstance): Promise<void> {
   app.get('/servers', async (req) => {
     const user = requireUser(req);
-    const rows = await listServersFor(user);
+    const rows = limitToKey(req, await listServersFor(user));
     return rows.map((r) => ({ ...toPublicServer(r.server, r.access, r.ownerName), status: runtime.getStatus(r.server.id) }));
   });
 
@@ -90,6 +91,7 @@ export default async function serverRoutes(app: FastifyInstance): Promise<void> 
     }
     body.modpack = await enrichModpack(body.type, body.modpack);
     const server = await createServer(user, body);
+    await grantCreated(req, server.id);
     await audit(req, 'server.created', 'server', server.id, { name: server.name, type: server.type, port: server.port });
     reply.code(201);
     const owner = await getUser(server.owner_id);
@@ -258,6 +260,7 @@ export default async function serverRoutes(app: FastifyInstance): Promise<void> 
         for (const lock of ['world/session.lock']) await fsp.rm(path.join(dir, lock), { force: true });
       }
     });
+    await grantCreated(req, clone.id);
     await audit(req, 'server.cloned', 'server', clone.id, { from: server.id });
     reply.code(201);
     return toPublicServer(clone, clone.owner_id === user.id ? 'owner' : 'admin', user.username);
@@ -345,6 +348,7 @@ export default async function serverRoutes(app: FastifyInstance): Promise<void> 
       if (!originalName) throw badRequest('No file uploaded', 'file_required');
       const f = parse(importFieldsSchema, fields);
       const { server, detected, warnings } = await importArchive(user, tmp, originalName, f);
+      await grantCreated(req, server.id);
       await audit(req, 'server.imported', 'server', server.id, { detected, file: originalName });
       reply.code(201);
       return { server: toPublicServer(server, server.owner_id === user.id ? 'owner' : 'admin', user.username), detected, warnings };

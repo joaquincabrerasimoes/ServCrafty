@@ -7,8 +7,10 @@ import { requireUser } from '../auth/plugin.js';
 import { deleteUserSessions, generateApiToken } from '../auth/sessions.js';
 import { newTotpSecret, consumeTotp } from '../auth/totp.js';
 import { listPasskeys, registrationOptions, toPublicPasskey, verifyRegistration } from '../auth/webauthn.js';
+import { normalizeScopes, PRESETS, SCOPES, scopeProblem } from '../lib/apiScopes.js';
 import { badRequest, conflict, forbidden, notFound, unauthorized } from '../lib/errors.js';
 import { parse } from '../lib/validation.js';
+import { loadServerFor } from '../services/access.js';
 import { audit } from '../services/audit.js';
 import type { UserRow } from '../services/types.js';
 import { publicUserWithGames } from '../services/gameAccess.js';
@@ -117,27 +119,55 @@ export default async function accountRoutes(app: FastifyInstance): Promise<void>
     return { ok: true };
   });
 
-  // ---- API tokens ----
+  // ---- API keys (tokens) ----
+  const scopeList = z.array(z.string().min(1).max(40)).min(1).max(60);
+  const serverIdList = z.array(z.string().uuid()).max(200).nullable();
+
+  type TokenDbRow = {
+    id: string;
+    name: string;
+    prefix: string;
+    scopes: string[];
+    server_ids: string[] | null;
+    created_at: Date;
+    last_used_at: Date | null;
+    expires_at: Date | null;
+  };
+  const publicToken = (t: TokenDbRow) => ({
+    id: t.id,
+    name: t.name,
+    prefix: t.prefix,
+    scopes: t.scopes,
+    serverIds: t.server_ids,
+    createdAt: t.created_at.toISOString(),
+    lastUsedAt: t.last_used_at?.toISOString() ?? null,
+    expiresAt: t.expires_at?.toISOString() ?? null,
+  });
+
+  /** Validates scopes for the owner's role and that every listed server is one the owner can see. */
+  async function checkKeyLimits(user: UserRow, scopes: string[], serverIds: string[] | null): Promise<string[]> {
+    const problem = scopeProblem(scopes, user.role);
+    if (problem) throw badRequest(problem, 'invalid_scopes');
+    if (serverIds) for (const id of serverIds) await loadServerFor(user, id, 'viewer');
+    return normalizeScopes(scopes);
+  }
+
+  /** Scope catalogue and presets (what the UI offers when creating a key; an agent reads it to know the vocabulary). */
+  app.get('/account/tokens/scopes', async (req) => {
+    const user = requireUser(req);
+    return {
+      scopes: SCOPES.filter((s) => !s.adminOnly || user.role === 'admin'),
+      presets: PRESETS.filter((p) => p.scopes.every((sc) => !scopeProblem([sc], user.role) )),
+    };
+  });
+
   app.get('/account/tokens', async (req) => {
     const user = requireUser(req);
-    const rows = await query<{
-      id: string;
-      name: string;
-      prefix: string;
-      created_at: Date;
-      last_used_at: Date | null;
-      expires_at: Date | null;
-    }>('SELECT id, name, prefix, created_at, last_used_at, expires_at FROM api_tokens WHERE user_id = $1 ORDER BY created_at DESC', [
-      user.id,
-    ]);
-    return rows.map((t) => ({
-      id: t.id,
-      name: t.name,
-      prefix: t.prefix,
-      createdAt: t.created_at.toISOString(),
-      lastUsedAt: t.last_used_at?.toISOString() ?? null,
-      expiresAt: t.expires_at?.toISOString() ?? null,
-    }));
+    const rows = await query<TokenDbRow>(
+      'SELECT id, name, prefix, scopes, server_ids, created_at, last_used_at, expires_at FROM api_tokens WHERE user_id = $1 ORDER BY created_at DESC',
+      [user.id],
+    );
+    return rows.map(publicToken);
   });
 
   app.post('/account/tokens', async (req, reply) => {
@@ -145,6 +175,8 @@ export default async function accountRoutes(app: FastifyInstance): Promise<void>
     const body = parse(
       z.object({
         name: z.string().trim().min(1).max(64),
+        scopes: scopeList,
+        serverIds: serverIdList.optional(),
         expiresInDays: z.number().int().min(1).max(3650).nullable().optional(),
         expiresAt: z.string().datetime().nullable().optional(),
       }),
@@ -152,27 +184,43 @@ export default async function accountRoutes(app: FastifyInstance): Promise<void>
     );
     const count = await queryOne<{ n: number }>('SELECT count(*)::int AS n FROM api_tokens WHERE user_id = $1', [user.id]);
     if ((count?.n ?? 0) >= 50) throw conflict('Token limit reached (50)', 'token_limit');
+    const scopes = await checkKeyLimits(user, body.scopes, body.serverIds ?? null);
     const expires = body.expiresAt
       ? new Date(body.expiresAt)
       : body.expiresInDays
         ? new Date(Date.now() + body.expiresInDays * 86_400_000)
         : null;
     const t = generateApiToken();
-    const row = await queryOne<{ id: string; created_at: Date }>(
-      `INSERT INTO api_tokens (user_id, name, token_hash, prefix, expires_at) VALUES ($1,$2,$3,$4,$5) RETURNING id, created_at`,
-      [user.id, body.name, t.hash, t.prefix, expires],
+    const row = await queryOne<TokenDbRow>(
+      `INSERT INTO api_tokens (user_id, name, token_hash, prefix, expires_at, scopes, server_ids) VALUES ($1,$2,$3,$4,$5,$6,$7)
+       RETURNING id, name, prefix, scopes, server_ids, created_at, last_used_at, expires_at`,
+      [user.id, body.name, t.hash, t.prefix, expires, scopes, body.serverIds ?? null],
     );
-    await audit(req, 'account.token_created', 'api_token', row!.id, { name: body.name });
+    await audit(req, 'account.token_created', 'api_token', row!.id, { name: body.name, scopes, servers: body.serverIds?.length ?? 'all' });
     reply.code(201);
-    return {
-      id: row!.id,
-      name: body.name,
-      prefix: t.prefix,
-      token: t.token,
-      createdAt: row!.created_at.toISOString(),
-      expiresAt: expires?.toISOString() ?? null,
-      lastUsedAt: null,
-    };
+    return { ...publicToken(row!), token: t.token };
+  });
+
+  /** Change the name, scopes or server list of a key (interactive sessions only, so a key cannot widen itself). */
+  app.patch<{ Params: { id: string } }>('/account/tokens/:id', async (req) => {
+    const { user } = requireSessionAuth(req);
+    if (!/^[0-9a-f-]{36}$/i.test(req.params.id)) throw notFound('Token not found');
+    const body = parse(z.object({ name: z.string().trim().min(1).max(64).optional(), scopes: scopeList.optional(), serverIds: serverIdList.optional() }), req.body);
+    const cur = await queryOne<TokenDbRow>(
+      'SELECT id, name, prefix, scopes, server_ids, created_at, last_used_at, expires_at FROM api_tokens WHERE id = $1 AND user_id = $2',
+      [req.params.id, user.id],
+    );
+    if (!cur) throw notFound('Token not found', 'token_not_found');
+    const scopes = body.scopes ? await checkKeyLimits(user, body.scopes, body.serverIds !== undefined ? body.serverIds : cur.server_ids) : cur.scopes;
+    if (!body.scopes && body.serverIds) await checkKeyLimits(user, cur.scopes, body.serverIds);
+    const serverIds = body.serverIds !== undefined ? body.serverIds : cur.server_ids;
+    const row = await queryOne<TokenDbRow>(
+      `UPDATE api_tokens SET name = $3, scopes = $4, server_ids = $5 WHERE id = $1 AND user_id = $2
+       RETURNING id, name, prefix, scopes, server_ids, created_at, last_used_at, expires_at`,
+      [req.params.id, user.id, body.name ?? cur.name, scopes, serverIds],
+    );
+    await audit(req, 'account.token_updated', 'api_token', req.params.id, { scopes, servers: serverIds?.length ?? 'all' });
+    return publicToken(row!);
   });
 
   app.delete<{ Params: { id: string } }>('/account/tokens/:id', async (req) => {

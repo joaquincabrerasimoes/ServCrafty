@@ -326,7 +326,7 @@
         ],
         "summary": "List my API tokens",
         "operationId": "get_account_tokens",
-        "description": "Never returns the secret, only the prefix.",
+        "description": "Never returns the secret, only the prefix, the scopes and the server limit.",
         "responses": {
           "200": {
             "description": "Success",
@@ -350,9 +350,9 @@
         "tags": [
           "Account"
         ],
-        "summary": "Create an API token (browser session only)",
+        "summary": "Create an API key (browser session only)",
         "operationId": "post_account_tokens",
-        "description": "Needs an interactive login session: with a Bearer token it answers 403 `session_required`, so a leaked token cannot mint new tokens. At most 50 tokens per user (409 `token_limit`).",
+        "description": "Needs an interactive login session: with a Bearer token it answers 403 `session_required`, so a leaked key cannot mint new keys or widen itself. `scopes` is required (400 `invalid_scopes` for unknown scopes, or admin scopes on a non-admin account). At most 50 keys per user (409 `token_limit`). A key never does more than its owner: ownership, sharing levels and the admin role still apply.",
         "requestBody": {
           "required": true,
           "content": {
@@ -415,6 +415,53 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Change an API key (browser session only)",
+        "operationId": "patch_account_tokens_id",
+        "description": "Rename a key or change its scopes or server limit. Needs an interactive session (403 `session_required` with a key).",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/GenericId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApiTokenUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiToken"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
@@ -4579,7 +4626,7 @@
         ],
         "summary": "Self-update status",
         "operationId": "get_admin_update",
-        "description": "Admin only.",
+        "description": "Admin only (API keys need `admin:read`). Returns the running version, whether a newer release exists, whether this installation can update itself (`canUpdate`, `cannotUpdateReason`; Docker installs update with `docker compose pull && docker compose up -d`) and the state of the current or last update (`status.state`: `idle`, `running`, `succeeded`, `failed`, `rolled_back`).",
         "responses": {
           "200": {
             "description": "Success",
@@ -4607,7 +4654,7 @@
         ],
         "summary": "Check GitHub for a new release",
         "operationId": "post_admin_update_check",
-        "description": "Admin only. Limited to 6 calls per 10 minutes per user.",
+        "description": "Admin only (API keys need `admin:update`). Asks GitHub for the latest release now. Rate limited: 6 per 10 minutes per user (429).",
         "responses": {
           "200": {
             "description": "Success",
@@ -4638,7 +4685,7 @@
         ],
         "summary": "Apply an update (LXC installs)",
         "operationId": "post_admin_update_apply",
-        "description": "Admin only. Restarts the panel; game containers keep running.",
+        "description": "Admin only (API keys need the `admin:update` scope). Downloads the release, verifies it and restarts the panel; **game containers keep running**. Answers 202 immediately with the status; the API and web UI are unreachable for a short while during the restart. Follow it with `GET /admin/update` (`status.state`) and `GET /admin/update/log`, and `GET /health` (`version`) to see the new version up. `version` is optional (default: the latest release). Errors: 400 `no_update` (nothing newer), 409 when an update is already running or this installation cannot update itself (`canUpdate: false`).",
         "requestBody": {
           "required": false,
           "content": {
@@ -4688,7 +4735,7 @@
         ],
         "summary": "Roll back the last update (LXC installs)",
         "operationId": "post_admin_update_rollback",
-        "description": "Admin only.",
+        "description": "Admin only (API keys need `admin:update`). Restores the version installed before the last update and restarts the panel. 400 `no_rollback` when there is none.",
         "responses": {
           "202": {
             "description": "Success",
@@ -4719,7 +4766,7 @@
         ],
         "summary": "Update log",
         "operationId": "get_admin_update_log",
-        "description": "Admin only.",
+        "description": "Admin only (API keys need `admin:read`). Output of the running or last update from `offset` bytes; the answer has the next `offset` and the update `state`.",
         "parameters": [
           {
             "name": "offset",
@@ -6511,6 +6558,31 @@
           }
         }
       }
+    },
+    "/account/tokens/scopes": {
+      "get": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Scope catalogue and presets",
+        "operationId": "get_account_tokens_scopes",
+        "description": "The permissions an API key can hold (admin scopes only listed for administrators) and ready-made presets (`read-only`, `operator`, `manager`, `full`). `X:write` also grants `X:read`; `X:*` grants every action of X; `*` grants everything.",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiScopeCatalog"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -6595,7 +6667,7 @@
         }
       },
       "Forbidden": {
-        "description": "Authenticated but not allowed (`insufficient_access`, `admin_required`, `session_required`, `game_not_allowed`, ...).",
+        "description": "Authenticated but not allowed (`insufficient_access`, `admin_required`, `session_required`, `game_not_allowed`, and for API keys `insufficient_scope` (the needed scope is in `error.details.required`), `server_not_allowed`, `server_restricted`, `scope_not_mapped`, ...).",
         "content": {
           "application/json": {
             "schema": {
@@ -6889,6 +6961,9 @@
               "token"
             ],
             "description": "Always `token` when you authenticate with a Bearer token."
+          },
+          "key": {
+            "$ref": "#/components/schemas/ApiKeyInfo"
           }
         }
       },
@@ -6946,12 +7021,33 @@
             "type": "string",
             "format": "date-time",
             "nullable": true
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "What the key may do, e.g. `servers:read`, `servers:power`, `logs:read`, `files:*`; `*` = everything its owner can do. See `GET /account/tokens/scopes`. Keys created before v0.6.0 have `*`.",
+            "example": [
+              "servers:read",
+              "logs:read"
+            ]
+          },
+          "serverIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "nullable": true,
+            "description": "Servers the key is limited to; `null` = every server its owner can reach. A restricted key adds the servers it creates to this list."
           }
         },
         "required": [
           "id",
           "name",
           "prefix",
+          "scopes",
           "createdAt"
         ]
       },
@@ -6994,10 +7090,30 @@
             "format": "date-time",
             "description": "Absolute expiry; takes precedence over `expiresInDays`.",
             "nullable": true
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 60,
+            "description": "Required. Scope ids (see `GET /account/tokens/scopes`) or `*`. Admin scopes only for administrators (400 `invalid_scopes`)."
+          },
+          "serverIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "maxItems": 200,
+            "nullable": true,
+            "description": "Limit the key to these servers (each must be visible to you). Omit or `null` for all."
           }
         },
         "required": [
-          "name"
+          "name",
+          "scopes"
         ]
       },
       "ModpackRef": {
@@ -10631,6 +10747,158 @@
             }
           }
         }
+      },
+      "ApiTokenUpdate": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 60,
+            "description": "Required. Scope ids (see `GET /account/tokens/scopes`) or `*`. Admin scopes only for administrators (400 `invalid_scopes`)."
+          },
+          "serverIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "maxItems": 200,
+            "nullable": true,
+            "description": "Limit the key to these servers (each must be visible to you). Omit or `null` for all."
+          }
+        }
+      },
+      "ApiScope": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "servers:power"
+          },
+          "group": {
+            "type": "string"
+          },
+          "risk": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "critical"
+            ]
+          },
+          "adminOnly": {
+            "type": "boolean"
+          },
+          "description": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "group",
+          "risk",
+          "description"
+        ]
+      },
+      "ApiScopePreset": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "enum": [
+              "read-only",
+              "operator",
+              "manager",
+              "full"
+            ]
+          },
+          "description": {
+            "type": "string"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "description",
+          "scopes"
+        ]
+      },
+      "ApiScopeCatalog": {
+        "type": "object",
+        "properties": {
+          "scopes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ApiScope"
+            }
+          },
+          "presets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ApiScopePreset"
+            }
+          }
+        },
+        "required": [
+          "scopes",
+          "presets"
+        ]
+      },
+      "ApiKeyInfo": {
+        "type": "object",
+        "description": "Present in `GET /auth/me` when the request was made with an API key.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "granted": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Every scope the key effectively holds (wildcards and write-implies-read expanded)."
+          },
+          "serverIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "scopes",
+          "granted",
+          "serverIds"
+        ]
       }
     }
   }

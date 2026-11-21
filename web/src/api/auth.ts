@@ -1,6 +1,8 @@
 import { api, asList, normalizeUser } from './client';
 import type {
+  ApiScopeCatalog,
   ApiToken,
+  ApiTokenInput,
   LoginResponse,
   MeResponse,
   Passkey,
@@ -61,6 +63,8 @@ export const accountApi = {
   deletePasskey: (id: string) => api.del<void>(`/account/passkeys/${encodeURIComponent(id)}`),
 
   tokens: async () => asList<ApiToken>(await api.get('/account/tokens'), 'tokens'),
-  createToken: (name: string, expiresAt?: string) => api.post<ApiToken>('/account/tokens', { name, expiresAt }),
+  createToken: (body: ApiTokenInput) => api.post<ApiToken>('/account/tokens', body),
+  updateToken: (id: string, body: Partial<Pick<ApiTokenInput, 'name' | 'scopes' | 'serverIds'>>) => api.patch<ApiToken>(`/account/tokens/${id}`, body),
+  tokenScopes: () => api.get<ApiScopeCatalog>('/account/tokens/scopes'),
   deleteToken: (id: string) => api.del<void>(`/account/tokens/${id}`),
 };

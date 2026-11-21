@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
-import { BookOpen, ChevronDown, FileCode2, FileText } from 'lucide-react';
+import { BookOpen, Bot, ChevronDown, FileCode2, FileText, Sparkles } from 'lucide-react';
 import { docsApi, type DocKind } from '@/api';
 import { useT } from '@/i18n';
 import { toast } from '@/stores/toast';
@@ -64,6 +64,8 @@ export function DocsMenu() {
 
   const entries: Array<{ kind: DocKind; label: string; hint: string; Icon: typeof FileText }> = [
     { kind: 'guide', label: t('docs.guide'), hint: t('docs.guideHint'), Icon: FileText },
+    { kind: 'mcp', label: t('docs.mcp'), hint: t('docs.mcpHint'), Icon: Bot },
+    { kind: 'skill', label: t('docs.skill'), hint: t('docs.skillHint'), Icon: Sparkles },
     { kind: 'openapi', label: t('docs.openapi'), hint: t('docs.openapiHint'), Icon: FileCode2 },
   ];
 

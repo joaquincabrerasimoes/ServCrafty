@@ -1,7 +1,8 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { WebSocket } from 'ws';
 import { z } from 'zod';
-import { errorMessage } from '../lib/errors.js';
+import { grants } from '../lib/apiScopes.js';
+import { errorMessage, forbidden } from '../lib/errors.js';
 import { hasAccess, loadServerFor } from '../services/access.js';
 import { audit } from '../services/audit.js';
 import { bus } from '../services/events.js';
@@ -60,6 +61,14 @@ export default async function wsRoutes(app: FastifyInstance): Promise<void> {
     }
     const subs = new Map<string, Sub>();
 
+    /** API keys: the scope and server list apply to the WebSocket as they do to the REST API. */
+    const keyMay = (scope: string, serverId: string) => {
+      const key = req.apiKey;
+      if (!key) return;
+      if (!grants(key.scopes, scope)) throw forbidden(`This API key lacks the "${scope}" scope`, 'insufficient_scope');
+      if (key.serverIds && !key.serverIds.includes(serverId)) throw forbidden('This API key is not allowed to use this server', 'server_not_allowed');
+    };
+
     const onLog = (serverId: string, line: string, ts: string) => {
       if (subs.get(serverId)?.logs) send({ type: 'log', serverId, line, ts });
     };
@@ -114,6 +123,8 @@ export default async function wsRoutes(app: FastifyInstance): Promise<void> {
               send({ type: 'pong' });
               return;
             case 'subscribe': {
+              keyMay('servers:read', msg.serverId);
+              if (msg.channels.includes('logs')) keyMay('logs:read', msg.serverId);
               const { server, access } = await loadServerFor(user, msg.serverId, 'viewer');
               unsubscribe(server.id);
               const sub: Sub = { logs: msg.channels.includes('logs'), stats: msg.channels.includes('stats'), access };
@@ -134,6 +145,7 @@ export default async function wsRoutes(app: FastifyInstance): Promise<void> {
               unsubscribe(msg.serverId);
               return;
             case 'command': {
+              keyMay('console:execute', msg.serverId);
               const { server, access } = await loadServerFor(user, msg.serverId, 'viewer');
               if (!hasAccess(access, 'operator')) {
                 send({ type: 'error', serverId: server.id, message: 'Operator access required to send commands' });

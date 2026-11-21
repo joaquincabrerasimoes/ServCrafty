@@ -156,7 +156,7 @@ test('the docs endpoints are protected and listed', async () => {
 });
 
 test('docs index metadata matches the files on disk', () => {
-  assert.deepEqual(DOC_FILES.map((d) => d.filename), ['servcrafty-api-tokens.md', 'servcrafty-openapi.json']);
+  assert.deepEqual(DOC_FILES.map((d) => d.filename), ['servcrafty-api-tokens.md', 'servcrafty-mcp.md', 'SKILL.md', 'servcrafty-openapi.json']);
   for (const d of DOC_FILES) assert.ok(fs.existsSync(path.join(DOCS, d.file)), d.file);
 });
 

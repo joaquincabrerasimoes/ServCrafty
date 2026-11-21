@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { requireUser } from '../auth/plugin.js';
 import { idParam, parse } from '../lib/validation.js';
+import { grantCreated } from '../services/apiKeys.js';
 import { audit } from '../services/audit.js';
 import {
   createTemplate,
@@ -41,6 +42,7 @@ export default async function templateRoutes(app: FastifyInstance): Promise<void
     const t = await getTemplateFor(user, id);
     const body = parse(instantiateSchema, req.body);
     const server = await instantiateTemplate(user, t, body);
+    await grantCreated(req, server.id);
     await audit(req, 'server.created', 'server', server.id, { fromTemplate: t.id, name: server.name });
     reply.code(201);
     return toPublicServer(server, server.owner_id === user.id ? 'owner' : 'admin', null);

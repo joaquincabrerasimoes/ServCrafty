@@ -35,6 +35,7 @@ import userRoutes from './routes/users.js';
 import webhookRoutes from './routes/webhooks.js';
 import webuiRoutes, { selectProtocol } from './routes/webui.js';
 import { WS_MAX_MESSAGE_BYTES } from './lib/webuiProxy.js';
+import mcpRoutes from './routes/mcp.js';
 import wsRoutes from './routes/ws.js';
 import { dockerAvailable } from './services/docker.js';
 
@@ -126,6 +127,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     { prefix: '/api' },
   );
   await app.register(wsRoutes);
+  await app.register(mcpRoutes);
 
   // ---- Web UI (SPA) ----
   const dist = c.webDist;

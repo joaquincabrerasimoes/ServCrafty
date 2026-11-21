@@ -12,7 +12,8 @@ This guide explains how to drive your ServCrafty panel from scripts, CI jobs, ch
 
 An API token is a long random secret that identifies **you** to the API without a password and without a browser.
 
-- **A token has exactly the permissions of the account that created it.** If you own a server, the token can do everything you can do to it. If someone shared a server with you as *viewer*, the token can only read it. If you are an administrator, the token is an administrator token.
+- **A token never has more permissions than the account that created it.** If you own a server, a full token can do everything you can do to it. If someone shared a server with you as *viewer*, the token can only read it. If you are an administrator, a full token is an administrator token.
+- **Since v0.6.0 a key can have fewer permissions than its owner** (see [Permissions](#permissions-scopes-and-server-limits)): read-only keys, operator keys, keys limited to some servers. Keys created before v0.6.0 keep full access (`*`).
 - Tokens start with `scf_`. Only a hash is stored on the server: the plaintext is shown **once**, when you create it, and cannot be recovered. Lost tokens must be revoked and replaced.
 - Tokens skip the login and the second factor (TOTP / passkey). That is what makes them convenient for automation, and why they must be protected like a password (see [Security advice](#10-security-advice)).
 - A token can optionally expire. You can have at most **50 tokens** per account.
@@ -39,12 +40,36 @@ Admin tokens can additionally manage users (including resetting another user's p
 
 1. Sign in to the panel in your browser.
 2. Open **Account** > **API tokens**.
-3. Enter a name that says where the token will be used (for example `github-actions` or `discord-bot`), optionally an expiry (days or a date), and press **Create**.
+3. Enter a name that says where the token will be used (for example `github-actions` or `discord-bot`), choose a preset or the permissions it needs, optionally limit it to some servers and set an expiry, and press **Create**.
 4. Copy the token that is displayed. **It is shown only once.**
 
 To revoke a token, press **Delete** next to it in the same list (or call `DELETE {{BASE_URL}}/api/account/tokens/<id>`). Revocation is immediate. The list shows the token prefix (`scf_` plus six characters), when it was created, when it was last used (updated at most once a minute) and when it expires.
 
 An expired or revoked token is simply not recognised: requests answer `401`.
+
+### Permissions (scopes) and server limits
+
+Every key carries a list of **scopes** (`resource:action`) and optionally a list of **servers**. `GET $BASE/account/tokens/scopes` returns the catalogue and the presets (`read-only`, `operator`, `manager`, `full`). `X:write` also grants `X:read`; `X:*` grants every action of `X`; `*` grants everything its owner can do.
+
+| Scope | Allows |
+| --- | --- |
+| `servers:read` / `servers:create` / `servers:configure` / `servers:power` / `servers:delete` | See / create / change settings of / start-stop / delete servers |
+| `logs:read` / `console:execute` | Read the console log / send console commands |
+| `players:read` / `players:manage` | See / kick, ban, op, whitelist players |
+| `files:read` / `files:write` | Browse and read / change server files |
+| `backups:read` / `backups:write` / `backups:restore` | List and download / create and delete / restore backups |
+| `mods:read` / `mods:write` | List / install and remove mods, plugins, Workshop items |
+| `schedules:*`, `webhooks:*`, `shares:*`, `templates:*` | `read` and `write` for each |
+| `games:read` / `games:write` | Game catalogue / custom game definitions |
+| `admin:read` / `admin:write` | Administrators only: users, settings, panel updates |
+
+What a key can do is the **intersection** of its scopes and its owner's own access (ownership, sharing level, admin role). A request outside the scopes answers `403` with code `insufficient_scope` and the missing scope in `error.details.required`. A key limited to some servers gets `403 server_not_allowed` for any other server, sees only its servers in `GET /servers`, and cannot use panel-wide endpoints (users, administration, panel-wide webhooks); servers it creates are added to its list. Endpoints that have no scope yet are closed to limited keys (`403 scope_not_mapped`).
+
+`GET $BASE/auth/me` with a key also returns `key`: its `scopes`, the effective `granted` list and its `serverIds`.
+
+Creating and editing keys (`POST /account/tokens`, `PATCH /account/tokens/{id}`) needs a browser login, so a key cannot widen itself.
+
+AI agents: the panel also has a built-in **MCP server** at `{{BASE_URL}}/mcp` that uses these same keys. See the MCP guide and the agent skill in the same download menu.
 
 ---
 
@@ -488,6 +513,38 @@ curl -s -X DELETE -H "$AUTH" "$BASE/servers/$SID"
 Minecraft mods and plugins: `GET/POST /servers/{id}/mods...`, search with `GET /catalog/search`. Export a server as a modpack: `GET /servers/{id}/export?format=serverpack`.
 
 **Game web admin pages and the BlueMap map.** Some games have their own web interface (`steamGame.webui` in the server JSON), and BlueMap serves a map. The panel exposes them through a sandboxed proxy under `/api/servers/{id}/webui/...` that is meant for browsers (it uses short-lived session URLs). It is not part of the token API; open it from the panel.
+
+---
+
+### 7.14 Update the panel remotely (administrators)
+
+An administrator key can update ServCrafty itself. Give it the scope `admin:read` (see the status) and `admin:update` (apply); `*` also works. Updates are done in place on installations that can do it (the Proxmox LXC install); Docker installs report `canUpdate: false` and are updated with `docker compose pull && docker compose up -d`.
+
+```bash
+# Is there a newer version, and can this installation update itself?
+curl -s -H "Authorization: Bearer $TOKEN" "$BASE/admin/update"
+# -> { "currentVersion": "0.5.2", "updateAvailable": true, "latest": { "version": "0.6.0", ... },
+#      "canUpdate": true, "cannotUpdateReason": null, "runningServers": 3, "status": { "state": "idle", ... } }
+
+# Ask GitHub right now (6 per 10 minutes)
+curl -s -X POST -H "Authorization: Bearer $TOKEN" "$BASE/admin/update/check"
+
+# Apply the latest release (or { "version": "0.6.0" }). Answers 202 at once.
+curl -s -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{}' "$BASE/admin/update/apply"
+```
+
+The panel **restarts** during the update: the API and the web UI are unreachable for a short while, and game servers keep running. Poll until it is back and check the result:
+
+```bash
+# 1. Wait for the panel (this endpoint needs no key); "version" is the running version
+until curl -sf "$BASE/health" >/dev/null; do sleep 3; done; curl -s "$BASE/health"
+# 2. The outcome: status.state is succeeded, failed or rolled_back
+curl -s -H "Authorization: Bearer $TOKEN" "$BASE/admin/update"
+# 3. What the updater printed
+curl -s -H "Authorization: Bearer $TOKEN" "$BASE/admin/update/log?offset=0"
+```
+
+If the new version misbehaves, `POST $BASE/admin/update/rollback` restores the previous one (400 `no_rollback` when there is none). Common errors: `400 no_update` (already up to date), `409` (an update is already running, or the installation cannot update itself: read `cannotUpdateReason`), `403 insufficient_scope` (the key lacks `admin:update`).
 
 ---
 
