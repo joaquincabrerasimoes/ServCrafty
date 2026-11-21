@@ -146,6 +146,67 @@ export function assertItem(id: unknown): string {
   return id;
 }
 
+/** The eight survivors, with the game's own character ids (`m_survivorCharacter`). */
+export const CHARACTERS = [
+  { id: 0, name: 'Nick', game: 'l4d2' },
+  { id: 1, name: 'Rochelle', game: 'l4d2' },
+  { id: 2, name: 'Coach', game: 'l4d2' },
+  { id: 3, name: 'Ellis', game: 'l4d2' },
+  { id: 4, name: 'Bill', game: 'l4d1' },
+  { id: 5, name: 'Zoey', game: 'l4d1' },
+  { id: 6, name: 'Francis', game: 'l4d1' },
+  { id: 7, name: 'Louis', game: 'l4d1' },
+] as const;
+
+/** Most survivors (people + bots) the bot spawner plugin lets a team have. */
+export const SURVIVORS_MAX = 16;
+
+export function assertCharacter(id: unknown): number {
+  if (typeof id !== 'number' || !Number.isInteger(id) || id < 0 || id >= CHARACTERS.length) {
+    throw badRequest('Unknown survivor', 'invalid_character');
+  }
+  return id;
+}
+
+/** Command of the bundled `servcrafty_bots` plugin: add one survivor bot of that character. */
+export const addBotCommand = (character: number): string => `sc_addbot ${assertCharacter(character)}`;
+
+export interface SurvivorEntry {
+  userId: number;
+  /** 0-7, or -1 when the game reports none. */
+  character: number;
+  bot: boolean;
+  name: string;
+}
+
+/** Output of `sc_survivors` (`SCSURV <userid> <character> <bot> <name>` lines, then `SCEND n`). null = the plugin is not loaded. */
+export function parseSurvivorList(output: string): SurvivorEntry[] | null {
+  if (!/^SCEND \d+/m.test(output)) return null;
+  const list: SurvivorEntry[] = [];
+  for (const line of output.split('\n')) {
+    const m = /^SCSURV (\d+) (-?\d+) ([01]) (.*)$/.exec(line.trim());
+    if (m) list.push({ userId: Number(m[1]), character: Number(m[2]), bot: m[3] === '1', name: m[4]! });
+  }
+  return list;
+}
+
+/** Output of `sc_addbot`: the new bot, or the plugin's error code. null = no answer (plugin missing). */
+export function parseAddBot(output: string): { ok: true; userId: number; name: string } | { ok: false; error: string } | null {
+  const ok = /^SCOK (\d+) (.+)$/m.exec(output);
+  if (ok) return { ok: true, userId: Number(ok[1]), name: ok[2]!.trim() };
+  const err = /^SCERR (\w+)/m.exec(output);
+  return err ? { ok: false, error: err[1]! } : null;
+}
+
+/** `"sv_cheats" = "0" ...` -> true when cheats are on; null when the answer is not recognised (no console output). */
+export function parseCheatsState(output: string): boolean | null {
+  const m = /"sv_cheats"\s*=\s*"(\d+)"/.exec(output);
+  return m ? m[1] !== '0' : null;
+}
+
+/** The game refuses cheat commands from the console unless `sv_cheats` is on. */
+export const CHEAT_REFUSED = /Can't use cheat command/i;
+
 /** VScript line that gives a survivor an item (the `script` console command runs it on the server). */
 export function giveCommand(userId: number, itemId: string): string {
   return `script GetPlayerFromUserID(${assertUserId(userId)}).GiveItem("${assertItem(itemId)}")`;

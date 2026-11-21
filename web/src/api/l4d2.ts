@@ -17,6 +17,7 @@ export const l4d2Api = {
     api.post<{ ok: boolean; difficulty: L4dDifficulty }>(`${l(id)}/controls/difficulty`, { difficulty, persist }),
   kick: (id: string, userId: number, reason?: string) =>
     api.post<{ ok: boolean }>(`${l(id)}/controls/kick`, reason ? { userId, reason } : { userId }),
+  addBot: (id: string, character: number) => api.post<{ ok: boolean; userId: number; name: string }>(`${l(id)}/controls/bots`, { character }),
   give: (id: string, userId: number, item: string) => api.post<{ ok: boolean }>(`${l(id)}/controls/give`, { userId, item }),
 
   /** Plugin store (manager). */

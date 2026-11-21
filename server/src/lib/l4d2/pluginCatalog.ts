@@ -28,6 +28,8 @@ export interface PluginSource {
   platform?: PluginPlatform;
   /** Fixed download address, or `latest`: `index` returns the current file name, found under `base`. */
   url?: string;
+  /** File shipped with the panel (under `server/plugins/`) instead of downloaded. */
+  bundled?: string;
   latest?: { index: string; base: string };
   format: 'zip' | 'tar.gz' | 'file';
   rules: PluginRule[];
@@ -169,6 +171,17 @@ export const PLUGIN_CATALOG: PluginDef[] = [
     category: 'slots',
     requires: ['sourcemod', 'l4dtoolz'],
     sources: [{ format: 'file', url: `${RMC}l4d2_unreservelobby.smx`, rules: [{ from: '', to: 'addons/sourcemod/plugins/l4d2_unreservelobby.smx' }] }],
+    settings: [],
+    configFile: SHARED_CONFIG,
+  },
+  {
+    id: 'servcrafty_bots',
+    name: 'Bot spawner (choose the character)',
+    description: 'Adds survivor bots of the character you pick, including the Left 4 Dead 1 survivors (Bill, Zoey, Francis, Louis). Used by the Controls tab; no settings.',
+    homepage: 'https://github.com/joaquincabrerasimoes/ServCrafty',
+    category: 'slots',
+    requires: ['sourcemod'],
+    sources: [{ format: 'file', bundled: 'servcrafty_bots.smx', rules: [{ from: '', to: 'addons/sourcemod/plugins/servcrafty_bots.smx' }] }],
     settings: [],
     configFile: SHARED_CONFIG,
   },

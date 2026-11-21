@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import archiver from 'archiver';
+import { SERVER_ROOT } from '../src/config.js';
 import * as tar from 'tar';
 import { PLUGIN_CATALOG, pluginById, sourcesFor, withDependencies } from '../src/lib/l4d2/pluginCatalog.js';
 import {
@@ -81,7 +82,9 @@ test('catalog: every entry is installable (known dependencies, https, rules, set
     assert.ok(p.sources.length > 0, p.id);
     for (const s of p.sources) {
       const urls = [s.url, s.latest?.index, s.latest?.base].filter(Boolean) as string[];
-      assert.ok(urls.length > 0 && urls.every((u) => u.startsWith('https://')), `${p.id} urls`);
+      if (s.bundled) {
+        assert.ok(fs.existsSync(path.join(SERVER_ROOT, 'plugins', s.bundled)), `${p.id} bundled file exists`);
+      } else assert.ok(urls.length > 0 && urls.every((u) => u.startsWith('https://')), `${p.id} urls`);
       assert.ok(s.rules.length > 0);
       assert.ok(!s.rules.some((r) => r.to.includes('..') || r.to.startsWith('/')), `${p.id} rules`);
     }
@@ -261,3 +264,24 @@ test('every plugin has downloads for both platforms; windows builds use .dll / z
   // platform-independent plugins (sourcemod scripts) are shared
   assert.equal(sourcesFor(pluginById('l4d2_rmc')!, 'windows').length, sourcesFor(pluginById('l4d2_rmc')!, 'linux').length);
 });
+
+test('installSource: a bundled plugin is copied from the panel, not downloaded', async () => {
+  const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'sc-bundled-'));
+  try {
+    const def = pluginById('servcrafty_bots')!;
+    const src = def.sources[0]!;
+    const deps = {
+      fetchText: async () => { throw new Error('no network'); },
+      download: async () => { throw new Error('no network'); },
+      unzip: async () => undefined,
+      untar: async () => undefined,
+      bundledPath: (n: string) => path.join(SERVER_ROOT, 'plugins', n),
+    } as InstallDeps;
+    const r = await installSource(root, src, deps);
+    assert.deepEqual(r.files, ['addons/sourcemod/plugins/servcrafty_bots.smx']);
+    assert.ok((await fsp.stat(path.join(root, r.files[0]!))).size > 1000);
+  } finally {
+    await fsp.rm(root, { recursive: true, force: true });
+  }
+});
+

@@ -834,6 +834,15 @@ export interface L4dItemGroup {
 }
 
 /** GET /servers/:id/l4d2/controls (runs the game's `status` command). */
+export interface L4dCharacter {
+  id: number;
+  name: string;
+  /** `l4d1` = the Left 4 Dead 1 survivors. */
+  game: 'l4d2' | 'l4d1';
+  /** A survivor with this character is already in the team. */
+  inUse: boolean;
+}
+
 export interface L4dControls {
   running: boolean;
   map: string | null;
@@ -841,6 +850,8 @@ export interface L4dControls {
   difficulties: Array<{ value: L4dDifficulty; label: string }>;
   modes: L4dGameMode[];
   items: L4dItemGroup[];
+  /** Survivor characters for the bot spawner; `available` is false when the bundled plugin is not installed. */
+  bots: { available: boolean; characters: L4dCharacter[] };
   start: { gameMode: string; difficulty: string };
 }
 

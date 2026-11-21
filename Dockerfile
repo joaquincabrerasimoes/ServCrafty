@@ -24,6 +24,8 @@ COPY --from=build /app/server/migrations ./server/migrations
 COPY --from=build /app/server/games ./server/games
 # API documentation served by GET /api/docs/* (guide + OpenAPI file).
 COPY --from=build /app/server/docs ./server/docs
+# Plugins of our own (compiled SourceMod files) installed by the Left 4 Dead 2 plugin store.
+COPY --from=build /app/server/plugins ./server/plugins
 COPY --from=build /app/web/dist ./web/dist
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh

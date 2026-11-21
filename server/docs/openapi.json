@@ -6207,7 +6207,7 @@
         ],
         "summary": "Give an item to a player",
         "operationId": "post_servers_id_l4d2_controls_give",
-        "description": "Requires **operator** access. Runs the VScript `GiveItem` on the player through the `script` console command (the game may refuse it on servers that restrict script access). `item` must be an id from the controls overview.",
+        "description": "Requires **operator** access. Runs the VScript `GiveItem` on the player through the `script` console command. `script` is a cheat command, so the panel turns `sv_cheats` on for the moment of the command and puts it back (it stays on if it already was). `item` must be an id from the controls overview. 409 `give_refused` when the game still refuses it, 409 `not_running`.",
         "parameters": [
           {
             "$ref": "#/components/parameters/ServerId"
@@ -6580,6 +6580,86 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/servers/{id}/l4d2/controls/bots": {
+      "post": {
+        "tags": [
+          "Left 4 Dead 2"
+        ],
+        "summary": "Add a survivor bot of a chosen character",
+        "operationId": "post_servers_id_l4d2_controls_bots",
+        "description": "Requires **operator** access. Adds one survivor bot with the chosen character (0 Nick, 1 Rochelle, 2 Coach, 3 Ellis, 4 Bill, 5 Zoey, 6 Francis, 7 Louis; Bill, Zoey, Francis and Louis are the Left 4 Dead 1 survivors) using the bundled *Bot spawner* plugin. The controls overview lists the characters and which are already in the team (`bots.characters[].inUse`). 400 `invalid_character`, 409 `plugin_required` (plugin not installed), 409 `bot_team_full`, 409 `not_running`.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "character"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "character": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 7,
+                    "example": 5
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "ok",
+                    "userId",
+                    "name"
+                  ],
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "userId": {
+                      "type": "integer"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
           }
         }
       }

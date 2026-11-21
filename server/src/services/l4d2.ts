@@ -11,7 +11,13 @@ import {
   changeLevelCommands,
   difficultyCommand,
   DIFFICULTIES,
+  addBotCommand,
+  CHARACTERS,
+  CHEAT_REFUSED,
   giveCommand,
+  parseAddBot,
+  parseCheatsState,
+  parseSurvivorList,
   ITEM_GROUPS,
   kickCommand,
   parseStatus,
@@ -111,8 +117,13 @@ export async function controlsOverview(server: ServerRow) {
     status = parseStatus(lines);
   }
   const vars = server.steam?.vars ?? {};
+  // The bundled plugin lists the survivors with their character; without it the choice of character is not available.
+  let survivors: ReturnType<typeof parseSurvivorList> = null;
+  if (running) survivors = parseSurvivorList(await runtime.sendCommand(server.id, 'sc_survivors').catch(() => ''));
+  const used = new Set((survivors ?? []).map((x) => x.character));
   return {
     running,
+    bots: { available: survivors !== null, characters: CHARACTERS.map((c) => ({ ...c, inUse: used.has(c.id) })) },
     map: status.map,
     players: status.players,
     difficulties: DIFFICULTIES,
@@ -155,9 +166,46 @@ export async function kickPlayer(server: ServerRow, userId: number, reason?: str
   await run(server, [kickCommand(userId, reason)]);
 }
 
+/**
+ * Run `fn` with cheats on and put them back afterwards. `script` (the way items are given) is a cheat command: with
+ * `sv_cheats 0` the game refuses it and prints "Can't use cheat command", which the panel used to ignore, so giving
+ * an item silently did nothing. Cheats stay on for the moment of the command only, and are restored even when it fails.
+ */
+async function withCheats<T>(server: ServerRow, fn: () => Promise<T>): Promise<T> {
+  const was = parseCheatsState(await runtime.sendCommand(server.id, 'sv_cheats'));
+  if (was === true) return fn();
+  await runtime.sendCommand(server.id, 'sv_cheats 1');
+  try {
+    return await fn();
+  } finally {
+    await runtime.sendCommand(server.id, 'sv_cheats 0').catch(() => undefined);
+  }
+}
+
 export async function givePlayer(server: ServerRow, userId: number, item: string) {
   l4d2Def(server);
-  await run(server, [giveCommand(userId, item)]);
+  const command = giveCommand(userId, item);
+  if (!runtime.isRunning(server.id)) throw conflict('The server is not running', 'not_running');
+  const out = await withCheats(server, () => runtime.sendCommand(server.id, command));
+  if (CHEAT_REFUSED.test(out)) throw conflict('The game refused the command', 'give_refused');
+}
+
+const BOT_ERRORS: Record<string, string> = {
+  team_full: 'The team is full (16 survivors)',
+  no_bot: 'The game did not create the bot',
+  unknown_character: 'Unknown survivor',
+  usage: 'Unknown survivor',
+};
+
+/** Add one survivor bot of the chosen character (0-7). Needs the bundled "Bot spawner" plugin. */
+export async function addBot(server: ServerRow, character: number) {
+  l4d2Def(server);
+  const command = addBotCommand(character);
+  if (!runtime.isRunning(server.id)) throw conflict('The server is not running', 'not_running');
+  const r = parseAddBot(await runtime.sendCommand(server.id, command));
+  if (!r) throw conflict('Install the "Bot spawner" plugin from the Plugins tab to add bots of a chosen character', 'plugin_required');
+  if (!r.ok) throw conflict(BOT_ERRORS[r.error] ?? 'The bot could not be added', `bot_${r.error}`);
+  return { userId: r.userId, name: r.name };
 }
 
 // ---------------------------------------------------------------------------------------------

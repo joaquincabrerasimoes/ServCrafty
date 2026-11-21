@@ -9,6 +9,13 @@ import { chapterTitle, firstMap, parseMission, scanGame } from '../src/lib/l4d2/
 import {
   assertItem,
   assertMap,
+  addBotCommand,
+  assertCharacter,
+  CHARACTERS,
+  CHEAT_REFUSED,
+  parseCheatsState,
+  parseAddBot,
+  parseSurvivorList,
   assertUserId,
   changeLevelCommands,
   cleanReason,
@@ -276,4 +283,30 @@ test('status output: map and players, humans and bots', () => {
   assert.equal(s.players[2]!.state, 'spawning');
   assert.ok(STATUS_END.test('#end'));
   assert.deepEqual(parseStatus(['nothing useful']), { map: null, players: [] });
+});
+
+test('give needs cheats: the refusal and the cheat state are recognised (strings printed by the real game)', () => {
+  assert.ok(CHEAT_REFUSED.test("Can't use cheat command script in multiplayer, unless the server has sv_cheats set to 1."));
+  assert.ok(!CHEAT_REFUSED.test('L 11/21/2026 - 18:12:25: rcon from "172.18.0.1:34382": command "script GetPlayerFromUserID(33).GiveItem("smg")"'));
+  assert.equal(parseCheatsState(['"sv_cheats" = "0"', ' notify replicated', ' - Allow cheats on server'].join('\n')), false);
+  assert.equal(parseCheatsState(['"sv_cheats" = "1"', ' notify replicated'].join('\n')), true);
+  assert.equal(parseCheatsState(''), null, 'no console output (stdin console): unknown');
+});
+
+test('bot spawner: command, character catalogue and plugin answers', () => {
+  assert.equal(addBotCommand(5), 'sc_addbot 5');
+  for (const bad of [-1, 8, 1.5, '3', NaN, null]) assert.throws(() => assertCharacter(bad), /Unknown survivor/, String(bad));
+  assert.deepEqual(CHARACTERS.map((c) => c.name), ['Nick', 'Rochelle', 'Coach', 'Ellis', 'Bill', 'Zoey', 'Francis', 'Louis']);
+  assert.deepEqual(CHARACTERS.filter((c) => c.game === 'l4d1').map((c) => c.id), [4, 5, 6, 7]);
+  const list = ['SCSURV 33 0 0 Stervil98', 'SCSURV 34 1 1 Rochelle', 'SCSURV 35 -1 1 Weird Name', 'SCEND 3'].join('\n');
+  assert.deepEqual(parseSurvivorList(list), [
+    { userId: 33, character: 0, bot: false, name: 'Stervil98' },
+    { userId: 34, character: 1, bot: true, name: 'Rochelle' },
+    { userId: 35, character: -1, bot: true, name: 'Weird Name' },
+  ]);
+  assert.equal(parseSurvivorList('Unknown command "sc_survivors"'), null, 'plugin missing');
+  assert.deepEqual(parseSurvivorList('SCEND 0'), []);
+  assert.deepEqual(parseAddBot('SCOK 41 Zoey'), { ok: true, userId: 41, name: 'Zoey' });
+  assert.deepEqual(parseAddBot('SCERR team_full'), { ok: false, error: 'team_full' });
+  assert.equal(parseAddBot('Unknown command "sc_addbot"'), null);
 });

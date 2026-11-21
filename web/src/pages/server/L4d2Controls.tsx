@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { Bot, DoorOpen, Gift, Map as MapIcon, Play, RefreshCw } from 'lucide-react';
 import { l4d2Api, l4d2Keys } from '@/api';
-import type { L4dControls, L4dDifficulty, L4dGameMode, L4dPlayer } from '@/api/types';
+import type { L4dCharacter, L4dControls, L4dDifficulty, L4dGameMode, L4dPlayer } from '@/api/types';
 import { useT, type TKey } from '@/i18n';
 import { qk } from '@/lib/queries';
 import { chaptersOf, difficultyLabel, modeLabel, modesOf, settle, useL4dMaps } from '@/lib/l4d2';
@@ -273,6 +273,53 @@ function GiveDialog({ player, groups, onClose, onGive, busy }: { player: L4dPlay
   );
 }
 
+function BotSpawner({ serverId, data, enabled, act, busy }: { serverId: string; data: L4dControls; enabled: boolean; act: Act; busy: string | null }) {
+  const t = useT();
+  const chars = data.bots.characters;
+  // Characters nobody plays yet come first (and the first of them is the default); the Left 4 Dead 1 ones are marked.
+  const sorted = [...chars].sort((a, b) => Number(a.inUse) - Number(b.inUse) || a.id - b.id);
+  const free = sorted.find((c) => !c.inUse) ?? sorted[0];
+  const [pick, setPick] = useState<number | null>(null);
+  const choice = chars.find((c) => c.id === pick) ?? free;
+  const ready = enabled && data.bots.available;
+  const add = (c: L4dCharacter | undefined) => {
+    if (!c) return;
+    void act(`bot:${c.id}`, () => l4d2Api.addBot(serverId, c.id), t('l4d2.botAdded', { name: c.name })).then((ok) => ok && setPick(null));
+  };
+  return (
+    <Section title={t('l4d2.botsTitle')}>
+      {!data.bots.available && enabled && <p className="mb-3 text-sm text-muted">{t('l4d2.botsNeedPlugin')}</p>}
+      <p className="mb-3 text-sm text-muted">{t('l4d2.botsHint')}</p>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {sorted.map((c) => (
+          <button
+            key={c.id}
+            type="button"
+            disabled={!ready}
+            aria-pressed={choice?.id === c.id}
+            onClick={() => setPick(c.id)}
+            className={clsx(
+              'min-h-10 rounded-block border px-2.5 py-1.5 text-start text-sm transition-colors disabled:opacity-50',
+              choice?.id === c.id ? 'border-accent bg-accent/10 font-medium text-accent' : 'border-line hover:bg-raised',
+            )}
+          >
+            <span className="block">{c.name}</span>
+            <span className="block text-xs text-muted">
+              {c.game === 'l4d1' ? t('l4d2.botFromL4d1') : t('l4d2.botFromL4d2')}
+              {c.inUse ? ` · ${t('l4d2.botInUse')}` : ` · ${t('l4d2.botFree')}`}
+            </span>
+          </button>
+        ))}
+      </div>
+      <div className="mt-3">
+        <Button variant="primary" disabled={!ready || !choice} loading={busy === `bot:${choice?.id}`} onClick={() => add(choice)} icon={<Bot className="h-4 w-4" />}>
+          {choice ? t('l4d2.botAdd', { name: choice.name }) : t('l4d2.botAddGeneric')}
+        </Button>
+      </div>
+    </Section>
+  );
+}
+
 function Players({ serverId, data, enabled, act, busy, onRefresh, refreshing }: { serverId: string; data: L4dControls; enabled: boolean; act: Act; busy: string | null; onRefresh: () => void; refreshing: boolean }) {
   const t = useT();
   const [kick, setKick] = useState<L4dPlayer | null>(null);
@@ -419,6 +466,7 @@ export default function L4d2Controls() {
       <Note>{t('l4d2.controlsNote')}</Note>
       <ChangeMap serverId={server.id} data={data} enabled={enabled} act={act} busy={busy} />
       <Difficulty serverId={server.id} data={data} enabled={enabled} act={act} busy={busy} />
+      <BotSpawner serverId={server.id} data={data} enabled={enabled} act={act} busy={busy} />
       <Players serverId={server.id} data={data} enabled={enabled} act={act} busy={busy} onRefresh={() => void q.refetch()} refreshing={q.isFetching} />
     </div>
   );

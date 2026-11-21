@@ -4,7 +4,7 @@ import path from 'node:path';
 import * as tar from 'tar';
 import { badRequest } from '../errors.js';
 import { downloadFile } from '../http.js';
-import { USER_AGENT } from '../../config.js';
+import { SERVER_ROOT, USER_AGENT } from '../../config.js';
 import { extractZip } from '../zip.js';
 import type { PluginDef, PluginRule, PluginSource } from './pluginCatalog.js';
 
@@ -14,6 +14,8 @@ export interface InstallDeps {
   /** Text of a small document (the "latest file name" pointer of AlliedModders). */
   fetchText(url: string): Promise<string>;
   download(url: string, dest: string): Promise<unknown>;
+  /** Absolute path of a file shipped with the panel (`server/plugins/`). */
+  bundledPath(name: string): string;
   unzip(file: string, dest: string): Promise<unknown>;
   untar(file: string, dest: string): Promise<unknown>;
 }
@@ -25,6 +27,7 @@ export const defaultDeps: InstallDeps = {
     return res.text();
   },
   download: (url, dest) => downloadFile(url, dest),
+  bundledPath: (name) => path.join(SERVER_ROOT, 'plugins', path.basename(name)),
   unzip: (file, dest) => extractZip(file, dest),
   untar: (file, dest) =>
     tar.x({
@@ -85,12 +88,13 @@ export async function installSource(root: string, source: PluginSource, deps: In
     url = source.latest.base + name;
     version = name.replace(/-(linux|windows)(\.tar\.gz|\.zip)$|\.tar\.gz$|\.zip$/i, '');
   }
-  if (!url?.startsWith('https://')) throw badRequest('Plugin download must use https', 'plugin_download_failed');
+  if (!source.bundled && !url?.startsWith('https://')) throw badRequest('Plugin download must use https', 'plugin_download_failed');
 
   const stage = await fsp.mkdtemp(path.join(os.tmpdir(), 'servcrafty-plugin-'));
   try {
     const archive = path.join(stage, source.format === 'file' ? 'download.bin' : `download.${source.format === 'zip' ? 'zip' : 'tgz'}`);
-    await deps.download(url, archive);
+    if (source.bundled) await fsp.copyFile(deps.bundledPath(source.bundled), archive);
+    else await deps.download(url as string, archive);
     const content = path.join(stage, 'content');
     await fsp.mkdir(content);
     if (source.format === 'zip') await deps.unzip(archive, content);
