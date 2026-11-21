@@ -10,6 +10,8 @@ import {
   assertItem,
   assertMap,
   addBotCommand,
+  assertSurvivors,
+  survivorsCommand,
   assertCharacter,
   CHARACTERS,
   CHEAT_REFUSED,
@@ -309,4 +311,10 @@ test('bot spawner: command, character catalogue and plugin answers', () => {
   assert.deepEqual(parseAddBot('SCOK 41 Zoey'), { ok: true, userId: 41, name: 'Zoey' });
   assert.deepEqual(parseAddBot('SCERR team_full'), { ok: false, error: 'team_full' });
   assert.equal(parseAddBot('Unknown command "sc_addbot"'), null);
+});
+
+test('team size: `sm_setmax` with a whole number from 4 to 16', () => {
+  assert.equal(survivorsCommand(6), 'sm_setmax 6');
+  assert.equal(survivorsCommand(16), 'sm_setmax 16');
+  for (const bad of [3, 17, 0, 5.5, '6', NaN, null]) assert.throws(() => assertSurvivors(bad), /team size/, String(bad));
 });

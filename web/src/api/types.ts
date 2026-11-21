@@ -852,6 +852,8 @@ export interface L4dControls {
   items: L4dItemGroup[];
   /** Survivor characters for the bot spawner; `available` is false when the bundled plugin is not installed. */
   bots: { available: boolean; characters: L4dCharacter[] };
+  /** Team size (survivors, people plus bots); `size` is null when the Multiplayer plugin is not available. */
+  team: { size: number | null; min: number; max: number; available: boolean };
   start: { gameMode: string; difficulty: string };
 }
 

@@ -273,6 +273,27 @@ function GiveDialog({ player, groups, onClose, onGive, busy }: { player: L4dPlay
   );
 }
 
+function TeamSize({ serverId, data, enabled, act, busy }: { serverId: string; data: L4dControls; enabled: boolean; act: Act; busy: string | null }) {
+  const t = useT();
+  const { size, min, max, available } = data.team;
+  const [value, setValue] = useState<number>(Math.min(max, Math.max(min, size ?? 8)));
+  const ready = enabled && available;
+  return (
+    <Section title={t('l4d2.teamTitle')}>
+      <p className="mb-3 text-sm text-muted">{available ? t('l4d2.teamHint', { n: size ?? 0 }) : t('l4d2.teamNeedPlugin')}</p>
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="block">
+          <span className="label">{t('l4d2.teamLabel', { min, max })}</span>
+          <input className="input w-28" type="number" min={min} max={max} step={1} value={value} disabled={!ready} onChange={(e) => setValue(Math.min(max, Math.max(min, Math.round(Number(e.target.value) || min))))} />
+        </label>
+        <Button variant="primary" disabled={!ready} loading={busy === 'team'} onClick={() => void act('team', () => l4d2Api.setTeamSize(serverId, value), t('l4d2.teamSet', { n: value }))}>
+          {t('l4d2.teamApply')}
+        </Button>
+      </div>
+    </Section>
+  );
+}
+
 function BotSpawner({ serverId, data, enabled, act, busy }: { serverId: string; data: L4dControls; enabled: boolean; act: Act; busy: string | null }) {
   const t = useT();
   const chars = data.bots.characters;
@@ -466,6 +487,7 @@ export default function L4d2Controls() {
       <Note>{t('l4d2.controlsNote')}</Note>
       <ChangeMap serverId={server.id} data={data} enabled={enabled} act={act} busy={busy} />
       <Difficulty serverId={server.id} data={data} enabled={enabled} act={act} busy={busy} />
+      <TeamSize serverId={server.id} data={data} enabled={enabled} act={act} busy={busy} />
       <BotSpawner serverId={server.id} data={data} enabled={enabled} act={act} busy={busy} />
       <Players serverId={server.id} data={data} enabled={enabled} act={act} busy={busy} onRefresh={() => void q.refetch()} refreshing={q.isFetching} />
     </div>

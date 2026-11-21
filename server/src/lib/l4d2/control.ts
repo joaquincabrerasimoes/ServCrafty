@@ -160,6 +160,17 @@ export const CHARACTERS = [
 
 /** Most survivors (people + bots) the bot spawner plugin lets a team have. */
 export const SURVIVORS_MAX = 16;
+export const SURVIVORS_MIN = 4;
+
+export function assertSurvivors(n: unknown): number {
+  if (typeof n !== 'number' || !Number.isInteger(n) || n < SURVIVORS_MIN || n > SURVIVORS_MAX) {
+    throw badRequest(`The team size must be a whole number from ${SURVIVORS_MIN} to ${SURVIVORS_MAX}`, 'invalid_survivors');
+  }
+  return n;
+}
+
+/** Team size (survivors, people plus bots) through the Multiplayer plugin: it adds or removes survivor bots to match. */
+export const survivorsCommand = (n: number): string => `sm_setmax ${assertSurvivors(n)}`;
 
 export function assertCharacter(id: unknown): number {
   if (typeof id !== 'number' || !Number.isInteger(id) || id < 0 || id >= CHARACTERS.length) {

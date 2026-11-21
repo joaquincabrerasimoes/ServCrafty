@@ -6663,6 +6663,82 @@
           }
         }
       }
+    },
+    "/servers/{id}/l4d2/controls/team": {
+      "post": {
+        "tags": [
+          "Left 4 Dead 2"
+        ],
+        "summary": "Set the team size (survivors, people and bots)",
+        "operationId": "post_servers_id_l4d2_controls_team",
+        "description": "Requires **operator** access. Runs `sm_setmax` of the *Multiplayer (more than 4 survivors)* plugin: survivor bots are added or removed so the team has `count` survivors (people included). `count` is 4 to 16. The controls overview reports `team: {size, min, max, available}`. 400 `invalid_survivors`, 409 `plugin_required`, 409 `not_running`.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "count"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "count": {
+                    "type": "integer",
+                    "minimum": 4,
+                    "maximum": 16,
+                    "example": 8
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "ok",
+                    "survivors"
+                  ],
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "survivors": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
     }
   },
   "components": {

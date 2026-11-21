@@ -12,6 +12,9 @@ import {
   difficultyCommand,
   DIFFICULTIES,
   addBotCommand,
+  SURVIVORS_MAX,
+  SURVIVORS_MIN,
+  survivorsCommand,
   CHARACTERS,
   CHEAT_REFUSED,
   giveCommand,
@@ -123,6 +126,7 @@ export async function controlsOverview(server: ServerRow) {
   const used = new Set((survivors ?? []).map((x) => x.character));
   return {
     running,
+    team: { size: survivors?.length ?? null, min: SURVIVORS_MIN, max: SURVIVORS_MAX, available: survivors !== null },
     bots: { available: survivors !== null, characters: CHARACTERS.map((c) => ({ ...c, inUse: used.has(c.id) })) },
     map: status.map,
     players: status.players,
@@ -196,6 +200,16 @@ const BOT_ERRORS: Record<string, string> = {
   unknown_character: 'Unknown survivor',
   usage: 'Unknown survivor',
 };
+
+/** Set the team size (survivors, people plus bots): the Multiplayer plugin adds or removes bots to match. */
+export async function setTeamSize(server: ServerRow, count: number) {
+  l4d2Def(server);
+  const command = survivorsCommand(count);
+  if (!runtime.isRunning(server.id)) throw conflict('The server is not running', 'not_running');
+  const out = await runtime.sendCommand(server.id, command);
+  if (/Unknown command/i.test(out)) throw conflict('Install the "Multiplayer (more than 4 survivors)" plugin from the Plugins tab to change the team size', 'plugin_required');
+  return { survivors: count };
+}
 
 /** Add one survivor bot of the chosen character (0-7). Needs the bundled "Bot spawner" plugin (which needs Multiplayer). */
 export async function addBot(server: ServerRow, character: number) {
