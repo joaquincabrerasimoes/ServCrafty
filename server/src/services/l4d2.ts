@@ -232,11 +232,13 @@ export async function installPlugin(server: ServerRow, id: string, settingsInput
       const isTarget = p.id === id;
       const have = state.plugins[p.id];
       if (have && !isTarget && recordPlatform(have) === platform) continue;
+      // `files` = everything the plugin owns now: written by this install plus the user-edited files it kept.
+      // (Kept files must stay listed: otherwise the cleanup below would delete them as "no longer shipped".)
       const files: string[] = [];
       let version: string | null = null;
       for (const source of sourcesFor(p, platform)) {
         const r = await installSource(root, source, deps);
-        files.push(...r.files);
+        files.push(...r.files, ...r.kept);
         version ??= r.version;
       }
       const prev = state.plugins[p.id];

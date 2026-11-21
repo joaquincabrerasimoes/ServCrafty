@@ -129,6 +129,14 @@ test('install: tar.gz with the latest-file pointer, version from the file name, 
     assert.ok(r.files.includes('addons/sourcemod/plugins/admin-flatfile.smx'));
     assert.ok(r.files.includes('cfg/sourcemod/sourcemod.cfg'));
     assert.ok(!r.files.includes('addons/sourcemod/configs/admins_simple.ini'), 'existing config is left alone');
+    // ... but it is reported as kept, so the caller still counts it as the plugin's own file. A reinstall (for example
+    // switching Windows -> Linux) removes the files "the new version no longer ships": without this the kept
+    // configs were deleted and SourceMod could not start its base plugins (v0.6.4).
+    assert.deepEqual(r.kept, ['addons/sourcemod/configs/admins_simple.ini']);
+    const previous = ['addons/sourcemod/configs/admins_simple.ini', 'addons/sourcemod/bin/sourcemod.2.l4d2.dll'];
+    const owned = [...r.files, ...r.kept];
+    await removeFiles(root, previous.filter((f) => !owned.includes(f)));
+    assert.equal(await fsp.readFile(path.join(root, 'addons/sourcemod/configs/admins_simple.ini'), 'utf8'), 'MY ADMINS', 'the kept config survives the cleanup');
     assert.equal(await fsp.readFile(path.join(root, 'addons/sourcemod/configs/admins_simple.ini'), 'utf8'), 'MY ADMINS');
     // A second install (an update) leaves a config the admin edited, but a new config is created.
     await fsp.writeFile(path.join(root, 'cfg/sourcemod/sourcemod.cfg'), 'edited');

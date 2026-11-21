@@ -69,6 +69,8 @@ const exists = (f: string) => fsp.lstat(f).then(() => true, () => false);
 export interface Installed {
   /** Files written, relative to `left4dead2/`. */
   files: string[];
+  /** Files of the download that already existed and were kept as they are (the user's edits, `preserve`). */
+  kept: string[];
   /** Version taken from the downloaded file name (AlliedModders builds), else null. */
   version: string | null;
 }
@@ -97,19 +99,23 @@ export async function installSource(root: string, source: PluginSource, deps: In
 
     const base = path.resolve(root);
     const written: string[] = [];
+    const kept: string[] = [];
     for await (const entry of walk(content)) {
       const dest = mapEntry(source.rules, source.format === 'file' ? 'file' : entry);
       if (!dest) continue;
       const target = path.resolve(base, dest);
       if (target !== base && !target.startsWith(base + path.sep)) throw badRequest(`Unsafe path in archive: ${entry}`, 'unsafe_archive');
       const rel = path.relative(base, target).split(path.sep).join('/');
-      if (source.preserve?.some((pre) => rel.startsWith(pre)) && (await exists(target))) continue;
+      if (source.preserve?.some((pre) => rel.startsWith(pre)) && (await exists(target))) {
+        kept.push(rel);
+        continue;
+      }
       await fsp.mkdir(path.dirname(target), { recursive: true });
       await fsp.copyFile(path.join(content, ...entry.split('/')), target);
       written.push(rel);
     }
     if (!written.length) throw badRequest('The download did not contain the expected files', 'plugin_download_failed');
-    return { files: written, version };
+    return { files: written, kept, version };
   } finally {
     await fsp.rm(stage, { recursive: true, force: true }).catch(() => undefined);
   }
