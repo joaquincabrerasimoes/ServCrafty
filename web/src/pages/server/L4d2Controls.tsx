@@ -387,8 +387,20 @@ function Players({ serverId, data, enabled, act, busy, onRefresh, refreshing }: 
                 <Button size="sm" variant="ghost" className="h-10" disabled={!enabled || !!busy} onClick={() => setGive(p)} icon={<Gift className="h-4 w-4" />}>
                   {t('l4d2.give')}
                 </Button>
-                <Button size="sm" variant="ghost" className="h-10 text-danger" disabled={!enabled || p.bot || !!busy} onClick={() => setKick(p)} icon={<DoorOpen className="h-4 w-4" />}>
-                  {t('players.action.kick')}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-10 text-danger"
+                  disabled={!enabled || !!busy}
+                  loading={busy === `kick:${p.userId}`}
+                  onClick={() =>
+                    p.bot
+                      ? void act(`kick:${p.userId}`, () => l4d2Api.kick(serverId, p.userId), t('l4d2.kicked', { name: p.name }))
+                      : setKick(p)
+                  }
+                  icon={<DoorOpen className="h-4 w-4" />}
+                >
+                  {p.bot ? t('l4d2.kickBot') : t('players.action.kick')}
                 </Button>
               </div>
             </li>

@@ -1278,6 +1278,7 @@ export const es: Record<keyof typeof en, string> = {
   'l4d2.kickTitle': '¿Expulsar a {name}?',
   'l4d2.kickReason': 'Motivo (opcional)',
   'l4d2.kickReasonPlaceholder': 'Se le muestra al jugador',
+  'l4d2.kickBot': 'Expulsar bot',
   'l4d2.kicked': '{name} expulsado',
   'l4d2.give': 'Dar objeto',
   'l4d2.giveTitle': 'Dar un objeto a {name}',

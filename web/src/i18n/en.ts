@@ -1300,6 +1300,7 @@ export const en = {
   'l4d2.kickTitle': 'Kick {name}?',
   'l4d2.kickReason': 'Reason (optional)',
   'l4d2.kickReasonPlaceholder': 'Shown to the player',
+  'l4d2.kickBot': 'Kick bot',
   'l4d2.kicked': '{name} kicked',
   'l4d2.give': 'Give item',
   'l4d2.giveTitle': 'Give an item to {name}',
