@@ -106,7 +106,8 @@ function validatePlan(raw) {
   }
   const env = l.env === undefined || l.env === null ? {} : l.env;
   if (!isObj(env) || !Object.values(env).every(isStr)) fail('launch.env', 'must be an object of strings');
-  const launch = { cwd: l.cwd || '', argv: [...l.argv], env: { ...env } };
+  if (l.logFile !== undefined && l.logFile !== null && l.logFile !== '') relPath(l.logFile, 'launch.logFile');
+  const launch = { cwd: l.cwd || '', argv: [...l.argv], env: { ...env }, logFile: l.logFile || null };
 
   const st = raw.stop === undefined || raw.stop === null ? {} : raw.stop;
   if (!isObj(st)) fail('stop', 'must be an object');

@@ -78,6 +78,8 @@ test('buildLaunch: linux runs the argv directly, windows goes through xvfb-run +
   assert.ok(w.args.includes('wine'));
   assert.equal(w.env.WINEPREFIX, paths.wineprefix);
   assert.equal(w.env.WINEDEBUG, '-all');
+  const dbg = buildLaunch({ ...p, launch: { ...p.launch, env: { WINEDEBUG: 'fixme-all,warn+seh' } } }, paths, { PATH: '/bin' });
+  assert.equal(dbg.env.WINEDEBUG, 'fixme-all,warn+seh');
   assert.equal(w.env.DISPLAY, undefined);
 });
 

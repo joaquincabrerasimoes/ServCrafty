@@ -82,6 +82,7 @@ The file name must be `<id>.json` for that script.
 | `query` | object or null | no | Steam A2S query. |
 | `workshop` | object or null | no | Steam Workshop support. |
 | `webui` | array (0-8) | no | Web interfaces proxied by the panel. |
+| `launch.logFile` / `windowsLaunch.logFile` | path inside the game directory or null | no | File the game writes its console to (for example Source `-condebug` -> `left4dead2/console.log`); the executor streams it to the server log. |
 | `windowsLaunch` | object (like `launch`) or null | no | Launch of the Windows build under Wine. When set, the server's Settings offer a Platform choice (Linux native / Windows) and the plan uses this launch for Windows. `steam.platform` stays the default. Example: Left 4 Dead 2 (`srcds.exe ...`). |
 | `profile` | `"l4d2"` or null | no | Built-in integration that adds tabs to the server page (maps, controls, plugins). Only the Left 4 Dead 2 definition uses it; it needs panel code, so a custom definition cannot invent a profile. |
 | `scripts` | object | no | `postInstall` and `preStart` shell snippets. |

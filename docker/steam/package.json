@@ -1,6 +1,6 @@
 {
   "name": "servcrafty-steam-run",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "private": true,
   "description": "Executor for the ServCrafty SteamCMD image (consumes /servcrafty/plan.json)",
   "license": "UNLICENSED",

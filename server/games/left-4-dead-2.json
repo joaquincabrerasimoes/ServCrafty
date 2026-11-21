@@ -193,6 +193,7 @@
       "-game",
       "left4dead2",
       "-console",
+      "-condebug",
       "-strictportbind",
       "-port",
       "{{ports.game}}",
@@ -223,7 +224,10 @@
       "+rcon_password",
       "{{rconPassword}}"
     ],
-    "env": {}
+    "env": {
+      "WINEDEBUG": "fixme-all,warn+seh"
+    },
+    "logFile": "left4dead2/console.log"
   },
   "files": [
     {

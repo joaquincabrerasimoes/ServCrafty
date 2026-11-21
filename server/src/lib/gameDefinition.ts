@@ -109,6 +109,8 @@ const launchSchema = z
     cwd: line(500).default(''),
     command: z.array(commandElement).min(1).max(200),
     env: z.record(z.string().regex(ENV_KEY_RE, 'invalid environment variable name'), text(4000)).default({}),
+    /** File (relative to the server's game directory) the game writes its console to; the executor streams it to the server log. */
+    logFile: line(300).nullable().default(null),
   })
   .strict();
 
@@ -487,6 +489,10 @@ function semanticErrors(def: GameDefinition): DefinitionIssue[] {
   const checkLaunch = (launch: typeof def.launch, base: string) => {
     const cwdBad = unsafeRelPathReason(launch.cwd, true);
     if (cwdBad) err(`${base}.cwd`, cwdBad);
+    if (launch.logFile) {
+      const logBad = unsafeRelPathReason(launch.logFile);
+      if (logBad) err(`${base}.logFile`, logBad);
+    }
     launch.command.forEach((el, i) => {
       const at = `${base}.command.${i}`;
       if (typeof el === 'string') checkTemplates(el, at);

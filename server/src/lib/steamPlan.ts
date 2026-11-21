@@ -476,7 +476,7 @@ export interface SteamPlan {
   };
   workshop: { appId: number; ids: string[]; install: 'steamcmd' | 'config-list'; dir: string | null; legacyAs: string | null } | null;
   files: PlanFile[];
-  launch: { cwd: string; argv: string[]; env: Record<string, string> };
+  launch: { cwd: string; argv: string[]; env: Record<string, string>; logFile: string | null };
   stop: { type: 'signal' | 'stdin'; signal: string; command: string | null; timeoutSec: number };
   console: { stdin: boolean };
   ready: { logRegex: string } | null;
@@ -558,7 +558,7 @@ export function buildPlan(def: GameDefinition, input: PlanInput): { plan: SteamP
       ? { appId: def.workshop.appId, ids: workshopIds, install: def.workshop.install, dir: def.workshop.dir ?? null, legacyAs: def.workshop.legacyAs ?? null }
       : null,
     files,
-    launch: { cwd: launch.cwd, argv, env },
+    launch: { cwd: launch.cwd, argv, env, logFile: launch.logFile },
     stop: {
       type: def.stop.type,
       signal: def.stop.signal,

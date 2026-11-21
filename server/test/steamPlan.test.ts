@@ -407,3 +407,28 @@ test('platform choice: only definitions with a Windows launch; plan follows the 
   assert.throws(() => mergeSteamConfig(def, normalizeSteamConfig(def, { gameId: def.id, vars: {} }), { platform: 'windows' }), AppError);
   assert.throws(() => normalizeSteamConfig(def, { gameId: def.id, vars: {}, platform: 'windows' }), AppError);
 });
+
+test('Left 4 Dead 2 under Wine: the console goes to a log file the executor streams, Wine debug strings are on', () => {
+  const l4d2 = parseDefinition(JSON.parse(readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '../games/left-4-dead-2.json'), 'utf8')));
+  const cfg = normalizeSteamConfig(l4d2, { gameId: l4d2.id, vars: {}, platform: 'windows' });
+  const input = { serverId: 's', serverName: 'n', mainHostPort: 27015, extraPorts: {} };
+  const win = buildPlan(l4d2, { ...input, steam: cfg }).plan;
+  assert.equal(win.steam.platform, 'windows');
+  assert.ok(win.launch.argv.includes('-condebug'), 'srcds writes its console to console.log');
+  assert.equal(win.launch.logFile, 'left4dead2/console.log');
+  assert.equal(win.launch.env.WINEDEBUG, 'fixme-all,warn+seh');
+  const lin = buildPlan(l4d2, { ...input, steam: normalizeSteamConfig(l4d2, { gameId: l4d2.id, vars: {} }) }).plan;
+  assert.equal(lin.launch.logFile, null);
+  assert.ok(!lin.launch.argv.includes('-condebug'));
+});
+
+test('launch.logFile must stay inside the game directory', () => {
+  const bad = JSON.parse(JSON.stringify(def));
+  bad.launch.logFile = '../outside.log';
+  assert.throws(() => parseDefinition(bad));
+  bad.launch.logFile = '/etc/passwd';
+  assert.throws(() => parseDefinition(bad));
+  const ok = JSON.parse(JSON.stringify(def));
+  ok.launch.logFile = 'logs/console.log';
+  assert.equal(parseDefinition(ok).launch.logFile, 'logs/console.log');
+});

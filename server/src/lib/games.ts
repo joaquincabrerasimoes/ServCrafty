@@ -174,7 +174,7 @@ export const STEAM_IMAGE_NAME = 'servcrafty-steamcmd';
  * when `docker/steam/` does) and is built by `.github/workflows/steam-image.yml`, not on every panel
  * release. Keep it equal to `docker/steam/package.json` (a test checks that).
  */
-export const STEAM_IMAGE_VERSION = '0.4.0';
+export const STEAM_IMAGE_VERSION = '0.4.1';
 
 /**
  * `image:tag` of the SteamCMD executor image. `override` is env `SERVCRAFTY_STEAM_IMAGE` (a full image
