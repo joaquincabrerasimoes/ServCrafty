@@ -54,6 +54,8 @@ function clampPct(n: number): number {
 
 export interface SteamMatchers {
   ready: RegExp | null;
+  /** A line that means the start failed and is worth retrying (`ready.failRegex`). */
+  fail: RegExp | null;
   join: RegExp | null;
   leave: RegExp | null;
 }
@@ -70,6 +72,7 @@ function compile(src: string | undefined): RegExp | null {
 export function steamMatchers(def: Pick<GameDefinition, 'ready' | 'players'> | null): SteamMatchers {
   return {
     ready: compile(def?.ready?.logRegex),
+    fail: compile(def?.ready?.failRegex),
     join: compile(def?.players?.joinRegex),
     leave: compile(def?.players?.leaveRegex),
   };

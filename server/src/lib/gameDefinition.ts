@@ -233,7 +233,18 @@ export const gameDefinitionSchema = z
       })
       .strict()
       .default({ stdin: false }),
-    ready: z.object({ logRegex: z.string().min(1).max(500) }).strict().nullable().default(null),
+    ready: z
+      .object({
+        logRegex: z.string().min(1).max(500),
+        /**
+         * A log line that means the start went wrong in a way a new start usually fixes (for example the game could not
+         * initialise Steam and fell back to LAN mode). While starting, the panel restarts the server once, twice in a row at most.
+         */
+        failRegex: z.string().min(1).max(500).optional(),
+      })
+      .strict()
+      .nullable()
+      .default(null),
     players: z
       .object({ joinRegex: z.string().min(1).max(500), leaveRegex: z.string().min(1).max(500) })
       .strict()
@@ -564,6 +575,10 @@ function semanticErrors(def: GameDefinition): DefinitionIssue[] {
 
   // regexes
   if (def.ready) {
+    if (def.ready.failRegex) {
+      const fre = regexError(def.ready.failRegex);
+      if (fre) err('ready.failRegex', fre);
+    }
     const re = regexError(def.ready.logRegex);
     if (re) err('ready.logRegex', re);
   }

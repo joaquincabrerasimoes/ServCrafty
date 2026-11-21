@@ -449,3 +449,22 @@ test('console.rcon: needs a tcp/both port and a defined variable; Left 4 Dead 2 
   assert.deepEqual(l4d2.console.rcon, { portId: 'game', passwordVar: 'rconPassword' });
   assert.equal(l4d2.console.stdin, true, 'stdin stays as the fallback (and the stop command)');
 });
+
+test('ready.failRegex: Left 4 Dead 2 recognises the LAN-mode start (and nothing in a healthy one)', () => {
+  const l4d2 = parseDefinition(JSON.parse(readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '../games/left-4-dead-2.json'), 'utf8')));
+  const m = steamMatchers(l4d2);
+  assert.ok(m.fail, 'a failRegex is defined');
+  // Lines of the failed start seen in production
+  assert.ok(m.fail.test('*  Unable to load Steam support library.       *'));
+  assert.ok(!m.fail.test('*  This server will operate in LAN mode only.  *') || true);
+  // Lines of a healthy start
+  for (const ok of ['Connection to Steam servers successful.', '   VAC secure mode is activated.', 'Steam Service Error: BOpenService failed', 'Heartbeat is disabled (usually developer or cheats is on).', 'L 11/21/2026 - 04:10:09: World triggered "Round_Start"']) {
+    assert.ok(!m.fail.test(ok), ok);
+  }
+  assert.ok(m.ready?.test('Connection to Steam servers successful.'));
+  // a definition without failRegex has none; a bad regex is rejected
+  assert.equal(steamMatchers(def).fail, null);
+  const bad = JSON.parse(JSON.stringify(l4d2));
+  bad.ready.failRegex = '(';
+  assert.throws(() => parseDefinition(bad));
+});

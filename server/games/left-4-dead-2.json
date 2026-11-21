@@ -250,7 +250,8 @@
     }
   },
   "ready": {
-    "logRegex": "Connection to Steam servers successful|gameserver Steam ID"
+    "logRegex": "Connection to Steam servers successful|gameserver Steam ID",
+    "failRegex": "Unable to load Steam support library"
   },
   "players": {
     "joinRegex": "\"(?<name>.+?)<\\d+><[^>]*><[^>]*>\" entered the game",

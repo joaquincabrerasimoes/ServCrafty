@@ -96,6 +96,8 @@ interface RuntimeState {
   docker: DockerSample | null;
   rcon: RconClient | null;
   rconFailedAt: number;
+  /** Automatic restarts in a row after a start that matched `ready.failRegex` (reset once a start reaches `running`). */
+  failRestarts: number;
   players: Set<string>;
   /** UUIDs announced by "UUID of player X is …" lines, used when that player is then refused. */
   seenUuids: Map<string, string>;
@@ -141,6 +143,7 @@ function state(id: string): RuntimeState {
       docker: null,
       rcon: null,
       rconFailedAt: 0,
+      failRestarts: 0,
       players: new Set(),
       seenUuids: new Map(),
       maxPlayers: 0,
@@ -290,6 +293,9 @@ function analyzeTerrariaLine(s: RuntimeState, line: string): void {
   }
 }
 
+/** Automatic restarts after a start that matched the definition's `ready.failRegex`. */
+const MAX_FAIL_RESTARTS = 2;
+
 function clearReadyTimer(st: SteamRuntime | null): void {
   if (st?.readyTimer) clearTimeout(st.readyTimer);
   if (st) st.readyTimer = null;
@@ -332,7 +338,14 @@ function analyzeSteamLine(s: RuntimeState, line: string): void {
   if (st.phase !== 'launch' && st.phase !== null) return;
   if ((s.status === 'starting' || s.status === 'installing') && st.matchers.ready?.test(line.slice(0, MAX_MATCH_LEN))) {
     clearReadyTimer(st);
+    s.failRestarts = 0;
     void setStatus(s.id, 'running');
+  }
+  if (s.status === 'starting' && st.matchers.fail?.test(line.slice(0, MAX_MATCH_LEN)) && s.failRestarts < MAX_FAIL_RESTARTS) {
+    s.failRestarts++;
+    systemLog(s.id, `[servcrafty] the game reported a failed start ("${line.trim().slice(0, 120)}"): restarting it (${s.failRestarts}/${MAX_FAIL_RESTARTS})`);
+    void restart(s.id).catch((err: unknown) => systemLog(s.id, `[servcrafty] automatic restart failed: ${errorMessage(err)}`));
+    return;
   }
   const joined = matchPlayer(st.matchers.join, line);
   if (joined) {
