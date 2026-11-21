@@ -175,6 +175,12 @@ test('a server nobody configured BlueMap for is left alone', async () => {
   assert.ok(fs.existsSync(path.join(serverFiles(), 'plugins/BlueMap-5.4-paper.jar')), 'a hand-installed BlueMap is not removed');
 });
 
+/** Wait for a condition instead of a fixed time: the polling watchers are timer driven and slow down on a busy machine. */
+async function until(cond: () => boolean, ms = 4000): Promise<void> {
+  const start = Date.now();
+  while (!cond() && Date.now() - start < ms) await new Promise((r) => setTimeout(r, 10));
+}
+
 test('watchBluemapMaps patches maps generated after the first boot, then reloads once the server runs', async () => {
   fs.rmSync(serverFiles(), { recursive: true, force: true });
   let status = 'starting';
@@ -188,11 +194,12 @@ test('watchBluemapMaps patches maps generated after the first boot, then reloads
   await new Promise((r) => setTimeout(r, 60));
   assert.deepEqual(commands, [], 'nothing generated yet');
   write('plugins/BlueMap/maps/overworld.conf', 'storage: "file"\n');
-  await new Promise((r) => setTimeout(r, 120));
+  await until(() => /storage: "sql"/.test(read('plugins/BlueMap/maps/overworld.conf')));
   assert.match(read('plugins/BlueMap/maps/overworld.conf'), /storage: "sql"/);
+  await new Promise((r) => setTimeout(r, 80)); // a few more polls while it is still starting
   assert.deepEqual(commands, [], 'no reload while the server is still starting');
   status = 'running';
-  await new Promise((r) => setTimeout(r, 120));
+  await until(() => commands.length > 0);
   assert.deepEqual(commands, ['bluemap reload']);
   await new Promise((r) => setTimeout(r, 120));
   assert.deepEqual(commands, ['bluemap reload'], 'reloads once');
@@ -213,6 +220,7 @@ test('watchBluemapMaps stops when the server stops', async () => {
     },
     { intervalMs: 10, maxMs: 5000 },
   );
-  await new Promise((r) => setTimeout(r, 100));
+  await until(() => calls >= 1);
+  await new Promise((r) => setTimeout(r, 80)); // it must not keep polling
   assert.equal(calls, 1);
 });

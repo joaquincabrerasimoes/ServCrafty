@@ -555,6 +555,40 @@ async function rconFor(server: ServerRow): Promise<RconClient> {
 }
 
 /**
+ * RCON of a SteamCMD game that declares `console.rcon`: connects to the container's own address and the game's port.
+ * Returns the command output, or null when the game has no RCON, the server is not reachable or the password is wrong
+ * (the caller then falls back to the stdin console).
+ */
+async function steamRconCommand(server: ServerRow, s: RuntimeState, cmd: string): Promise<string | null> {
+  const def = steamDef(server);
+  const cfg = def?.console.rcon;
+  if (!def || !cfg || !server.container_id) return null;
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u001f\u007f]/.test(cmd)) throw badRequest('Commands must be a single line', 'invalid_command');
+  // A server that has just failed is not retried for a few seconds (every poll would otherwise wait for the timeout).
+  if (Date.now() - s.rconFailedAt < 5000) return null;
+  try {
+    if (!s.rcon?.connected) {
+      const password = server.steam?.vars?.[cfg.passwordVar];
+      if (typeof password !== 'string' || !password) return null;
+      const port = resolvePorts(def, server.port, server.extra_ports ?? {}).find((p) => p.id === cfg.portId)?.containerPort;
+      const ip = await containerIp(server.container_id);
+      if (!port || !ip) return null;
+      s.rcon?.close();
+      s.rcon = new RconClient(ip, port, password);
+      await s.rcon.connect();
+    }
+    return await s.rcon.command(cmd);
+  } catch (err) {
+    s.rcon?.close();
+    s.rcon = null;
+    // Source servers ban an address after a few wrong passwords: after one, stay away for a minute.
+    s.rconFailedAt = Date.now() + (/authentication/i.test(errorMessage(err)) ? 55_000 : 0);
+    return null;
+  }
+}
+
+/**
  * Send a console command. Java uses RCON; Bedrock uses itzg's `send-command`.
  * Returns command output (Bedrock output appears in the log stream instead).
  */
@@ -566,6 +600,15 @@ export async function sendCommand(serverId: string, command: string): Promise<st
   }
   const cmd = command.replace(/^\//, '').trim();
   if (!cmd) throw badRequest('Empty command');
+  if (gameOf(server.type) === 'steam') {
+    // Games with `console.rcon` (Source engine): RCON works everywhere, including Windows builds under Wine.
+    const out = await steamRconCommand(server, s, cmd);
+    if (out !== null) {
+      pushLine(s, `> ${cmd}`);
+      for (const l of stripFormatting(out).split(/\r?\n/)) if (l.trim()) pushLine(s, l);
+      return out;
+    }
+  }
   if (gameOf(server.type) === 'terraria' || gameOf(server.type) === 'steam') {
     await consoleWrite(server, s, cmd);
     pushLine(s, `> ${cmd}`);

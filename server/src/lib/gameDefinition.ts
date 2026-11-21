@@ -222,7 +222,17 @@ export const gameDefinitionSchema = z
     windowsLaunch: launchSchema.nullable().default(null),
     files: z.array(fileSchema).max(50).default([]),
     stop: stopSchema.default({ type: 'signal', signal: 'SIGINT', timeoutSec: 60 }),
-    console: z.object({ stdin: z.boolean() }).strict().default({ stdin: false }),
+    console: z
+      .object({
+        stdin: z.boolean(),
+        /**
+         * Source RCON (TCP, same wire format as Minecraft's): console commands go through it instead of stdin, which
+         * does not reach a Windows game running under Wine. Stdin stays the fallback when RCON is unreachable.
+         */
+        rcon: z.object({ portId: z.string().min(1).max(32), passwordVar: z.string().min(1).max(64) }).strict().optional(),
+      })
+      .strict()
+      .default({ stdin: false }),
     ready: z.object({ logRegex: z.string().min(1).max(500) }).strict().nullable().default(null),
     players: z
       .object({ joinRegex: z.string().min(1).max(500), leaveRegex: z.string().min(1).max(500) })
@@ -571,6 +581,14 @@ function semanticErrors(def: GameDefinition): DefinitionIssue[] {
     const p = portIds.get(def.query.a2s.portId);
     if (!p) err('query.a2s.portId', `unknown port "${def.query.a2s.portId}"`);
     else if (p.protocol === 'tcp') err('query.a2s.portId', 'the A2S query port must be udp');
+  }
+
+  // console.rcon
+  if (def.console.rcon) {
+    const p = portIds.get(def.console.rcon.portId);
+    if (!p) err('console.rcon.portId', `unknown port "${def.console.rcon.portId}"`);
+    else if (p.protocol === 'udp') err('console.rcon.portId', 'RCON needs a tcp (or both) port');
+    if (!varKeys.has(def.console.rcon.passwordVar)) err('console.rcon.passwordVar', `variable "${def.console.rcon.passwordVar}" is not defined`);
   }
 
   // workshop

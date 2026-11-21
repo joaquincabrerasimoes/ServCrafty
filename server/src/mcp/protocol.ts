@@ -7,7 +7,7 @@ import { apiRequestPathProblem, ArgError, buildRequest, describeTool, GENERIC_TO
  */
 
 export const SUPPORTED_PROTOCOLS = ['2025-06-18', '2025-03-26', '2024-11-05'] as const;
-const MAX_RESULT_CHARS = 60_000;
+const MAX_RESULT_CHARS = 24_000;
 
 export interface ApiResult {
   status: number;
@@ -55,13 +55,18 @@ export function instructions(limits: KeyLimits): string {
   ].join('\n');
 }
 
-function textResult(text: string, isError = false): ToolResult {
-  const t = text.length > MAX_RESULT_CHARS ? `${text.slice(0, MAX_RESULT_CHARS)}\n... (truncated, ${text.length - MAX_RESULT_CHARS} more characters; ask for less, e.g. a smaller tail)` : text;
+function textResult(text: string, isError = false, keep: 'head' | 'tail' = 'head'): ToolResult {
+  let t = text;
+  if (text.length > MAX_RESULT_CHARS) {
+    const cut = text.length - MAX_RESULT_CHARS;
+    // Logs are read from the end (the newest lines matter), everything else from the start.
+    t = keep === 'tail' ? `... (${cut} earlier characters left out; ask for a smaller tail or a later offset)\n${text.slice(cut)}` : `${text.slice(0, MAX_RESULT_CHARS)}\n... (truncated, ${cut} more characters; ask for less, e.g. a smaller tail)`;
+  }
   return { content: [{ type: 'text', text: t }], isError };
 }
 
 /** Formats an API answer for the model; errors carry the code so the agent can react (insufficient_scope, quota_exceeded, ...). */
-export function formatApi(r: ApiResult): ToolResult {
+export function formatApi(r: ApiResult, keep: 'head' | 'tail' = 'head'): ToolResult {
   let pretty = r.body;
   try {
     pretty = JSON.stringify(JSON.parse(r.body), null, 2);
@@ -79,7 +84,7 @@ export function formatApi(r: ApiResult): ToolResult {
     }
     return textResult(`HTTP ${r.status}\n${pretty}${hint}`, true);
   }
-  return textResult(pretty || '(empty response)');
+  return textResult(pretty || '(empty response)', false, keep);
 }
 
 async function callTool(name: string, args: Record<string, unknown>, ctx: McpContext): Promise<ToolResult | null> {
@@ -103,7 +108,7 @@ async function callTool(name: string, args: Record<string, unknown>, ctx: McpCon
     if (e instanceof ArgError) return textResult(e.message, true);
     throw e;
   }
-  return formatApi(await ctx.callApi(tool.method, req.url, req.body));
+  return formatApi(await ctx.callApi(tool.method, req.url, req.body), tool.keepTail ? 'tail' : 'head');
 }
 
 /** Handles one JSON-RPC message; notifications (no id) answer null. */

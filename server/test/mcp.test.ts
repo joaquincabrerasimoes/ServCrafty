@@ -124,10 +124,19 @@ test('unknown tools are a protocol error; long results are cut', async () => {
   const { ctx: c } = ctx(['*']);
   const e = (await handleMessage(rpc('tools/call', { name: 'format_disk', arguments: {} }), c)) as { error: { code: number } };
   assert.equal(e.error.code, -32602);
-  const { ctx: big } = ctx(['*'], null, { status: 200, body: JSON.stringify({ lines: 'x'.repeat(200_000) }) });
-  const r = (await handleMessage(rpc('tools/call', { name: 'get_logs', arguments: { id: 'a' } }), big)) as { result: { content: Array<{ text: string }> } };
-  assert.ok(r.result.content[0]!.text.length < 61_000);
-  assert.match(r.result.content[0]!.text, /truncated/);
+  const body = JSON.stringify({ lines: ['FIRST LINE', 'x'.repeat(200_000), 'NEWEST LINE'] });
+  const { ctx: big } = ctx(['*'], null, { status: 200, body });
+  // Generic results keep their start...
+  const head = (await handleMessage(rpc('tools/call', { name: 'list_servers', arguments: {} }), big)) as { result: { content: Array<{ text: string }> } };
+  assert.ok(head.result.content[0]!.text.length < 25_000);
+  assert.match(head.result.content[0]!.text, /truncated/);
+  assert.match(head.result.content[0]!.text, /FIRST LINE/);
+  // ... logs keep their end: the newest lines are what an agent needs.
+  const tail = (await handleMessage(rpc('tools/call', { name: 'get_logs', arguments: { id: 'a' } }), big)) as { result: { content: Array<{ text: string }> } };
+  assert.ok(tail.result.content[0]!.text.length < 25_000);
+  assert.match(tail.result.content[0]!.text, /earlier characters left out/);
+  assert.match(tail.result.content[0]!.text, /NEWEST LINE/);
+  assert.ok(!/FIRST LINE/.test(tail.result.content[0]!.text));
 });
 
 test('api_request: paths are checked, bodies only on writes', async () => {

@@ -243,7 +243,11 @@
     "timeoutSec": 30
   },
   "console": {
-    "stdin": true
+    "stdin": true,
+    "rcon": {
+      "portId": "game",
+      "passwordVar": "rconPassword"
+    }
   },
   "ready": {
     "logRegex": "Connection to Steam servers successful|gameserver Steam ID"

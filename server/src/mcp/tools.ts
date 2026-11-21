@@ -13,9 +13,11 @@ export interface ToolDef {
   /** OpenAPI path template (`/servers/{id}/power`). */
   path: string;
   destructive?: boolean;
+  /** Long results keep their end (logs: the newest lines) instead of their start. */
+  keepTail?: boolean;
 }
 
-const T = (name: string, method: ToolDef['method'], path: string, description: string, destructive = false): ToolDef => ({ name, method, path, description, destructive });
+const T = (name: string, method: ToolDef['method'], path: string, description: string, destructive = false, keepTail = false): ToolDef => ({ name, method, path, description, destructive, keepTail });
 
 export const TOOLS: readonly ToolDef[] = [
   // identity and catalogue
@@ -33,7 +35,7 @@ export const TOOLS: readonly ToolDef[] = [
   T('clone_server', 'POST', '/servers/{id}/clone', 'Clone a server (settings and, optionally, files).'),
   T('server_power', 'POST', '/servers/{id}/power', 'Start, stop, restart or kill a server. Start/restart return quickly while it boots: poll server_stats for the status.'),
   T('server_stats', 'GET', '/servers/{id}/stats', 'Current status, CPU, memory and uptime of a server.'),
-  T('get_logs', 'GET', '/servers/{id}/logs', 'Read the last lines of the server console log (with timestamps in `times`).'),
+  T('get_logs', 'GET', '/servers/{id}/logs', 'Read the last lines of the server console log (with timestamps in `times`).', false, true),
   T('send_command', 'POST', '/servers/{id}/command', 'Send a command to the running server console (RCON or stdin) and get its output when the game returns one.', true),
   T('list_players', 'GET', '/servers/{id}/players', 'Players online and, for Minecraft, the player lists.'),
   T('player_action', 'POST', '/servers/{id}/players/{name}/{action}', 'Kick, ban, pardon, op, deop, whitelist or unwhitelist a player.'),
@@ -71,7 +73,7 @@ export const TOOLS: readonly ToolDef[] = [
   T('check_for_updates', 'POST', '/admin/update/check', 'Ask GitHub for the latest ServCrafty release now (rate limited: 6 per 10 minutes).'),
   T('apply_update', 'POST', '/admin/update/apply', 'Update the panel to the latest release (or `version`). The panel RESTARTS (a minute of downtime for the API and web UI); game servers keep running. Returns 202: poll update_status until state is succeeded/failed.', true),
   T('rollback_update', 'POST', '/admin/update/rollback', 'Go back to the version installed before the last update. The panel restarts.', true),
-  T('update_log', 'GET', '/admin/update/log', 'Output of the running or last update (use the returned offset to read on).'),
+  T('update_log', 'GET', '/admin/update/log', 'Output of the running or last update (the end of it when long; use the returned offset to read on).', false, true),
   // templates
   T('list_templates', 'GET', '/templates', 'List server templates.'),
   T('create_server_from_template', 'POST', '/templates/{id}/instantiate', 'Create a new server from a template.'),

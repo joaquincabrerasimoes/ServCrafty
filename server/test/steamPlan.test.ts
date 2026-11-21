@@ -432,3 +432,20 @@ test('launch.logFile must stay inside the game directory', () => {
   ok.launch.logFile = 'logs/console.log';
   assert.equal(parseDefinition(ok).launch.logFile, 'logs/console.log');
 });
+
+test('console.rcon: needs a tcp/both port and a defined variable; Left 4 Dead 2 uses it', () => {
+  const withRcon = (rcon: unknown) => {
+    const j = JSON.parse(JSON.stringify(def));
+    j.console = { stdin: true, rcon };
+    return j;
+  };
+  const portId = def.ports[0]!.id;
+  const varKey = def.variables[0]!.key;
+  assert.equal(parseDefinition(withRcon({ portId, passwordVar: varKey })).console.rcon?.passwordVar, varKey);
+  assert.throws(() => parseDefinition(withRcon({ portId: 'nope', passwordVar: varKey })));
+  assert.throws(() => parseDefinition(withRcon({ portId, passwordVar: 'nope' })));
+  assert.throws(() => parseDefinition(withRcon({ portId, passwordVar: varKey, extra: 1 })));
+  const l4d2 = parseDefinition(JSON.parse(readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '../games/left-4-dead-2.json'), 'utf8')));
+  assert.deepEqual(l4d2.console.rcon, { portId: 'game', passwordVar: 'rconPassword' });
+  assert.equal(l4d2.console.stdin, true, 'stdin stays as the fallback (and the stop command)');
+});
