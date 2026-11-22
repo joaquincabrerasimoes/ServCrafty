@@ -270,5 +270,7 @@
   },
   "profile": "l4d2",
   "webui": [],
-  "scripts": {}
+  "scripts": {
+    "preStart": "if [ -f /data/game/bin/steamclient.so ]; then ln -sf /data/game/bin/steamclient.so /data/steam/.steam/sdk32/steamclient.so; fi"
+  }
 }
