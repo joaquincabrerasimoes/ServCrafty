@@ -29,9 +29,10 @@ const Transfer = lazy(() => import('./pages/server/Transfer'));
 const ServerSettings = lazy(() => import('./pages/server/Settings'));
 const Workshop = lazy(() => import('./pages/server/Workshop'));
 const WebUi = lazy(() => import('./pages/server/WebUi'));
-const L4d2Maps = lazy(() => import('./pages/server/L4d2Maps'));
-const L4d2Controls = lazy(() => import('./pages/server/L4d2Controls'));
-const L4d2Plugins = lazy(() => import('./pages/server/L4d2Plugins'));
+// Maps, Controls and Plugins render the page of the game's integration (Left 4 Dead 2 or Counter-Strike 1.6).
+const MapsTab = lazy(() => import('./pages/server/ProfileTabs').then((m) => ({ default: m.MapsTab })));
+const ControlsTab = lazy(() => import('./pages/server/ProfileTabs').then((m) => ({ default: m.ControlsTab })));
+const PluginsTab = lazy(() => import('./pages/server/ProfileTabs').then((m) => ({ default: m.PluginsTab })));
 const BlueMap = lazy(() => import('./pages/server/BlueMap'));
 
 const AdminUsers = lazy(() => import('./pages/admin/Users'));
@@ -92,9 +93,9 @@ export function App() {
               <Route path="properties" element={<Properties />} />
               <Route path="mods" element={<Mods />} />
               <Route path="workshop" element={<Workshop />} />
-              <Route path="maps" element={<L4d2Maps />} />
-              <Route path="controls" element={<L4d2Controls />} />
-              <Route path="plugins" element={<L4d2Plugins />} />
+              <Route path="maps" element={<MapsTab />} />
+              <Route path="controls" element={<ControlsTab />} />
+              <Route path="plugins" element={<PluginsTab />} />
               <Route path="webui/:uiId" element={<WebUi />} />
               <Route path="map" element={<BlueMap />} />
               <Route path="backups" element={<Backups />} />

@@ -31,7 +31,7 @@ export interface PluginSource {
   /** File shipped with the panel (under `server/plugins/`) instead of downloaded. */
   bundled?: string;
   latest?: { index: string; base: string };
-  format: 'zip' | 'tar.gz' | 'file';
+  format: 'zip' | 'tar.gz' | 'tar.xz' | 'file';
   rules: PluginRule[];
   /** Existing files under these prefixes (relative to `left4dead2/`) are never overwritten (admin lists, configs). */
   preserve?: string[];
@@ -42,7 +42,7 @@ export interface PluginDef {
   name: string;
   description: string;
   homepage: string;
-  category: 'base' | 'slots' | 'library';
+  category: 'base' | 'slots' | 'library' | 'bots';
   /** Plugin ids that must be installed first (installed together with this one). */
   requires: string[];
   /** One or more downloads; every one is installed. */

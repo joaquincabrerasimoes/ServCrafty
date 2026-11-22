@@ -28,6 +28,7 @@ import serverRoutes from './routes/servers.js';
 import shareRoutes from './routes/shares.js';
 import steamRoutes from './routes/steam.js';
 import l4d2Routes from './routes/l4d2.js';
+import cs16Routes from './routes/cs16.js';
 import templateRoutes from './routes/templates.js';
 import terrariaRoutes from './routes/terraria.js';
 import updateRoutes from './routes/update.js';
@@ -117,6 +118,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       await api.register(gameRoutes);
       await api.register(steamRoutes);
       await api.register(l4d2Routes);
+      await api.register(cs16Routes);
       await api.register(bluemapRoutes);
       await api.register(iconRoutes);
       await api.register(webuiRoutes);

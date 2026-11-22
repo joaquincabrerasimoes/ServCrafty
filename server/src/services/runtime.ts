@@ -649,7 +649,7 @@ export async function sendCommand(serverId: string, command: string): Promise<st
  * Send a console command to a server whose output only appears in the log (stdin consoles) and collect the
  * lines printed until one matches `until` (or `timeoutMs` passes; the lines so far are returned then).
  */
-export async function captureCommand(serverId: string, command: string, opts: { until: RegExp; timeoutMs?: number }): Promise<string[]> {
+export async function captureCommand(serverId: string, command: string, opts: { until: RegExp; timeoutMs?: number; /** Sent right after `command`: a marker (`echo ...`) for consoles that do not tell where an output ends. */ then?: string[] }): Promise<string[]> {
   const lines: string[] = [];
   let finish: () => void = () => undefined;
   const done = new Promise<void>((resolve) => {
@@ -664,6 +664,7 @@ export async function captureCommand(serverId: string, command: string, opts: { 
   const timer = setTimeout(finish, opts.timeoutMs ?? 4000);
   try {
     await sendCommand(serverId, command);
+    for (const next of opts.then ?? []) await sendCommand(serverId, next);
     await done;
   } finally {
     clearTimeout(timer);

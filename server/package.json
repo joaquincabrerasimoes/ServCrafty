@@ -23,6 +23,7 @@
     "@fastify/websocket": "^11.0.2",
     "@node-rs/argon2": "^2.0.2",
     "@simplewebauthn/server": "^13.1.1",
+    "7z-wasm": "^1.2.0",
     "archiver": "^7.0.1",
     "dockerode": "^4.0.4",
     "fastify": "^5.2.1",

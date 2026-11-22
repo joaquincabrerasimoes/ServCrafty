@@ -277,6 +277,24 @@ POST   /servers/:id/l4d2/plugins/:pluginId/install   mods:write
 DELETE /servers/:id/l4d2/plugins/:pluginId           mods:write
 PUT    /servers/:id/l4d2/plugins/:pluginId/settings  mods:write
 
+GET    /servers/:id/cs16/maps                        servers:read
+PUT    /servers/:id/cs16/mapcycle                    servers:configure
+DELETE /servers/:id/cs16/maps/:name                  mods:write
+GET    /servers/:id/cs16/catalog/maps                mods:read
+GET    /servers/:id/cs16/catalog/maps/:mapId         mods:read
+POST   /servers/:id/cs16/catalog/maps/:mapId/install mods:write
+GET    /servers/:id/cs16/controls                    servers:read
+POST   /servers/:id/cs16/controls/map                console:execute
+POST   /servers/:id/cs16/controls/restart            console:execute
+POST   /servers/:id/cs16/controls/say                console:execute
+POST   /servers/:id/cs16/controls/kick               console:execute
+POST   /servers/:id/cs16/controls/ban                console:execute
+POST   /servers/:id/cs16/controls/bots               console:execute
+PUT    /servers/:id/cs16/controls/settings           console:execute
+GET    /servers/:id/cs16/plugins                     mods:read
+POST   /servers/:id/cs16/plugins/:pluginId/install   mods:write
+DELETE /servers/:id/cs16/plugins/:pluginId           mods:write
+
 GET    /servers/:id/bluemap                          servers:read
 PUT    /servers/:id/bluemap                          servers:configure
 POST   /servers/:id/bluemap/reset                    servers:configure

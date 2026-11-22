@@ -18,7 +18,7 @@ const VAR_KEY_RE = /^[A-Za-z][A-Za-z0-9_]{0,47}$/;
 const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
 const UI_ID_RE = /^[a-z][a-z0-9-]{0,31}$/;
 /** Variable keys that would shadow built-in template namespaces. */
-export const PROFILES = ['l4d2'] as const;
+export const PROFILES = ['l4d2', 'cs16'] as const;
 export type GameProfile = (typeof PROFILES)[number];
 
 const RESERVED_VAR_KEYS = new Set(['ports', 'server', 'workshop']);
@@ -271,7 +271,7 @@ export const gameDefinitionSchema = z
       .nullable()
       .default(null),
     webui: z.array(webuiSchema).max(8).default([]),
-    /** Built-in game integrations (extra tabs: maps, controls, plugins). Only "l4d2" exists. */
+    /** Built-in game integrations (extra tabs: maps, controls, plugins). "l4d2" (Left 4 Dead 2) and "cs16" (Counter-Strike 1.6). */
     profile: z.enum(PROFILES).nullable().default(null),
     scripts: z
       .object({ postInstall: text(64 * 1024).optional(), preStart: text(64 * 1024).optional() })

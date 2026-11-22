@@ -6,7 +6,7 @@ import { useT, type TKey } from '@/i18n';
 import { useServer } from '@/lib/queries';
 import { canManage, canOperate, isFull } from '@/lib/access';
 import { serverCaps, variantLabel, type GameCaps } from '@/lib/games';
-import { hasWorkshop, isL4d2, useServerGameDef, webuiFor } from '@/lib/gameDefs';
+import { hasWorkshop, isCs16, isL4d2, useServerGameDef, webuiFor } from '@/lib/gameDefs';
 import { GameBadge } from '@/components/GameBits';
 import { useLiveServer, type LiveServer } from '@/ws/live';
 import { Badge, ErrorState, Loading } from '@/components/ui';
@@ -23,7 +23,7 @@ export interface ServerCtx {
 }
 export const useServerCtx = () => useOutletContext<ServerCtx>();
 
-type TabCaps = GameCaps & { workshop: boolean; l4d2: boolean };
+type TabCaps = GameCaps & { workshop: boolean; l4d2: boolean; cs16: boolean };
 const TABS: Array<{ path: string; key: TKey; need: (a: Server['access']) => boolean; show?: (c: TabCaps) => boolean }> = [
   { path: '', key: 'tab.overview', need: () => true },
   { path: 'console', key: 'tab.console', need: () => true },
@@ -32,9 +32,9 @@ const TABS: Array<{ path: string; key: TKey; need: (a: Server['access']) => bool
   { path: 'properties', key: 'tab.properties', need: canManage, show: (c) => c.hasProperties },
   { path: 'mods', key: 'tab.mods', need: canManage, show: (c) => c.hasMods },
   { path: 'workshop', key: 'tab.workshop', need: canManage, show: (c) => c.workshop },
-  { path: 'maps', key: 'tab.l4d2Maps', need: () => true, show: (c) => c.l4d2 },
-  { path: 'controls', key: 'tab.l4d2Controls', need: canOperate, show: (c) => c.l4d2 },
-  { path: 'plugins', key: 'tab.l4d2Plugins', need: canManage, show: (c) => c.l4d2 },
+  { path: 'maps', key: 'tab.l4d2Maps', need: () => true, show: (c) => c.l4d2 || c.cs16 },
+  { path: 'controls', key: 'tab.l4d2Controls', need: canOperate, show: (c) => c.l4d2 || c.cs16 },
+  { path: 'plugins', key: 'tab.l4d2Plugins', need: canManage, show: (c) => c.l4d2 || c.cs16 },
   { path: 'backups', key: 'tab.backups', need: canOperate },
   { path: 'schedules', key: 'tab.schedules', need: canManage },
   { path: 'webhooks', key: 'tab.webhooks', need: canManage },
@@ -57,7 +57,7 @@ export default function ServerLayout() {
 
   const status = live.status ?? server.status;
   const address = `${publicHost || location.hostname}:${server.port}`;
-  const caps: TabCaps = { ...serverCaps(server), workshop: hasWorkshop(def), l4d2: isL4d2(def) };
+  const caps: TabCaps = { ...serverCaps(server), workshop: hasWorkshop(def), l4d2: isL4d2(def), cs16: isCs16(def) };
   const hidden = TABS.filter((tab) => tab.show && !tab.show(caps)).map((tab) => tab.path);
   const webuis = webuiFor(def, server.access);
   // A tab this game does not have (old link, bookmark): go to the overview instead. Tabs that depend

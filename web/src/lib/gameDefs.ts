@@ -46,6 +46,9 @@ export const platformOf = (def: DefLike | undefined, chosen: SteamPlatform | und
 /** Left 4 Dead 2 integration: Maps, Controls and Plugins tabs. */
 export const isL4d2 = (def: DefLike | undefined) => def?.profile === 'l4d2';
 
+/** Counter-Strike 1.6 integration: Maps, Controls and Plugins tabs (same paths as Left 4 Dead 2). */
+export const isCs16 = (def: DefLike | undefined) => def?.profile === 'cs16';
+
 /** Console commands are written to stdin only when the definition allows it (unknown = allowed, the API decides). */
 export const consoleAllowed = (def: DefLike | undefined) => def?.console?.stdin !== false;
 

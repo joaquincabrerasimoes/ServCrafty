@@ -100,6 +100,10 @@
     {
       "name": "Left 4 Dead 2",
       "description": "Maps, console controls and the plugin store of Left 4 Dead 2 servers (game definitions with the `l4d2` profile)."
+    },
+    {
+      "name": "Counter-Strike 1.6",
+      "description": "Counter-Strike 1.6 servers (game definitions with profile cs16): installed maps and rotation, a map catalogue backed by GameBanana, console controls and the plugin store."
     }
   ],
   "paths": {
@@ -6813,6 +6817,1626 @@
                       "type": "integer"
                     }
                   }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/servers/{id}/cs16/maps": {
+      "get": {
+        "tags": [
+          "Counter-Strike 1.6"
+        ],
+        "summary": "Installed maps, rotation and current map",
+        "operationId": "get_servers_id_cs16_maps",
+        "description": "Requires **viewer** access. Maps are the `.bsp` files in `cstrike/maps`; `source` is `stock` (ships with the game), `gamebanana` (installed from the catalogue) or `other`. `rotation` is `mapcycle.txt`; `missing` lists rotation entries that are not installed.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "gameInstalled": {
+                      "type": "boolean"
+                    },
+                    "maps": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "size": {
+                            "type": "integer"
+                          },
+                          "source": {
+                            "type": "string",
+                            "enum": [
+                              "stock",
+                              "gamebanana",
+                              "other"
+                            ]
+                          },
+                          "inRotation": {
+                            "type": "boolean"
+                          },
+                          "gamebanana": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "integer"
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "thumbnail": {
+                                "type": "string",
+                                "nullable": true
+                              },
+                              "installedAt": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "name",
+                              "thumbnail",
+                              "installedAt"
+                            ],
+                            "nullable": true
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "size",
+                          "source",
+                          "inRotation",
+                          "gamebanana"
+                        ]
+                      }
+                    },
+                    "rotation": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "missing": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "current": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "start": {
+                      "type": "object",
+                      "properties": {
+                        "map": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "map"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "gameInstalled",
+                    "maps",
+                    "rotation",
+                    "missing",
+                    "current",
+                    "start"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/servers/{id}/cs16/mapcycle": {
+      "put": {
+        "tags": [
+          "Counter-Strike 1.6"
+        ],
+        "summary": "Set the map rotation",
+        "operationId": "put_servers_id_cs16_mapcycle",
+        "description": "Requires **operator** access. Writes `cstrike/mapcycle.txt` (1 to 200 installed maps; repeats allowed). The game re-reads the file only when the `mapcyclefile` cvar changes, so on a running server the list is also written to a new `mc_*.txt` file and the cvar is pointed at it (`appliedLive`). 400 `map_not_installed`, `invalid_mapcycle`.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "maps": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "minItems": 1,
+                    "maxItems": 200
+                  }
+                },
+                "required": [
+                  "maps"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "maps": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "appliedLive": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "maps",
+                    "appliedLive"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/servers/{id}/cs16/maps/{name}": {
+      "delete": {
+        "tags": [
+          "Counter-Strike 1.6"
+        ],
+        "summary": "Remove an installed map",
+        "operationId": "delete_servers_id_cs16_maps_name",
+        "description": "Requires **manager** access. Removes the `.bsp` and its description/resource files (and, for the last map of a catalogue package, the models, sounds and textures it brought) and takes the map out of the rotation. Maps that ship with the game cannot be removed (409 `map_stock`); neither can the map being played (409 `map_in_use`).",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Map name (without .bsp)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "removed": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "removed"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/servers/{id}/cs16/catalog/maps": {
+      "get": {
+        "tags": [
+          "Counter-Strike 1.6"
+        ],
+        "summary": "Search the GameBanana map catalogue",
+        "operationId": "get_servers_id_cs16_catalog_maps",
+        "description": "Requires **operator** access. A search API of the panel in front of GameBanana (game 4254, category Maps): 24 results per page with name, thumbnail, category, submitter and counters. `category` is a subcategory id from `categories` (Bomb/Defuse, Aim Training, ...). Answers are cached for 5 minutes.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 80
+            },
+            "description": "Words in the map name"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "popular",
+                "liked",
+                "viewed",
+                "newest",
+                "updated"
+              ]
+            }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "total": {
+                      "type": "integer"
+                    },
+                    "page": {
+                      "type": "integer"
+                    },
+                    "perPage": {
+                      "type": "integer"
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "integer"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "category": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "thumbnail": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "submitter": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "likes": {
+                            "type": "integer"
+                          },
+                          "views": {
+                            "type": "integer"
+                          },
+                          "addedAt": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "updatedAt": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "hasFiles": {
+                            "type": "boolean"
+                          },
+                          "url": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "category",
+                          "thumbnail",
+                          "submitter",
+                          "likes",
+                          "views",
+                          "addedAt",
+                          "updatedAt",
+                          "hasFiles",
+                          "url"
+                        ]
+                      }
+                    },
+                    "categories": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "integer"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "count": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "count"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "total",
+                    "page",
+                    "perPage",
+                    "items",
+                    "categories"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/servers/{id}/cs16/catalog/maps/{mapId}": {
+      "get": {
+        "tags": [
+          "Counter-Strike 1.6"
+        ],
+        "summary": "One map of the GameBanana catalogue",
+        "operationId": "get_servers_id_cs16_catalog_maps_mapId",
+        "description": "Requires **operator** access. Description (plain text), screenshots and the downloadable files with size, MD5 and GameBanana's scan result. 404 when it does not exist, 400 `not_a_map` when it is not a Counter-Strike 1.6 map.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          },
+          {
+            "name": "mapId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "GameBanana map id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "integer"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "category": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "thumbnail": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "submitter": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "likes": {
+                          "type": "integer"
+                        },
+                        "views": {
+                          "type": "integer"
+                        },
+                        "addedAt": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "updatedAt": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "hasFiles": {
+                          "type": "boolean"
+                        },
+                        "url": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "category",
+                        "thumbnail",
+                        "submitter",
+                        "likes",
+                        "views",
+                        "addedAt",
+                        "updatedAt",
+                        "hasFiles",
+                        "url"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "description": {
+                          "type": "string"
+                        },
+                        "downloads": {
+                          "type": "integer"
+                        },
+                        "screenshots": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "files": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "integer"
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "size": {
+                                "type": "integer"
+                              },
+                              "md5": {
+                                "type": "string",
+                                "nullable": true
+                              },
+                              "downloads": {
+                                "type": "integer"
+                              },
+                              "addedAt": {
+                                "type": "string",
+                                "nullable": true
+                              },
+                              "clean": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "name",
+                              "size",
+                              "md5",
+                              "downloads",
+                              "addedAt",
+                              "clean"
+                            ]
+                          }
+                        },
+                        "version": {
+                          "type": "string",
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "description",
+                        "downloads",
+                        "screenshots",
+                        "files",
+                        "version"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/servers/{id}/cs16/catalog/maps/{mapId}/install": {
+      "post": {
+        "tags": [
+          "Counter-Strike 1.6"
+        ],
+        "summary": "Download a catalogue map onto the server",
+        "operationId": "post_servers_id_cs16_catalog_maps_mapId_install",
+        "description": "Requires **manager** access. Downloads the file from GameBanana (only gamebanana.com hosts, MD5 verified, 150 MB cap), unpacks zip/rar/7z archives and copies the game content to `cstrike/` (maps, wads, models, sounds, sprites, gfx, overviews; names lower-cased; code, configs and other files are never installed). Existing files are never overwritten: a map name that already exists is 409 `map_exists`. The map can be played right away (no restart). `fileId` picks one of the map's files (default: the first archive). 400 `no_map_in_archive`.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          },
+          {
+            "name": "mapId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "GameBanana map id"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "fileId": {
+                    "type": "integer"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "maps": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "files": {
+                      "type": "integer"
+                    },
+                    "kept": {
+                      "type": "integer"
+                    },
+                    "skipped": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "maps",
+                    "files",
+                    "kept",
+                    "skipped"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/servers/{id}/cs16/controls": {
+      "get": {
+        "tags": [
+          "Counter-Strike 1.6"
+        ],
+        "summary": "Controls overview (players, installed maps, bot engine, match settings)",
+        "operationId": "get_servers_id_cs16_controls",
+        "description": "Requires **operator** access. Players come from `status` (empty when the server is stopped). `bots.engine` is `yapb` when the YaPB plugin is installed, else `stock` (the game's own bots). Settings are read from `cstrike/server.cfg`.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "running": {
+                      "type": "boolean"
+                    },
+                    "map": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "players": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "userId": {
+                            "type": "integer"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "steamId": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "bot": {
+                            "type": "boolean"
+                          },
+                          "frags": {
+                            "type": "integer",
+                            "nullable": true
+                          },
+                          "connected": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "ping": {
+                            "type": "integer",
+                            "nullable": true
+                          },
+                          "loss": {
+                            "type": "integer",
+                            "nullable": true
+                          }
+                        },
+                        "required": [
+                          "userId",
+                          "name",
+                          "steamId",
+                          "bot",
+                          "frags",
+                          "connected",
+                          "ping",
+                          "loss"
+                        ]
+                      }
+                    },
+                    "maps": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "bots": {
+                      "type": "object",
+                      "properties": {
+                        "engine": {
+                          "type": "string",
+                          "enum": [
+                            "stock",
+                            "yapb"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "engine"
+                      ]
+                    },
+                    "settings": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "key": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "number",
+                              "boolean"
+                            ]
+                          },
+                          "default": {},
+                          "min": {
+                            "type": "integer"
+                          },
+                          "max": {
+                            "type": "integer"
+                          },
+                          "group": {
+                            "type": "string",
+                            "enum": [
+                              "time",
+                              "economy",
+                              "rules"
+                            ]
+                          },
+                          "value": {}
+                        },
+                        "required": [
+                          "key",
+                          "type",
+                          "default",
+                          "group",
+                          "value"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "running",
+                    "map",
+                    "players",
+                    "maps",
+                    "bots",
+                    "settings"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/servers/{id}/cs16/controls/map": {
+      "post": {
+        "tags": [
+          "Counter-Strike 1.6"
+        ],
+        "summary": "Change the map now",
+        "operationId": "post_servers_id_cs16_controls_map",
+        "description": "Requires **operator** access. `changelevel` to an installed map; `persist` also makes it the start map. 409 `not_running`, 400 `map_not_installed`.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "map": {
+                    "type": "string",
+                    "maxLength": 64
+                  },
+                  "persist": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "map"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "map": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "map"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/servers/{id}/cs16/controls/restart": {
+      "post": {
+        "tags": [
+          "Counter-Strike 1.6"
+        ],
+        "summary": "Restart the round or the game",
+        "operationId": "post_servers_id_cs16_controls_restart",
+        "description": "Requires **operator** access. `round` = `sv_restartround 1` (keeps scores), `game` = `sv_restart 1`.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "round",
+                      "game"
+                    ]
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/servers/{id}/cs16/controls/say": {
+      "post": {
+        "tags": [
+          "Counter-Strike 1.6"
+        ],
+        "summary": "Say something to the players",
+        "operationId": "post_servers_id_cs16_controls_say",
+        "description": "Requires **operator** access. A chat line from the server (max 200 characters).",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "message": {
+                    "type": "string",
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "message"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/servers/{id}/cs16/controls/kick": {
+      "post": {
+        "tags": [
+          "Counter-Strike 1.6"
+        ],
+        "summary": "Kick a player or bot",
+        "operationId": "post_servers_id_cs16_controls_kick",
+        "description": "Requires **operator** access. `userId` comes from the controls overview. Sends `kick #<userid>`.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "userId": {
+                    "type": "integer"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "userId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/servers/{id}/cs16/controls/ban": {
+      "post": {
+        "tags": [
+          "Counter-Strike 1.6"
+        ],
+        "summary": "Ban a player",
+        "operationId": "post_servers_id_cs16_controls_ban",
+        "description": "Requires **operator** access. `banid <minutes> #<userid> kick` then `writeid` (saved in banned.cfg). `minutes` 0 = permanent.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "userId": {
+                    "type": "integer"
+                  },
+                  "minutes": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 525600
+                  }
+                },
+                "required": [
+                  "userId",
+                  "minutes"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/servers/{id}/cs16/controls/bots": {
+      "post": {
+        "tags": [
+          "Counter-Strike 1.6"
+        ],
+        "summary": "Add, kick or configure bots",
+        "operationId": "post_servers_id_cs16_controls_bots",
+        "description": "Requires **operator** access. `action`: `add` (`team` any/t/ct), `kick_all`, `quota` (`count` 0-32), `quota_mode` (`mode` normal/fill/match), `difficulty` (`level` easy/normal/hard/expert) and `knives_only` (`on`). The last two exist only for the game's own bots; with YaPB they are 409 `bot_unsupported`. Commands: `bot_add[_t|_ct]`, `bot_kick`, `bot_quota`, `bot_quota_mode`, `bot_difficulty`, `bot_knives_only` or `yb add`, `yb kickall`, `yb_quota`, `yb_quota_mode`.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "add",
+                      "kick_all",
+                      "quota",
+                      "quota_mode",
+                      "difficulty",
+                      "knives_only"
+                    ]
+                  },
+                  "team": {
+                    "type": "string",
+                    "enum": [
+                      "any",
+                      "t",
+                      "ct"
+                    ]
+                  },
+                  "count": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 32
+                  },
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "normal",
+                      "fill",
+                      "match"
+                    ]
+                  },
+                  "level": {
+                    "type": "string",
+                    "enum": [
+                      "easy",
+                      "normal",
+                      "hard",
+                      "expert"
+                    ]
+                  },
+                  "on": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "action"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "engine": {
+                      "type": "string",
+                      "enum": [
+                        "stock",
+                        "yapb"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "engine"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/servers/{id}/cs16/controls/settings": {
+      "put": {
+        "tags": [
+          "Counter-Strike 1.6"
+        ],
+        "summary": "Change match settings",
+        "operationId": "put_servers_id_cs16_controls_settings",
+        "description": "Requires **operator** access. Any of: mp_timelimit, mp_roundtime, mp_freezetime, mp_buytime, mp_maxrounds, mp_winlimit, mp_startmoney, mp_c4timer, mp_friendlyfire, mp_autoteambalance, mp_limitteams, sv_alltalk, mp_forcecamera. Written to `cstrike/server.cfg` (kept across restarts) and applied immediately when the server runs (`appliedLive`). Works while the server is stopped too.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "settings": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "oneOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "boolean"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "settings"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "settings": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "appliedLive": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "settings",
+                    "appliedLive"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/servers/{id}/cs16/plugins": {
+      "get": {
+        "tags": [
+          "Counter-Strike 1.6"
+        ],
+        "summary": "Plugin store: available plugins and what is installed",
+        "operationId": "get_servers_id_cs16_plugins",
+        "description": "Requires **manager** access. A fixed catalog: Metamod-R, AMX Mod X (base + cstrike) and YaPB bots. Metamod is loaded by pointing `liblist.gam` at it, which the panel does on every server start.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/L4dPlugins"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/servers/{id}/cs16/plugins/{pluginId}/install": {
+      "post": {
+        "tags": [
+          "Counter-Strike 1.6"
+        ],
+        "summary": "Install or update a plugin",
+        "operationId": "post_servers_id_cs16_plugins_pluginId_install",
+        "description": "Requires **manager** access. Installs the plugin with what it needs (AMX Mod X and YaPB need Metamod-R) and registers it in `addons/metamod/plugins.ini`. Restart the server to load it.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          },
+          {
+            "name": "pluginId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "installed": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "restartRequired": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "installed",
+                    "restartRequired"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/servers/{id}/cs16/plugins/{pluginId}": {
+      "delete": {
+        "tags": [
+          "Counter-Strike 1.6"
+        ],
+        "summary": "Remove a plugin",
+        "operationId": "delete_servers_id_cs16_plugins_pluginId",
+        "description": "Requires **manager** access. 409 `plugin_required` while other installed plugins need it.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          },
+          {
+            "name": "pluginId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "restartRequired": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "restartRequired"
+                  ]
                 }
               }
             }

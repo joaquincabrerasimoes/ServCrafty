@@ -2,7 +2,7 @@
   "schema": 1,
   "id": "counter-strike-1-6",
   "name": "Counter-Strike 1.6",
-  "description": "Counter-Strike 1.6 (GoldSrc) dedicated server: HLDS, Steam app 90 plus the cstrike mod, native Linux 32-bit, anonymous login. The cstrike files are not part of a plain app_update 90, so the installer step also runs SteamCMD with app_set_config 90 mod cstrike when the cstrike folder is missing (this step is unverified and may need a few retries; use Update/verify game files to repeat it). Port 27015 carries the game (UDP) and RCON (TCP) and is mirrored. Metamod/AMX Mod X are not installed.",
+  "description": "Counter-Strike 1.6 (GoldSrc) dedicated server: HLDS, Steam app 90 plus the cstrike mod, native Linux 32-bit, anonymous login. The cstrike files are not part of a plain app_update 90, so the installer step also runs SteamCMD with app_set_config 90 mod cstrike when the cstrike folder is missing (this step is unverified and may need a few retries; use Update/verify game files to repeat it). Port 27015 carries the game (UDP) and RCON (TCP) and is mirrored. Metamod-R, AMX Mod X and the YaPB bots are installed from the Plugins tab (the panel points liblist.gam at Metamod when the server starts); maps are downloaded from GameBanana in the Maps tab and the rotation (mapcycle) is edited there.",
   "icon": "https://cdn.cloudflare.steamstatic.com/steam/apps/10/header.jpg",
   "steam": {
     "appId": 90,
@@ -176,6 +176,7 @@
   "workshop": null,
   "webui": [],
   "scripts": {
-    "postInstall": "if [ ! -d cstrike ] || [ ! -f cstrike/liblist.gam ]; then for i in 1 2 3; do /opt/steamcmd/steamcmd.sh +force_install_dir /data/game +login anonymous +app_set_config 90 mod cstrike +app_update 90 validate +quit; [ -f cstrike/liblist.gam ] && break; done; fi; mkdir -p cstrike; touch cstrike/listip.cfg cstrike/banned.cfg; true"
-  }
+    "postInstall": "if [ ! -d cstrike ] || [ ! -f cstrike/liblist.gam ]; then for i in 1 2 3; do /opt/steamcmd/steamcmd.sh +force_install_dir /data/game +login anonymous +app_set_config 90 mod cstrike +app_update 90 validate +quit; [ -f cstrike/liblist.gam ] && break; done; fi; mkdir -p cstrike; touch cstrike/listip.cfg cstrike/banned.cfg; if [ -f cstrike/addons/metamod/metamod_i386.so ]; then sed -i 's#^gamedll_linux.*#gamedll_linux \"addons/metamod/metamod_i386.so\"#' cstrike/liblist.gam; elif grep -q 'addons/metamod' cstrike/liblist.gam 2>/dev/null; then sed -i 's#^gamedll_linux.*#gamedll_linux \"dlls/cs.so\"#' cstrike/liblist.gam; fi; true"
+  },
+  "profile": "cs16"
 }

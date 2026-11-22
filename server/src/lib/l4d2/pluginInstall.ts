@@ -6,6 +6,7 @@ import { badRequest } from '../errors.js';
 import { downloadFile } from '../http.js';
 import { SERVER_ROOT, USER_AGENT } from '../../config.js';
 import { extractZip } from '../zip.js';
+import { extractArchive } from '../sevenZip.js';
 import type { PluginDef, PluginRule, PluginSource } from './pluginCatalog.js';
 
 /** Download, unpack and place plugin files under `left4dead2/`, and keep the plugin settings in cfg files. */
@@ -18,6 +19,8 @@ export interface InstallDeps {
   bundledPath(name: string): string;
   unzip(file: string, dest: string): Promise<unknown>;
   untar(file: string, dest: string): Promise<unknown>;
+  /** `.tar.xz` (and anything else 7-Zip reads). Optional so a test double need not provide it. */
+  unxz?(file: string, dest: string): Promise<unknown>;
 }
 
 export const defaultDeps: InstallDeps = {
@@ -29,6 +32,7 @@ export const defaultDeps: InstallDeps = {
   download: (url, dest) => downloadFile(url, dest),
   bundledPath: (name) => path.join(SERVER_ROOT, 'plugins', path.basename(name)),
   unzip: (file, dest) => extractZip(file, dest),
+  unxz: (file, dest) => extractArchive(file, dest),
   untar: (file, dest) =>
     tar.x({
       file,
@@ -92,13 +96,14 @@ export async function installSource(root: string, source: PluginSource, deps: In
 
   const stage = await fsp.mkdtemp(path.join(os.tmpdir(), 'servcrafty-plugin-'));
   try {
-    const archive = path.join(stage, source.format === 'file' ? 'download.bin' : `download.${source.format === 'zip' ? 'zip' : 'tgz'}`);
+    const archive = path.join(stage, source.format === 'file' ? 'download.bin' : `download.${source.format === 'zip' ? 'zip' : source.format === 'tar.xz' ? 'txz' : 'tgz'}`);
     if (source.bundled) await fsp.copyFile(deps.bundledPath(source.bundled), archive);
     else await deps.download(url as string, archive);
     const content = path.join(stage, 'content');
     await fsp.mkdir(content);
     if (source.format === 'zip') await deps.unzip(archive, content);
     else if (source.format === 'tar.gz') await deps.untar(archive, content);
+    else if (source.format === 'tar.xz') await (deps.unxz ?? defaultDeps.unxz!)(archive, content);
     else await fsp.copyFile(archive, path.join(content, 'file'));
 
     const base = path.resolve(root);

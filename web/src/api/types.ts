@@ -667,7 +667,7 @@ export interface GameWorkshop {
 }
 
 /** Game integrations the panel has beyond the generic definition (extra server tabs). */
-export type GameProfile = 'l4d2';
+export type GameProfile = 'l4d2' | 'cs16';
 
 /** Game definition v1 (SPEC.md "SteamCMD games"). */
 export interface GameDefinition {
@@ -692,7 +692,7 @@ export interface GameDefinition {
   workshop?: GameWorkshop | null;
   webui?: GameWebUi[];
   scripts?: { postInstall?: string; preStart?: string };
-  /** `l4d2`: Left 4 Dead 2 Maps, Controls and Plugins tabs. */
+  /** `l4d2` / `cs16`: Left 4 Dead 2 or Counter-Strike 1.6 Maps, Controls and Plugins tabs. */
   profile?: GameProfile | null;
 }
 
@@ -894,6 +894,143 @@ export interface L4dPluginsOverview {
   /** Platform the server runs on (plugins are installed for it). */
   platform?: SteamPlatform;
   plugins: L4dPlugin[];
+}
+
+/* ------------------------------------------------------------ Counter-Strike 1.6 */
+
+export interface Cs16Map {
+  name: string;
+  /** Bytes of the .bsp file. */
+  size: number;
+  source: 'stock' | 'gamebanana' | 'other';
+  inRotation: boolean;
+  gamebanana: { id: number; name: string; thumbnail: string | null; installedAt: string } | null;
+}
+
+/** GET /servers/:id/cs16/maps */
+export interface Cs16MapsOverview {
+  gameInstalled: boolean;
+  maps: Cs16Map[];
+  /** mapcycle.txt, in order. */
+  rotation: string[];
+  /** Rotation entries whose map is not installed. */
+  missing: string[];
+  current: string | null;
+  start: { map: string };
+}
+
+export const CS16_CATALOG_SORTS = ['popular', 'liked', 'viewed', 'newest', 'updated'] as const;
+export type Cs16CatalogSort = (typeof CS16_CATALOG_SORTS)[number];
+
+/** A GameBanana map. */
+export interface Cs16CatalogMap {
+  id: number;
+  name: string;
+  category: string | null;
+  /** https URL, shown directly. */
+  thumbnail: string | null;
+  submitter: string | null;
+  likes: number;
+  views: number;
+  addedAt: string | null;
+  updatedAt: string | null;
+  hasFiles: boolean;
+  url: string;
+}
+
+/** GET /servers/:id/cs16/catalog/maps */
+export interface Cs16CatalogPage {
+  total: number;
+  page: number;
+  perPage: number;
+  items: Cs16CatalogMap[];
+  categories: Array<{ id: number; name: string; count: number }>;
+}
+
+export interface Cs16CatalogFile {
+  id: number;
+  name: string;
+  size: number;
+  md5: string | null;
+  downloads: number;
+  addedAt: string | null;
+  /** GameBanana's virus scan said clean. */
+  clean: boolean;
+}
+
+/** GET /servers/:id/cs16/catalog/maps/:mapId */
+export type Cs16CatalogMapDetail = Cs16CatalogMap & {
+  description: string;
+  downloads: number;
+  screenshots: string[];
+  files: Cs16CatalogFile[];
+  version: string | null;
+};
+
+/** POST /servers/:id/cs16/catalog/maps/:mapId/install */
+export interface Cs16MapInstallResult {
+  ok: boolean;
+  maps: string[];
+  files: number;
+  kept: number;
+  skipped: number;
+}
+
+export interface Cs16Player {
+  userId: number;
+  name: string;
+  steamId: string | null;
+  bot: boolean;
+  frags: number | null;
+  connected: string | null;
+  ping: number | null;
+  loss: number | null;
+}
+
+export type Cs16SettingValue = number | boolean;
+
+export interface Cs16MatchSetting {
+  key: string;
+  type: 'number' | 'boolean';
+  default: Cs16SettingValue;
+  min?: number;
+  max?: number;
+  group: 'time' | 'economy' | 'rules';
+  value: Cs16SettingValue;
+}
+
+export type Cs16BotEngine = 'stock' | 'yapb';
+export type Cs16BotTeam = 'any' | 't' | 'ct';
+export type Cs16QuotaMode = 'normal' | 'fill' | 'match';
+export type Cs16BotDifficulty = 'easy' | 'normal' | 'hard' | 'expert';
+
+export type Cs16BotAction =
+  | { action: 'add'; team?: Cs16BotTeam }
+  | { action: 'kick_all' }
+  | { action: 'quota'; count: number }
+  | { action: 'quota_mode'; mode: Cs16QuotaMode }
+  | { action: 'difficulty'; level: Cs16BotDifficulty }
+  | { action: 'knives_only'; on: boolean };
+
+/** GET /servers/:id/cs16/controls (runs the game's `status` command when running). */
+export interface Cs16Controls {
+  running: boolean;
+  map: string | null;
+  players: Cs16Player[];
+  /** Installed maps. */
+  maps: string[];
+  bots: { engine: Cs16BotEngine };
+  settings: Cs16MatchSetting[];
+}
+
+export type Cs16PluginCategory = 'base' | 'bots' | 'library';
+export type Cs16Plugin = Omit<L4dPlugin, 'category'> & { category: Cs16PluginCategory };
+
+/** GET /servers/:id/cs16/plugins */
+export interface Cs16PluginsOverview {
+  gameInstalled: boolean;
+  platform?: SteamPlatform;
+  plugins: Cs16Plugin[];
 }
 
 /* ------------------------------------------------------------ v0.3.2: game access, disabled games, processes */
