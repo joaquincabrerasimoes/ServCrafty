@@ -9,6 +9,7 @@ import { loadGameDefinitions } from './services/gameDefinitions.js';
 import { loadDisabledGames } from './services/gameAccess.js';
 import { initLanAnnouncer, stopLanAnnouncer } from './services/lanAnnouncer.js';
 import { initRuntime, shutdownRuntime } from './services/runtime.js';
+import { startProfileAutoApply } from './services/cs16Profiles.js';
 import { initScheduler, stopScheduler } from './services/scheduler.js';
 import { seedSettings } from './services/settings.js';
 import { ensureAdmin } from './services/users.js';
@@ -32,6 +33,7 @@ async function main(): Promise<void> {
   await loadDisabledGames();
   initWebhooks(log);
   await initRuntime(log);
+  startProfileAutoApply();
   await initScheduler(log);
   initLanAnnouncer(log);
 

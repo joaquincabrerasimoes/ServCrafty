@@ -35,6 +35,7 @@ const TABS: Array<{ path: string; key: TKey; need: (a: Server['access']) => bool
   { path: 'maps', key: 'tab.l4d2Maps', need: () => true, show: (c) => c.l4d2 || c.cs16 },
   { path: 'controls', key: 'tab.l4d2Controls', need: canOperate, show: (c) => c.l4d2 || c.cs16 },
   { path: 'plugins', key: 'tab.l4d2Plugins', need: canManage, show: (c) => c.l4d2 || c.cs16 },
+  { path: 'config-profiles', key: 'tab.cs16Profiles', need: canOperate, show: (c) => c.cs16 },
   { path: 'backups', key: 'tab.backups', need: canOperate },
   { path: 'schedules', key: 'tab.schedules', need: canManage },
   { path: 'webhooks', key: 'tab.webhooks', need: canManage },

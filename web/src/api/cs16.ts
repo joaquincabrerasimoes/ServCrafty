@@ -9,6 +9,8 @@ import type {
   Cs16MapInstallResult,
   Cs16MapsOverview,
   Cs16PluginsOverview,
+  Cs16Profile,
+  Cs16ProfilesOverview,
   Cs16SettingValue,
 } from './types';
 
@@ -53,6 +55,21 @@ export const cs16Api = {
   settings: (id: string, settings: Record<string, Cs16SettingValue>) =>
     api.put<{ ok: boolean; settings: Record<string, Cs16SettingValue>; appliedLive: boolean }>(`${c(id)}/controls/settings`, { settings }),
 
+  /** Config profiles: the list (operator). */
+  profiles: (id: string) => api.get<Cs16ProfilesOverview>(`${c(id)}/profiles`),
+  /** One profile with its content (manager). */
+  profile: (id: string, profileId: string) => api.get<Cs16Profile>(`${c(id)}/profiles/${encodeURIComponent(profileId)}`),
+  /** 409 profile_name_taken / too_many_profiles; 400 invalid_name / invalid_content / too_many_commands / line_too_long. */
+  createProfile: (id: string, body: { name: string; content: string }) => api.post<{ ok: boolean; profile: Cs16Profile }>(`${c(id)}/profiles`, body),
+  updateProfile: (id: string, profileId: string, body: { name?: string; content?: string }) =>
+    api.put<{ ok: boolean; profile: Cs16Profile }>(`${c(id)}/profiles/${encodeURIComponent(profileId)}`, body),
+  /** Deleting the default profile clears the default. */
+  deleteProfile: (id: string, profileId: string) => api.del<{ ok: boolean }>(`${c(id)}/profiles/${encodeURIComponent(profileId)}`),
+  setDefaultProfile: (id: string, profileId: string | null, applyOnMapChange?: boolean) =>
+    api.put<{ ok: boolean; defaultId: string | null; applyOnMapChange: boolean }>(`${c(id)}/default-profile`, { profileId, applyOnMapChange }),
+  /** Sends the commands to the console in order (operator). 409 not_running / profile_busy. */
+  runProfile: (id: string, profileId: string) => api.post<{ ok: boolean; sent: number; skipped: number }>(`${c(id)}/profiles/${encodeURIComponent(profileId)}/run`, {}),
+
   /** Plugin store (manager). */
   plugins: (id: string) => api.get<Cs16PluginsOverview>(`${c(id)}/plugins`),
   installPlugin: (id: string, pluginId: string) =>
@@ -66,6 +83,8 @@ export const cs16Keys = {
   /** Outside ['servers', id] on purpose: invalidating the server must not re-run `status` in the console. */
   controls: (id: string) => ['cs16-controls', id] as const,
   plugins: (id: string) => ['servers', id, 'cs16', 'plugins'] as const,
+  profiles: (id: string) => ['servers', id, 'cs16', 'profiles'] as const,
+  profile: (id: string, profileId: string) => ['servers', id, 'cs16', 'profiles', profileId] as const,
   /** Outside ['servers', id]: invalidating the server must not refetch GameBanana. */
   catalog: (id: string, s: Cs16CatalogSearch) => ['cs16-catalog', id, s.q ?? '', s.page ?? 1, s.sort ?? 'popular', s.category ?? 0] as const,
   catalogMap: (id: string, mapId: number) => ['cs16-catalog-map', id, mapId] as const,

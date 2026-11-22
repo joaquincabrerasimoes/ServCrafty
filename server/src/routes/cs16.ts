@@ -6,11 +6,13 @@ import { parse } from '../lib/validation.js';
 import { loadServerFor } from '../services/access.js';
 import { audit } from '../services/audit.js';
 import * as cs16 from '../services/cs16.js';
+import * as profiles from '../services/cs16Profiles.js';
 
 type IdParams = { Params: { id: string } };
 type PluginParams = { Params: { id: string; pluginId: string } };
 type MapParams = { Params: { id: string; name: string } };
 type CatalogParams = { Params: { id: string; mapId: string } };
+type ProfileParams = { Params: { id: string; profileId: string } };
 
 const mapBody = z.object({ map: z.string().max(64), persist: z.boolean().optional() }).strict();
 const kickBody = z.object({ userId: z.number().int(), reason: z.string().max(200).optional() }).strict();
@@ -28,6 +30,9 @@ const searchQuery = z
     category: z.coerce.number().int().min(1).max(1e9).optional(),
   })
   .strict();
+const profileBody = z.object({ name: z.string().max(200), content: z.string().max(70_000) }).strict();
+const profilePatch = z.object({ name: z.string().max(200).optional(), content: z.string().max(70_000).optional() }).strict();
+const defaultBody = z.object({ profileId: z.string().max(40).nullable(), applyOnMapChange: z.boolean().optional() }).strict();
 const installBody = z.object({ fileId: z.number().int().optional() }).strict();
 
 /** Counter-Strike 1.6 tabs: Maps (installed maps, rotation, GameBanana catalogue), Controls (console actions) and Plugins (store). */
@@ -171,6 +176,62 @@ export default async function cs16Routes(app: FastifyInstance): Promise<void> {
     const { server } = await loadServerFor(user, req.params.id, 'manager');
     const r = await cs16.uninstallPlugin(server, req.params.pluginId);
     await audit(req, 'server.cs16_plugin_remove', 'server', server.id, { plugin: req.params.pluginId });
+    return { ok: true, ...r };
+  });
+
+  // ---- Config profiles ----
+  app.get<IdParams>('/servers/:id/cs16/profiles', async (req) => {
+    const user = requireUser(req);
+    const { server } = await loadServerFor(user, req.params.id, 'operator');
+    return profiles.listProfiles(server);
+  });
+
+  app.get<ProfileParams>('/servers/:id/cs16/profiles/:profileId', async (req) => {
+    const user = requireUser(req);
+    const { server } = await loadServerFor(user, req.params.id, 'manager');
+    return profiles.getProfile(server, req.params.profileId);
+  });
+
+  app.post<IdParams>('/servers/:id/cs16/profiles', async (req) => {
+    const user = requireUser(req);
+    const { server } = await loadServerFor(user, req.params.id, 'manager');
+    const body = parse(profileBody, req.body);
+    const profile = await profiles.createProfile(server, body);
+    await audit(req, 'server.cs16_profile_create', 'server', server.id, { profile: profile.id, name: profile.name });
+    return { ok: true, profile };
+  });
+
+  app.put<ProfileParams>('/servers/:id/cs16/profiles/:profileId', async (req) => {
+    const user = requireUser(req);
+    const { server } = await loadServerFor(user, req.params.id, 'manager');
+    const body = parse(profilePatch, req.body);
+    const profile = await profiles.updateProfile(server, req.params.profileId, body);
+    await audit(req, 'server.cs16_profile_update', 'server', server.id, { profile: profile.id, name: profile.name });
+    return { ok: true, profile };
+  });
+
+  app.delete<ProfileParams>('/servers/:id/cs16/profiles/:profileId', async (req) => {
+    const user = requireUser(req);
+    const { server } = await loadServerFor(user, req.params.id, 'manager');
+    await profiles.deleteProfile(server, req.params.profileId);
+    await audit(req, 'server.cs16_profile_delete', 'server', server.id, { profile: req.params.profileId });
+    return { ok: true };
+  });
+
+  app.put<IdParams>('/servers/:id/cs16/default-profile', async (req) => {
+    const user = requireUser(req);
+    const { server } = await loadServerFor(user, req.params.id, 'manager');
+    const body = parse(defaultBody, req.body);
+    const r = await profiles.setDefaultProfile(server, body);
+    await audit(req, 'server.cs16_profile_default', 'server', server.id, { profile: r.defaultId, applyOnMapChange: r.applyOnMapChange });
+    return { ok: true, ...r };
+  });
+
+  app.post<ProfileParams>('/servers/:id/cs16/profiles/:profileId/run', async (req) => {
+    const user = requireUser(req);
+    const { server } = await loadServerFor(user, req.params.id, 'operator');
+    const r = await profiles.runProfile(server, req.params.profileId);
+    await audit(req, 'server.cs16_profile_run', 'server', server.id, { profile: req.params.profileId, sent: r.sent });
     return { ok: true, ...r };
   });
 }

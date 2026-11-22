@@ -294,6 +294,13 @@ PUT    /servers/:id/cs16/controls/settings           console:execute
 GET    /servers/:id/cs16/plugins                     mods:read
 POST   /servers/:id/cs16/plugins/:pluginId/install   mods:write
 DELETE /servers/:id/cs16/plugins/:pluginId           mods:write
+GET    /servers/:id/cs16/profiles                    servers:read
+GET    /servers/:id/cs16/profiles/:profileId         servers:configure
+POST   /servers/:id/cs16/profiles                    servers:configure
+PUT    /servers/:id/cs16/profiles/:profileId         servers:configure
+DELETE /servers/:id/cs16/profiles/:profileId         servers:configure
+PUT    /servers/:id/cs16/default-profile             servers:configure
+POST   /servers/:id/cs16/profiles/:profileId/run     console:execute
 
 GET    /servers/:id/bluemap                          servers:read
 PUT    /servers/:id/bluemap                          servers:configure

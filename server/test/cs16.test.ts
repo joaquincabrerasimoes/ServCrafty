@@ -21,6 +21,7 @@ import {
 import { assertMapcycle, bspKind, formatMapcycle, parseMapcycle, planMapInstall, STOCK_MAPS } from '../src/lib/cs16/maps.js';
 import { downloadFileTo, imageUrl, plainText, searchUrl, toCatalogDetail, toCatalogMap } from '../src/lib/cs16/gamebanana.js';
 import { addMetamodLine, CS16_PLUGIN_CATALOG, removeMetamodLine, withDependencies } from '../src/lib/cs16/pluginCatalog.js';
+import { assertProfileContent, assertProfileName, parseProfile, stripComment } from '../src/lib/cs16/profiles.js';
 import { extractArchive } from '../src/lib/sevenZip.js';
 
 const SevenZip = ((SevenZipImport as unknown as { default?: unknown }).default ?? SevenZipImport) as SevenZipModuleFactory;
@@ -412,4 +413,57 @@ test('extractArchive: a failed extraction leaves the process exit code alone (7-
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }
+});
+
+// ---------------------------------------------------------------------------------------------
+// Config profiles
+
+const CAL = `hostname "CAL CS Match Server"
+sv_maxupdaterate 100
+sv_minupdaterate 20
+sv_unlag 1
+mp_buytime .25
+mp_roundtime 1.75
+sv_contact
+
+allow_spectators 0
+log on
+amx_off
+
+say "CAL config file has been executed"
+`;
+
+test('profiles: a cfg is split into commands, in order; blank lines and comments are skipped', () => {
+  const p = parseProfile(CAL);
+  assert.deepEqual(p.commands, [
+    'hostname "CAL CS Match Server"',
+    'sv_maxupdaterate 100',
+    'sv_minupdaterate 20',
+    'sv_unlag 1',
+    'mp_buytime .25',
+    'mp_roundtime 1.75',
+    'sv_contact',
+    'allow_spectators 0',
+    'log on',
+    'amx_off',
+    'say "CAL config file has been executed"',
+  ]);
+  assert.equal(p.skipped, 3); // the empty line, the one before `say`, and the trailing one
+  const c = parseProfile('// header\r\nmp_c4timer 35 // 35 seconds\r\n   \r\nhostname "a // b"\r\n');
+  assert.deepEqual(c.commands, ['mp_c4timer 35', 'hostname "a // b"']);
+  assert.equal(stripComment('say "x" // y'), 'say "x" ');
+  assert.equal(stripComment('say "unterminated // y'), 'say "unterminated // y');
+});
+
+test('profiles: names and content are validated', () => {
+  assert.equal(assertProfileName('  Match   mode '), 'Match mode');
+  for (const bad of ['', '   ', 'x'.repeat(61), 5, null]) assert.throws(() => assertProfileName(bad), /name/, String(bad));
+  assert.equal(assertProfileContent('a 1\r\nb 2'), 'a 1\nb 2');
+  assert.throws(() => assertProfileContent(5), /commands/);
+  assert.throws(() => assertProfileContent('a\u0000b'), /not allowed/);
+  assert.throws(() => assertProfileContent('a\u001bb'), /not allowed/);
+  assert.throws(() => assertProfileContent('x'.repeat(65 * 1024)), /too large/);
+  assert.throws(() => assertProfileContent(`${'x 1\n'.repeat(1001)}`), /at most 1000/);
+  assert.throws(() => assertProfileContent(`say ${'x'.repeat(600)}`), /longer than/);
+  assert.equal(assertProfileContent(''), ''); // an empty profile is allowed (it can be filled in later)
 });

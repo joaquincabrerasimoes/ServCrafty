@@ -33,6 +33,7 @@ const WebUi = lazy(() => import('./pages/server/WebUi'));
 const MapsTab = lazy(() => import('./pages/server/ProfileTabs').then((m) => ({ default: m.MapsTab })));
 const ControlsTab = lazy(() => import('./pages/server/ProfileTabs').then((m) => ({ default: m.ControlsTab })));
 const PluginsTab = lazy(() => import('./pages/server/ProfileTabs').then((m) => ({ default: m.PluginsTab })));
+const Cs16Profiles = lazy(() => import('./pages/server/Cs16Profiles'));
 const BlueMap = lazy(() => import('./pages/server/BlueMap'));
 
 const AdminUsers = lazy(() => import('./pages/admin/Users'));
@@ -96,6 +97,7 @@ export function App() {
               <Route path="maps" element={<MapsTab />} />
               <Route path="controls" element={<ControlsTab />} />
               <Route path="plugins" element={<PluginsTab />} />
+              <Route path="config-profiles" element={<Cs16Profiles />} />
               <Route path="webui/:uiId" element={<WebUi />} />
               <Route path="map" element={<BlueMap />} />
               <Route path="backups" element={<Backups />} />

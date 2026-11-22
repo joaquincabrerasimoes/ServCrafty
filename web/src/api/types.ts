@@ -1023,6 +1023,29 @@ export interface Cs16Controls {
   settings: Cs16MatchSetting[];
 }
 
+/** A config profile: a named block of console commands, one per line (like a .cfg file). */
+export interface Cs16ProfileSummary {
+  id: string;
+  name: string;
+  /** Command lines (not blank, not comments). */
+  commands: number;
+  updatedAt: string;
+  isDefault: boolean;
+}
+
+/** GET /servers/:id/cs16/profiles */
+export interface Cs16ProfilesOverview {
+  profiles: Cs16ProfileSummary[];
+  defaultId: string | null;
+  applyOnMapChange: boolean;
+}
+
+/** GET /servers/:id/cs16/profiles/:profileId */
+export interface Cs16Profile extends Cs16ProfileSummary {
+  content: string;
+  createdAt: string;
+}
+
 export type Cs16PluginCategory = 'base' | 'bots' | 'library';
 export type Cs16Plugin = Omit<L4dPlugin, 'category'> & { category: Cs16PluginCategory };
 

@@ -8458,6 +8458,592 @@
           }
         }
       }
+    },
+    "/servers/{id}/cs16/profiles": {
+      "get": {
+        "tags": [
+          "Counter-Strike 1.6"
+        ],
+        "summary": "List the config profiles",
+        "operationId": "get_servers_id_cs16_profiles",
+        "description": "Requires **operator** access. A config profile is a named block of console commands (like a .cfg file). The list has no command text (a profile may hold passwords).",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "profiles": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "commands": {
+                            "type": "integer"
+                          },
+                          "updatedAt": {
+                            "type": "string"
+                          },
+                          "isDefault": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "commands",
+                          "updatedAt",
+                          "isDefault"
+                        ]
+                      }
+                    },
+                    "defaultId": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "applyOnMapChange": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "profiles",
+                    "defaultId",
+                    "applyOnMapChange"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Counter-Strike 1.6"
+        ],
+        "summary": "Create a config profile",
+        "operationId": "post_servers_id_cs16_profiles",
+        "description": "Requires **manager** access (the commands run as typed in the console). One command per line; blank lines and `// comments` are ignored; at most 1000 commands of 500 characters, 64 KB, 50 profiles per server. 409 `profile_name_taken`, `too_many_profiles`.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "maxLength": 60
+                  },
+                  "content": {
+                    "type": "string",
+                    "maxLength": 65536
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "name",
+                  "content"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "profile": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "content": {
+                          "type": "string"
+                        },
+                        "commands": {
+                          "type": "integer"
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        },
+                        "isDefault": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "content",
+                        "commands",
+                        "createdAt",
+                        "updatedAt",
+                        "isDefault"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "profile"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/servers/{id}/cs16/profiles/{profileId}": {
+      "get": {
+        "tags": [
+          "Counter-Strike 1.6"
+        ],
+        "summary": "Read a config profile",
+        "operationId": "get_servers_id_cs16_profiles_profileId",
+        "description": "Requires **manager** access.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          },
+          {
+            "name": "profileId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "content": {
+                      "type": "string"
+                    },
+                    "commands": {
+                      "type": "integer"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    },
+                    "isDefault": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "content",
+                    "commands",
+                    "createdAt",
+                    "updatedAt",
+                    "isDefault"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Counter-Strike 1.6"
+        ],
+        "summary": "Edit a config profile",
+        "operationId": "put_servers_id_cs16_profiles_profileId",
+        "description": "Requires **manager** access. `name` and/or `content`.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          },
+          {
+            "name": "profileId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "maxLength": 60
+                  },
+                  "content": {
+                    "type": "string",
+                    "maxLength": 65536
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "profile": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "content": {
+                          "type": "string"
+                        },
+                        "commands": {
+                          "type": "integer"
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        },
+                        "isDefault": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "content",
+                        "commands",
+                        "createdAt",
+                        "updatedAt",
+                        "isDefault"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "profile"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Counter-Strike 1.6"
+        ],
+        "summary": "Delete a config profile",
+        "operationId": "delete_servers_id_cs16_profiles_profileId",
+        "description": "Requires **manager** access. If it was the default profile, there is no default afterwards.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          },
+          {
+            "name": "profileId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/servers/{id}/cs16/default-profile": {
+      "put": {
+        "tags": [
+          "Counter-Strike 1.6"
+        ],
+        "summary": "Choose the default profile",
+        "operationId": "put_servers_id_cs16_default_profile",
+        "description": "Requires **manager** access. The default profile is applied automatically after the first map of every server start (the commands are sent about two seconds after the map has loaded, so they come after `server.cfg`). With `applyOnMapChange` it is also applied after every later map change (the game runs `server.cfg` again on each map change, which can undo some settings). `profileId: null` clears the default.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "profileId": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "applyOnMapChange": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "profileId"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "defaultId": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "applyOnMapChange": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "defaultId",
+                    "applyOnMapChange"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/servers/{id}/cs16/profiles/{profileId}/run": {
+      "post": {
+        "tags": [
+          "Counter-Strike 1.6"
+        ],
+        "summary": "Run a config profile now",
+        "operationId": "post_servers_id_cs16_profiles_profileId_run",
+        "description": "Requires **operator** access. Sends the commands to the game console one after the other (about 40 ms apart) and answers when all were sent: `sent` commands, `skipped` blank/comment lines. 409 `not_running`, 409 `profile_busy` while another run is in progress.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          },
+          {
+            "name": "profileId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "sent": {
+                      "type": "integer"
+                    },
+                    "skipped": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "sent",
+                    "skipped"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
     }
   },
   "components": {
