@@ -118,3 +118,17 @@ export function planMapInstall(entries: string[]): MapInstallPlan {
   }
   return { files, maps, skipped };
 }
+
+/** Which engine a `.bsp` was compiled for, from its first bytes. */
+export type BspKind = 'goldsrc' | 'source' | 'unknown';
+
+/**
+ * GoldSrc (Half-Life, Counter-Strike 1.6) maps start with the number 30; Source engine maps (Counter-Strike: Source,
+ * CS:GO, Team Fortress 2...) start with the letters `VBSP`. Only the first kind can be played on a 1.6 server.
+ */
+export function bspKind(head: Uint8Array): BspKind {
+  if (head.length < 4) return 'unknown';
+  const tag = Buffer.from(head.subarray(0, 4)).toString('latin1');
+  if (tag === 'VBSP' || tag === 'rBSP') return 'source';
+  return Buffer.from(head.subarray(0, 4)).readInt32LE(0) === 30 ? 'goldsrc' : 'unknown';
+}

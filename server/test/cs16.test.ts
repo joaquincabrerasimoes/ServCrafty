@@ -18,7 +18,7 @@ import {
   sayCommand,
   settingCommands,
 } from '../src/lib/cs16/control.js';
-import { assertMapcycle, formatMapcycle, parseMapcycle, planMapInstall, STOCK_MAPS } from '../src/lib/cs16/maps.js';
+import { assertMapcycle, bspKind, formatMapcycle, parseMapcycle, planMapInstall, STOCK_MAPS } from '../src/lib/cs16/maps.js';
 import { downloadFileTo, imageUrl, plainText, searchUrl, toCatalogDetail, toCatalogMap } from '../src/lib/cs16/gamebanana.js';
 import { addMetamodLine, CS16_PLUGIN_CATALOG, removeMetamodLine, withDependencies } from '../src/lib/cs16/pluginCatalog.js';
 import { extractArchive } from '../src/lib/sevenZip.js';
@@ -296,7 +296,7 @@ test('cs16 plugin catalogue: pinned https hosts, dependencies, plugins.ini lines
 // ---------------------------------------------------------------------------------------------
 // Archives (built with 7-Zip itself)
 
-async function build(format: 'zip' | '7z' | 'tar.xz', files: Record<string, string>): Promise<{ dir: string; file: string }> {
+async function build(format: 'zip' | '7z' | 'tar.xz', files: Record<string, string | Buffer>): Promise<{ dir: string; file: string }> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'cs16-arc-'));
   const sz = await SevenZip({ print: () => undefined, printErr: () => undefined });
   const mk = (p: string) => {
@@ -366,6 +366,49 @@ test('extractArchive: refuses a file that is not an archive, and an archive over
     const { file } = await build('zip', { 'a.bsp': 'x'.repeat(2000) });
     await assert.rejects(extractArchive(file, path.join(dir, 'out'), { maxArchiveBytes: 10, maxExtractedBytes: 1e9, maxFiles: 10 }), /too large/);
     await assert.rejects(extractArchive(file, path.join(dir, 'out'), { maxArchiveBytes: 1e9, maxExtractedBytes: 100, maxFiles: 10 }), /too large/);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('extractArchive: archives inside archives are opened (a rar of rars, one per map variant)', async () => {
+  const a = await build('zip', { 'maps/a.bsp': 'A', 'models/m.mdl': 'M' });
+  const b = await build('7z', { 'maps/b.bsp': 'B', 'models/m.mdl': 'M' });
+  const outer = await build('zip', { 'a.zip': await fs.readFile(a.file), 'b.7z': await fs.readFile(b.file), 'Readme.txt': 'hi', 'fake.zip': 'this is not an archive' });
+  const dest = path.join(outer.dir, 'out');
+  await fs.mkdir(dest);
+  try {
+    const written = (await extractArchive(outer.file, dest)).sort();
+    assert.deepEqual(written, ['Readme.txt', 'a.zip.contents/maps/a.bsp', 'a.zip.contents/models/m.mdl', 'b.7z.contents/maps/b.bsp', 'b.7z.contents/models/m.mdl', 'fake.zip']);
+    assert.equal(await fs.readFile(path.join(dest, 'a.zip.contents', 'maps', 'a.bsp'), 'utf8'), 'A');
+    await assert.rejects(fs.stat(path.join(dest, 'a.zip'))); // the inner archive itself is not kept
+    const plan = planMapInstall(written);
+    assert.deepEqual([...plan.maps].sort(), ['a', 'b']);
+    assert.deepEqual(plan.files.map((f) => f.to).sort(), ['maps/a.bsp', 'maps/b.bsp', 'models/m.mdl']); // the shared model once
+  } finally {
+    await fs.rm(outer.dir, { recursive: true, force: true });
+    await fs.rm(a.dir, { recursive: true, force: true });
+    await fs.rm(b.dir, { recursive: true, force: true });
+  }
+});
+
+test('bspKind: GoldSrc (version 30) is playable, Source (VBSP) is not', () => {
+  assert.equal(bspKind(Buffer.from([30, 0, 0, 0])), 'goldsrc');
+  assert.equal(bspKind(Buffer.from('VBSP')), 'source');
+  assert.equal(bspKind(Buffer.from('rBSP')), 'source');
+  assert.equal(bspKind(Buffer.from([29, 0, 0, 0])), 'unknown'); // Quake
+  assert.equal(bspKind(Buffer.from('IBSP')), 'unknown');
+  assert.equal(bspKind(Buffer.from([30, 0])), 'unknown');
+});
+
+test('extractArchive: a failed extraction leaves the process exit code alone (7-Zip would set it to 2)', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'cs16-arc-'));
+  const before = process.exitCode;
+  try {
+    await fs.writeFile(path.join(dir, 'bad.rar'), 'not an archive');
+    await fs.mkdir(path.join(dir, 'out'));
+    await assert.rejects(extractArchive(path.join(dir, 'bad.rar'), path.join(dir, 'out')));
+    assert.equal(process.exitCode, before);
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }

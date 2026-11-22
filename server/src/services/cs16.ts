@@ -26,7 +26,7 @@ import {
   type StatusInfo,
 } from '../lib/cs16/control.js';
 import * as gb from '../lib/cs16/gamebanana.js';
-import { assertMapcycle, formatMapcycle, parseMapcycle, planMapInstall, STOCK_MAPS } from '../lib/cs16/maps.js';
+import { assertMapcycle, bspKind, formatMapcycle, parseMapcycle, planMapInstall, STOCK_MAPS, type BspKind } from '../lib/cs16/maps.js';
 import { addMetamodLine, CS16_PLUGIN_CATALOG, METAMOD_PLUGINS_INI, pluginById, removeMetamodLine, sourcesFor, withDependencies, type Cs16PluginDef } from '../lib/cs16/pluginCatalog.js';
 import { applyCvars, defaultDeps, installSource, loadState, removeFiles, saveState, type InstallDeps } from '../lib/l4d2/pluginInstall.js';
 import { extractArchive } from '../lib/sevenZip.js';
@@ -261,8 +261,33 @@ export async function installCatalogMap(server: ServerRow, gbId: number, fileId?
         await fsp.copyFile(archive, path.join(content, file.name));
         entries = [file.name];
       } else entries = await deps.extract(archive, content);
-      const plan = planMapInstall(entries);
-      if (!plan.maps.length) throw badRequest('The download does not contain a map (.bsp file)', 'no_map_in_archive');
+      const found = planMapInstall(entries);
+      if (!found.maps.length) throw badRequest('The download does not contain a map (.bsp file)', 'no_map_in_archive');
+      // Only GoldSrc maps run on this game: a Source engine map (Counter-Strike: Source...) is left out.
+      const rejected: { map: string; kind: BspKind }[] = [];
+      for (const name of found.maps) {
+        const planned = found.files.find((f) => f.to === `maps/${name}.bsp`)!;
+        const handle = await fsp.open(path.join(content, ...planned.from.split('/')), 'r');
+        try {
+          const head = Buffer.alloc(4);
+          await handle.read(head, 0, 4, 0);
+          const kind = bspKind(head);
+          if (kind !== 'goldsrc') rejected.push({ map: name, kind });
+        } finally {
+          await handle.close();
+        }
+      }
+      const rejectedNames = new Set(rejected.map((r) => r.map));
+      const plan = {
+        ...found,
+        maps: found.maps.filter((m) => !rejectedNames.has(m)),
+        files: found.files.filter((f) => !/^maps\/[^/]+\.(bsp|res|txt|nav)$/.test(f.to) || !rejectedNames.has(f.to.slice(5, f.to.lastIndexOf('.')))),
+      };
+      if (!plan.maps.length) {
+        throw rejected.every((r) => r.kind === 'source')
+          ? badRequest('This map was made for a Source engine game (Counter-Strike: Source, CS:GO...) and cannot run on Counter-Strike 1.6', 'wrong_engine')
+          : badRequest('The map file is not a valid Counter-Strike 1.6 (GoldSrc) map', 'invalid_bsp');
+      }
 
       const state = await loadMapsState(server.id);
       const previous = state.installs[String(gbId)];
@@ -300,7 +325,7 @@ export async function installCatalogMap(server: ServerRow, gbId: number, fileId?
         installedAt: new Date().toISOString(),
       };
       await saveMapsState(server.id, state);
-      return { maps: plan.maps, files: written.length, kept: kept.length, skipped: plan.skipped.length };
+      return { maps: plan.maps, files: written.length, kept: kept.length, skipped: plan.skipped.length, rejected: rejected.map((r) => r.map) };
     } finally {
       await fsp.rm(stage, { recursive: true, force: true }).catch(() => undefined);
     }

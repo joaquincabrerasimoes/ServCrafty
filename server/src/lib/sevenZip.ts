@@ -41,7 +41,16 @@ const isTar = (data: Uint8Array): boolean => data.length > 262 && Buffer.from(da
 /** Run `7z x` on one file inside a fresh in-memory file system and return the entries. */
 async function unpackOnce(file: string, name: string): Promise<{ fs: FileSystem; files: Entry[] }> {
   const errors: string[] = [];
-  const sz = await SevenZip({ print: () => undefined, printErr: (e) => errors.push(e) });
+  // Emscripten's default `quit` sets `process.exitCode` to the exit status of 7-Zip (2 for a file that is not an archive),
+  // which would make the whole panel exit with an error code later. Throw the status instead, and put the code back.
+  const exitCode = process.exitCode;
+  const sz = await SevenZip({
+    print: () => undefined,
+    printErr: (e) => errors.push(e),
+    quit: (_code, status) => {
+      throw status;
+    },
+  });
   const buf = await fsp.readFile(file);
   const input = `/in-${name}`;
   const handle = sz.FS.open(input, 'w+');
@@ -54,6 +63,8 @@ async function unpackOnce(file: string, name: string): Promise<{ fs: FileSystem;
     const status = (err as { status?: number }).status;
     // Emscripten reports a normal exit as an ExitStatus exception; 0 is success, 1 is "warning" (still extracted).
     if (status !== 0 && status !== 1) throw badRequest(`The archive could not be extracted${errors.length ? `: ${errors.slice(0, 2).join(' ')}` : ''}`, 'invalid_archive');
+  } finally {
+    process.exitCode = exitCode;
   }
   const files: Entry[] = [];
   listFiles(sz.FS, '/out', '/out', files);
@@ -62,11 +73,46 @@ async function unpackOnce(file: string, name: string): Promise<{ fs: FileSystem;
   return { fs: sz.FS, files };
 }
 
+const NESTED_EXT = /\.(zip|rar|7z|tar|tgz|tar\.gz|tar\.xz|txz)$/i;
+/** How many archives inside archives are opened (a rar of rars is common on GameBanana: one inner archive per map variant). */
+const MAX_NESTING = 2;
+
 /**
- * Extract `file` into the existing directory `dest`. A `.tar.xz`/`.tar.gz` is unpacked twice (the outer layer is a
- * single `.tar`). Returns the relative paths written (forward slashes).
+ * Extract `file` into the existing directory `dest`, and the archives found inside it (up to two levels deep) into a
+ * folder next to each one, named after it. The inner archive files themselves are not kept. Returns the relative paths
+ * written (forward slashes).
  */
 export async function extractArchive(file: string, dest: string, limits: ExtractLimits = DEFAULT_LIMITS): Promise<string[]> {
+  let all = await extractOnce(file, dest, limits);
+  const notArchives = new Set<string>();
+  for (let depth = 0; depth < MAX_NESTING; depth++) {
+    const inner = all.filter((rel) => NESTED_EXT.test(rel) && !notArchives.has(rel));
+    if (!inner.length) break;
+    for (const rel of inner) {
+      const archive = path.join(dest, ...rel.split('/'));
+      const into = `${rel}.contents`;
+      await fsp.mkdir(path.join(dest, ...into.split('/')), { recursive: true });
+      // Remaining budget: what the outer archive already used counts against the limits.
+      const used = all.length;
+      const sub = await extractOnce(archive, path.join(dest, ...into.split('/')), { ...limits, maxFiles: Math.max(1, limits.maxFiles - used) }).catch((err: unknown) => {
+        // An inner file that is not really an archive (a readme named .zip) is just a file.
+        if ((err as { code?: string }).code === 'invalid_archive') return null;
+        throw err;
+      });
+      if (!sub) {
+        await fsp.rm(path.join(dest, ...into.split('/')), { recursive: true, force: true });
+        notArchives.add(rel);
+        continue;
+      }
+      await fsp.rm(archive, { force: true });
+      all = all.filter((r) => r !== rel).concat(sub.map((r) => `${into}/${r}`));
+      if (all.length > limits.maxFiles) throw badRequest('The archive has too many files', 'archive_too_large');
+    }
+  }
+  return all;
+}
+
+async function extractOnce(file: string, dest: string, limits: ExtractLimits): Promise<string[]> {
   const stat = await fsp.stat(file);
   if (stat.size > limits.maxArchiveBytes) throw badRequest('The archive is too large', 'archive_too_large');
   let { fs, files } = await unpackOnce(file, 'a');
