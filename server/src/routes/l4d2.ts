@@ -22,6 +22,7 @@ const difficultyBody = z.object({ difficulty: z.string().max(20), persist: z.boo
 const kickBody = z.object({ userId: z.number().int(), reason: z.string().max(200).optional() }).strict();
 const giveBody = z.object({ userId: z.number().int(), item: z.string().max(40) }).strict();
 const teamBody = z.object({ count: z.number().int() }).strict();
+const spawnBody = z.object({ kind: z.string(), count: z.number().int().optional() }).strict();
 const botBody = z.object({ character: z.number().int() }).strict();
 const pluginBody = z.object({ settings: z.record(z.string().max(64), z.union([z.number(), z.boolean()])).optional() }).strict();
 const settingsBody = z.object({ settings: z.record(z.string().max(64), z.union([z.number(), z.boolean()])) }).strict();
@@ -93,6 +94,15 @@ export default async function l4d2Routes(app: FastifyInstance): Promise<void> {
     const body = parse(botBody, req.body);
     const r = await l4d2.addBot(server, body.character);
     await audit(req, 'server.l4d2_add_bot', 'server', server.id, { character: body.character, ...r });
+    return { ok: true, ...r };
+  });
+
+  app.post<IdParams>('/servers/:id/l4d2/controls/spawn', async (req) => {
+    const user = requireUser(req);
+    const { server } = await loadServerFor(user, req.params.id, 'operator');
+    const body = parse(spawnBody, req.body);
+    const r = await l4d2.spawnThreat(server, body.kind, body.count ?? 1);
+    await audit(req, 'server.l4d2_spawn', 'server', server.id, r);
     return { ok: true, ...r };
   });
 

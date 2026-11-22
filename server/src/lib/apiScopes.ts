@@ -270,6 +270,7 @@ POST   /servers/:id/l4d2/controls/difficulty         console:execute
 POST   /servers/:id/l4d2/controls/kick               console:execute
 POST   /servers/:id/l4d2/controls/give               console:execute
 POST   /servers/:id/l4d2/controls/bots                console:execute
+POST   /servers/:id/l4d2/controls/spawn               console:execute
 POST   /servers/:id/l4d2/controls/team                console:execute
 GET    /servers/:id/l4d2/plugins                     mods:read
 POST   /servers/:id/l4d2/plugins/:pluginId/install   mods:write

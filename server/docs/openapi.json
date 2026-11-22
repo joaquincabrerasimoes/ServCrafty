@@ -6739,6 +6739,101 @@
           }
         }
       }
+    },
+    "/servers/{id}/l4d2/controls/spawn": {
+      "post": {
+        "tags": [
+          "Left 4 Dead 2"
+        ],
+        "summary": "Spawn a horde or special infected",
+        "operationId": "post_servers_id_l4d2_controls_spawn",
+        "description": "Requires **operator** access. Runs `sc_spawn` of the bundled *Bot spawner* plugin, live, no restart. `kind`: `panic` (the Director's horde event), `mob` (a common horde), `smoker`, `boomer`, `hunter`, `spitter`, `jockey`, `charger`, `tank`, `witch`. `count` is 1 to 10 (default 1; ignored for `panic`). Infected appear near a living survivor. 400 `invalid_threat` / `invalid_count`, 409 `plugin_required`, `spawn_no_survivor`, `spawn_no_spawn`, `not_running`.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ServerId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "kind"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "panic",
+                      "mob",
+                      "smoker",
+                      "boomer",
+                      "hunter",
+                      "spitter",
+                      "jockey",
+                      "charger",
+                      "tank",
+                      "witch"
+                    ]
+                  },
+                  "count": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 10,
+                    "example": 2
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "ok",
+                    "kind",
+                    "count"
+                  ],
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "count": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
     }
   },
   "components": {

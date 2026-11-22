@@ -6,6 +6,8 @@
 //
 //   sc_survivors            lists the survivors:   SCSURV <userid> <character 0-7 or -1> <bot 0|1> <name>
 //   sc_addbot <id|name>     adds one survivor bot: SCOK <userid> <name>   or   SCERR <reason>
+//   sc_spawn <kind> [n]     spawns a horde or special infected: SCOK <kind> <n>   or   SCERR <reason>
+//                           kinds: panic (a horde event), mob (a common horde), smoker, boomer, hunter, spitter, jockey, charger, tank, witch
 //
 // Character ids are the game's own (m_survivorCharacter): 0 Nick, 1 Rochelle, 2 Coach, 3 Ellis, 4 Bill, 5 Zoey, 6 Francis, 7 Louis.
 // Build: spcomp servcrafty_bots.sp (SourceMod 1.12). The compiled servcrafty_bots.smx is shipped next to this file.
@@ -46,6 +48,7 @@ static const char g_Models[CHARACTERS][] =
 public void OnPluginStart()
 {
 	RegServerCmd("sc_survivors", Cmd_Survivors, "List the survivors and their characters");
+	RegServerCmd("sc_spawn", Cmd_Spawn, "sc_spawn <panic|mob|smoker|boomer|hunter|spitter|jockey|charger|tank|witch> [count]: spawn a horde or special infected");
 	RegServerCmd("sc_addbot", Cmd_AddBot, "sc_addbot <0-7|name>: add a survivor bot of that character");
 }
 
@@ -186,5 +189,114 @@ public Action Cmd_AddBot(int args)
 	SetEntityModel(bot, g_Models[character]);
 	SetClientName(bot, g_Names[character]);
 	PrintToServer("SCOK %d %s", GetClientUserId(bot), g_Names[character]);
+	return Plugin_Handled;
+}
+
+// Runs a cheat command as `client` (z_spawn_old places the infected out of sight of that survivor) with the cheat flag lifted for the call.
+void RunCheat(int client, const char[] command, const char[] args)
+{
+	int flags = GetCommandFlags(command);
+	if (flags == INVALID_FCVAR_FLAGS)
+	{
+		return;
+	}
+	SetCommandFlags(command, flags & ~FCVAR_CHEAT);
+	FakeClientCommand(client, "%s %s", command, args);
+	SetCommandFlags(command, flags);
+}
+
+int CountInfected()
+{
+	int n = 0;
+	for (int i = 1; i <= MaxClients; i++)
+	{
+		if (IsClientInGame(i) && GetClientTeam(i) == 3)
+		{
+			n++;
+		}
+	}
+	return n;
+}
+
+// The survivor the infected are spawned around: a living player, else any living survivor.
+int SpawnAnchor()
+{
+	int bot = 0;
+	for (int i = 1; i <= MaxClients; i++)
+	{
+		if (IsSurvivor(i) && IsPlayerAlive(i))
+		{
+			if (!IsFakeClient(i))
+			{
+				return i;
+			}
+			bot = i;
+		}
+	}
+	return bot;
+}
+
+public Action Cmd_Spawn(int args)
+{
+	if (args < 1)
+	{
+		PrintToServer("SCERR usage");
+		return Plugin_Handled;
+	}
+	char kind[16];
+	GetCmdArg(1, kind, sizeof(kind));
+	int count = 1;
+	if (args >= 2)
+	{
+		char num[8];
+		GetCmdArg(2, num, sizeof(num));
+		count = StringToInt(num);
+	}
+	if (count < 1 || count > 10)
+	{
+		PrintToServer("SCERR bad_count");
+		return Plugin_Handled;
+	}
+
+	int anchor = SpawnAnchor();
+	if (anchor == 0)
+	{
+		PrintToServer("SCERR no_survivor");
+		return Plugin_Handled;
+	}
+
+	if (StrEqual(kind, "panic", false))
+	{
+		int flags = GetCommandFlags("director_force_panic_event");
+		SetCommandFlags("director_force_panic_event", flags & ~FCVAR_CHEAT);
+		ServerCommand("director_force_panic_event");
+		ServerExecute();
+		SetCommandFlags("director_force_panic_event", flags);
+		PrintToServer("SCOK panic 1");
+		return Plugin_Handled;
+	}
+
+	bool special = StrEqual(kind, "smoker", false) || StrEqual(kind, "boomer", false) || StrEqual(kind, "hunter", false) || StrEqual(kind, "spitter", false)
+		|| StrEqual(kind, "jockey", false) || StrEqual(kind, "charger", false) || StrEqual(kind, "tank", false);
+	if (!special && !StrEqual(kind, "mob", false) && !StrEqual(kind, "witch", false))
+	{
+		PrintToServer("SCERR unknown_kind");
+		return Plugin_Handled;
+	}
+
+	char spawnArgs[32];
+	Format(spawnArgs, sizeof(spawnArgs), "%s auto", kind);
+	int before = CountInfected();
+	for (int n = 0; n < count; n++)
+	{
+		RunCheat(anchor, "z_spawn_old", spawnArgs);
+	}
+	// Specials and tanks are players of the infected team: if none appeared, the game found no place to put them.
+	if (special && CountInfected() <= before)
+	{
+		PrintToServer("SCERR no_spawn");
+		return Plugin_Handled;
+	}
+	PrintToServer("SCOK %s %d", kind, special ? CountInfected() - before : count);
 	return Plugin_Handled;
 }

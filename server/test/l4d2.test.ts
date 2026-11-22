@@ -10,6 +10,8 @@ import {
   assertItem,
   assertMap,
   addBotCommand,
+  spawnCommand,
+  parseSpawn,
   assertSurvivors,
   survivorsCommand,
   assertCharacter,
@@ -317,4 +319,14 @@ test('team size: `sm_setmax` with a whole number from 4 to 16', () => {
   assert.equal(survivorsCommand(6), 'sm_setmax 6');
   assert.equal(survivorsCommand(16), 'sm_setmax 16');
   for (const bad of [3, 17, 0, 5.5, '6', NaN, null]) assert.throws(() => assertSurvivors(bad), /team size/, String(bad));
+});
+
+test('spawn infected: command and answer', () => {
+  assert.equal(spawnCommand('tank'), 'sc_spawn tank 1');
+  assert.equal(spawnCommand('mob', 10), 'sc_spawn mob 10');
+  for (const bad of ['', 'tank; quit', 'Tank', 5]) assert.throws(() => spawnCommand(bad as string), /Unknown infected/, String(bad));
+  for (const bad of [0, 11, 1.5]) assert.throws(() => spawnCommand('tank', bad), /amount/, String(bad));
+  assert.deepEqual(parseSpawn('SCOK hunter 3\n'), { ok: true, kind: 'hunter', count: 3 });
+  assert.deepEqual(parseSpawn('SCERR no_spawn'), { ok: false, error: 'no_spawn' });
+  assert.equal(parseSpawn('Unknown command'), null);
 });

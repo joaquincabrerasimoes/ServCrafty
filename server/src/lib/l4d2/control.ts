@@ -182,6 +182,46 @@ export function assertCharacter(id: unknown): number {
 /** Command of the bundled `servcrafty_bots` plugin: add one survivor bot of that character. */
 export const addBotCommand = (character: number): string => `sc_addbot ${assertCharacter(character)}`;
 
+/** What the Controls tab can send at the survivors. `panic` is the Director's horde event, `mob` a common horde; the rest are special infected. */
+export const THREATS = [
+  { id: 'panic', group: 'horde' },
+  { id: 'mob', group: 'horde' },
+  { id: 'smoker', group: 'special' },
+  { id: 'boomer', group: 'special' },
+  { id: 'hunter', group: 'special' },
+  { id: 'spitter', group: 'special' },
+  { id: 'jockey', group: 'special' },
+  { id: 'charger', group: 'special' },
+  { id: 'tank', group: 'boss' },
+  { id: 'witch', group: 'boss' },
+] as const;
+export type ThreatKind = (typeof THREATS)[number]['id'];
+export const THREAT_MAX_COUNT = 10;
+
+export function assertThreat(kind: unknown): ThreatKind {
+  const t = THREATS.find((x) => x.id === kind);
+  if (!t) throw badRequest('Unknown infected', 'invalid_threat');
+  return t.id;
+}
+
+export function assertThreatCount(n: unknown): number {
+  if (typeof n !== 'number' || !Number.isInteger(n) || n < 1 || n > THREAT_MAX_COUNT) {
+    throw badRequest(`The amount must be a whole number from 1 to ${THREAT_MAX_COUNT}`, 'invalid_count');
+  }
+  return n;
+}
+
+/** Command of the bundled `servcrafty_bots` plugin: spawn a horde or special infected near the survivors. */
+export const spawnCommand = (kind: string, count = 1): string => `sc_spawn ${assertThreat(kind)} ${assertThreatCount(count)}`;
+
+/** Output of `sc_spawn`: how many appeared, or the plugin's error code. null = no answer (plugin missing). */
+export function parseSpawn(output: string): { ok: true; kind: string; count: number } | { ok: false; error: string } | null {
+  const ok = /^SCOK ([a-z]+) (\d+)/m.exec(output);
+  if (ok) return { ok: true, kind: ok[1]!, count: Number(ok[2]) };
+  const err = /^SCERR ([a-z_]+)/m.exec(output);
+  return err ? { ok: false, error: err[1]! } : null;
+}
+
 export interface SurvivorEntry {
   userId: number;
   /** 0-7, or -1 when the game reports none. */

@@ -12,6 +12,8 @@ import {
   difficultyCommand,
   DIFFICULTIES,
   addBotCommand,
+  spawnCommand,
+  parseSpawn,
   SURVIVORS_MAX,
   SURVIVORS_MIN,
   survivorsCommand,
@@ -220,6 +222,25 @@ export async function addBot(server: ServerRow, character: number) {
   if (!r) throw conflict('Install the "Bot spawner" plugin from the Plugins tab to add bots of a chosen character', 'plugin_required');
   if (!r.ok) throw conflict(BOT_ERRORS[r.error] ?? 'The bot could not be added', `bot_${r.error}`);
   return { userId: r.userId, name: r.name };
+}
+
+const SPAWN_ERRORS: Record<string, string> = {
+  no_survivor: 'There is no living survivor to spawn the infected near',
+  no_spawn: 'The game found no place to spawn it right now, try again in a moment',
+  unknown_kind: 'Unknown infected',
+  bad_count: 'The amount must be from 1 to 10',
+  usage: 'Unknown infected',
+};
+
+/** Send a horde or special infected at the survivors (the bundled "Bot spawner" plugin runs the cheat command). */
+export async function spawnThreat(server: ServerRow, kind: string, count: number) {
+  l4d2Def(server);
+  const command = spawnCommand(kind, count);
+  if (!runtime.isRunning(server.id)) throw conflict('The server is not running', 'not_running');
+  const r = parseSpawn(await runtime.sendCommand(server.id, command));
+  if (!r) throw conflict('Install the "Bot spawner" plugin from the Plugins tab to spawn hordes and special infected', 'plugin_required');
+  if (!r.ok) throw conflict(SPAWN_ERRORS[r.error] ?? 'The infected could not be spawned', `spawn_${r.error}`);
+  return { kind: r.kind, count: r.count };
 }
 
 // ---------------------------------------------------------------------------------------------

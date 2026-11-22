@@ -294,6 +294,48 @@ function TeamSize({ serverId, data, enabled, act, busy }: { serverId: string; da
   );
 }
 
+const THREAT_GROUPS: { id: 'horde' | 'special' | 'boss'; kinds: string[] }[] = [
+  { id: 'horde', kinds: ['panic', 'mob'] },
+  { id: 'special', kinds: ['smoker', 'boomer', 'hunter', 'spitter', 'jockey', 'charger'] },
+  { id: 'boss', kinds: ['tank', 'witch'] },
+];
+
+function ThreatSpawner({ serverId, data, enabled, act, busy }: { serverId: string; data: L4dControls; enabled: boolean; act: Act; busy: string | null }) {
+  const t = useT();
+  const [count, setCount] = useState(1);
+  const ready = enabled && data.bots.available;
+  return (
+    <Section title={t('l4d2.threatTitle')}>
+      {!data.bots.available && enabled && <p className="mb-3 text-sm text-muted">{t('l4d2.threatNeedPlugin')}</p>}
+      <p className="mb-3 text-sm text-muted">{t('l4d2.threatHint')}</p>
+      <label className="mb-3 block">
+        <span className="label">{t('l4d2.threatCount')}</span>
+        <input className="input w-24" type="number" min={1} max={10} step={1} value={count} disabled={!ready} onChange={(e) => setCount(Math.min(10, Math.max(1, Math.round(Number(e.target.value) || 1))))} />
+      </label>
+      <div className="space-y-3">
+        {THREAT_GROUPS.map((g) => (
+          <div key={g.id}>
+            <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted">{t(`l4d2.threatGroup.${g.id}` as TKey)}</p>
+            <div className="flex flex-wrap gap-2">
+              {g.kinds.map((k) => (
+                <Button
+                  key={k}
+                  size="sm"
+                  disabled={!ready}
+                  loading={busy === `spawn:${k}`}
+                  onClick={() => void act(`spawn:${k}`, () => l4d2Api.spawn(serverId, k, count), t('l4d2.threatSent', { name: t(`l4d2.threat.${k}` as TKey) }))}
+                >
+                  {t(`l4d2.threat.${k}` as TKey)}
+                </Button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </Section>
+  );
+}
+
 function BotSpawner({ serverId, data, enabled, act, busy }: { serverId: string; data: L4dControls; enabled: boolean; act: Act; busy: string | null }) {
   const t = useT();
   const chars = data.bots.characters;
@@ -500,6 +542,7 @@ export default function L4d2Controls() {
       <ChangeMap serverId={server.id} data={data} enabled={enabled} act={act} busy={busy} />
       <Difficulty serverId={server.id} data={data} enabled={enabled} act={act} busy={busy} />
       <TeamSize serverId={server.id} data={data} enabled={enabled} act={act} busy={busy} />
+      <ThreatSpawner serverId={server.id} data={data} enabled={enabled} act={act} busy={busy} />
       <BotSpawner serverId={server.id} data={data} enabled={enabled} act={act} busy={busy} />
       <Players serverId={server.id} data={data} enabled={enabled} act={act} busy={busy} onRefresh={() => void q.refetch()} refreshing={q.isFetching} />
     </div>

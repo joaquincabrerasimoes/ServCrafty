@@ -18,6 +18,7 @@ export const l4d2Api = {
   kick: (id: string, userId: number, reason?: string) =>
     api.post<{ ok: boolean }>(`${l(id)}/controls/kick`, reason ? { userId, reason } : { userId }),
   setTeamSize: (id: string, count: number) => api.post<{ ok: boolean; survivors: number }>(`${l(id)}/controls/team`, { count }),
+  spawn: (id: string, kind: string, count: number) => api.post<{ ok: boolean; kind: string; count: number }>(`${l(id)}/controls/spawn`, { kind, count }),
   addBot: (id: string, character: number) => api.post<{ ok: boolean; userId: number; name: string }>(`${l(id)}/controls/bots`, { character }),
   give: (id: string, userId: number, item: string) => api.post<{ ok: boolean }>(`${l(id)}/controls/give`, { userId, item }),
 
